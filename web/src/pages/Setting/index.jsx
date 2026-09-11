@@ -34,7 +34,6 @@ import {
   CreditCard,
   Server,
   Activity,
-  Blocks,
 } from 'lucide-react';
 
 import SystemSetting from '../../components/settings/SystemSetting';
@@ -45,7 +44,6 @@ import RateLimitSetting from '../../components/settings/RateLimitSetting';
 import ModelSetting from '../../components/settings/ModelSetting';
 import DashboardSetting from '../../components/settings/DashboardSetting';
 import RatioSetting from '../../components/settings/RatioSetting';
-import TaskPlugin from '../TaskPlugin';
 import ChatsSetting from '../../components/settings/ChatsSetting';
 import DrawingSetting from '../../components/settings/DrawingSetting';
 import PaymentSetting from '../../components/settings/PaymentSetting';
@@ -119,16 +117,6 @@ const Setting = () => {
       ),
       content: <RatioSetting />,
       itemKey: 'ratio',
-    });
-    panes.push({
-      tab: (
-        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <Blocks size={18} />
-          {t('任务插件')}
-        </span>
-      ),
-      content: <TaskPlugin />,
-      itemKey: 'task_plugin',
     });
     panes.push({
       tab: (

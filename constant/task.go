@@ -34,6 +34,9 @@ var legacyTaskActionAliases = map[string]string{
 // When disabled, factory and override plugins both stop serving.
 var TaskPluginEnabled = true
 
+// TaskPluginPageEnabled 控制左侧导航是否展示“任务插件”页面（运营设置可配）。
+var TaskPluginPageEnabled = true
+
 // NormalizeTaskAction maps persisted legacy action names to the canonical task
 // action vocabulary. Unknown platform-specific actions pass through unchanged.
 func NormalizeTaskAction(action string) string {

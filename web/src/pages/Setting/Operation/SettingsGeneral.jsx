@@ -56,6 +56,7 @@ export default function GeneralSettings(props) {
     DefaultCollapseSidebar: false,
     DemoSiteEnabled: false,
     SelfUseModeEnabled: false,
+    TaskPluginPageEnabled: true,
     'token_setting.max_user_tokens': 1000,
   });
   const refForm = useRef();
@@ -373,6 +374,17 @@ export default function GeneralSettings(props) {
                   checkedText='｜'
                   uncheckedText='〇'
                   onChange={handleFieldChange('SelfUseModeEnabled')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'TaskPluginPageEnabled'}
+                  label={t('显示任务插件页面')}
+                  extraText={t('关闭后左侧导航不展示任务插件入口（仅影响展示，不影响已提交任务）')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={handleFieldChange('TaskPluginPageEnabled')}
                 />
               </Col>
             </Row>

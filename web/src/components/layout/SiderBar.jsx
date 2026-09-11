@@ -17,9 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { StatusContext } from '../../context/Status';
 import { getLucideIcon } from '../../helpers/render';
 import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
@@ -55,10 +56,12 @@ const routerMap = {
   monitorStatus: '/console/monitor-status',
   monitorGroups: '/console/monitor-groups',
   ops: '/console/ops',
+  taskPlugin: '/console/task-plugin',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
   const { t } = useTranslation();
+  const [statusState] = useContext(StatusContext);
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const {
     isModuleVisible,
@@ -209,6 +212,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
+        text: t('任务插件'),
+        itemKey: 'taskPlugin',
+        to: '/task-plugin',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
         text: t('系统设置'),
         itemKey: 'setting',
         to: '/setting',
@@ -216,14 +225,18 @@ const SiderBar = ({ onNavigate = () => {} }) => {
       },
     ];
 
-    // 根据配置过滤项目
+    // 根据配置过滤项目；任务插件页额外受运营设置 TaskPluginPageEnabled 开关控制
+    const taskPluginPageVisible = statusState?.status?.task_plugin_page_enabled !== false;
     const filteredItems = items.filter((item) => {
       const configVisible = isModuleVisible('admin', item.itemKey);
+      if (item.itemKey === 'taskPlugin') {
+        return configVisible && taskPluginPageVisible;
+      }
       return configVisible;
     });
 
     return filteredItems;
-  }, [isAdmin(), isRoot(), t, isModuleVisible]);
+  }, [isAdmin(), isRoot(), t, isModuleVisible, statusState]);
 
   const customItemsByPlacement = useMemo(
     () => ({

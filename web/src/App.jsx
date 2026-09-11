@@ -369,6 +369,16 @@ function App() {
           }
         />
         <Route
+          path='/console/task-plugin'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <TaskPlugin />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
           path='/pricing'
           element={
             pricingRequireAuth ? (
