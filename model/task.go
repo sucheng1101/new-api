@@ -650,3 +650,12 @@ func (t *Task) ToOpenAIVideo() *dto.OpenAIVideo {
 	}
 	return openAIVideo
 }
+
+// UpdatePrivateDataColumn 单列回写 private_data（JSON Valuer 序列化），
+// 用于任务持久化之后补充渠道账本字段。（Skye）
+func (t *Task) UpdatePrivateDataColumn() error {
+	if t.ID == 0 || DB == nil {
+		return nil
+	}
+	return DB.Model(&Task{}).Where("id = ?", t.ID).Update("private_data", t.PrivateData).Error
+}

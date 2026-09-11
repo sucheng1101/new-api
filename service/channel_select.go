@@ -17,6 +17,7 @@ type RetryParam struct {
 	Ctx          *gin.Context
 	TokenGroup   string
 	ModelName    string
+	RequestPath  string // 官方 rc.37：请求路径，用于重试观测
 	Retry        *int
 	resetNextTry bool
 }
