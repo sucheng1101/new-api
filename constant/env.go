@@ -19,6 +19,10 @@ var GenerateDefaultToken bool
 var ErrorLogEnabled bool
 var TaskQueryLimit int
 var TaskTimeoutMinutes int
+var TaskPollMaxFailures = 20 // 单任务连续解析失败上限（官方 rc.37）
+var TaskPluginProtocolTimeoutSeconds int
+var TaskPluginProtocolTickMilliseconds int
+var TaskPluginProtocolTickJitterMilliseconds int
 
 // temporary variable for sora patch, will be removed in future
 var TaskPricePatches []string

@@ -72,6 +72,20 @@ func getScannerBufferSize() int {
 	}
 	return DefaultMaxScannerBufferSize
 }
+// NewStreamScanner shares relay scanner configuration. Callers buffering bounded
+// task state may additionally cap a line without increasing the configured limit.
+// （自官方 v1.0.0-rc.37 移植）
+func NewStreamScanner(reader io.Reader, maxBytes ...int) *bufio.Scanner {
+	limit := getScannerBufferSize()
+	if len(maxBytes) > 0 && maxBytes[0] > 0 {
+		limit = min(limit, maxBytes[0])
+	}
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, min(InitialScannerBufferSize, limit)), limit)
+	return scanner
+}
+
+
 
 // ExtendWriteDeadline prevents a blocked client write from keeping stream
 // cleanup waiting indefinitely.

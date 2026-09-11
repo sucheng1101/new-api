@@ -102,6 +102,10 @@ type RelayInfo struct {
 	UsePrice               bool
 	RelayMode              int
 	OriginModelName        string
+	// BillingModelName is the pricing identity for this request. It is kept
+	// separate from the upstream model name so that mapping and pricing can be
+	// audited independently.（官方 rc.37）
+	BillingModelName string
 	RequestURLPath         string
 	RequestHeaders         map[string]string
 	ShouldIncludeUsage     bool
@@ -154,6 +158,11 @@ type RelayInfo struct {
 	ParamOverrideAudit                    []string
 
 	PriceData types.PriceData
+
+	// QuotaClamp is set (non-nil) when a quota conversion saturated at the
+	// supported single-request bound (or NaN fallback) while computing this request's charge.
+	// It is surfaced onto the consume/task log's admin_info for auditing.（官方 rc.37）
+	QuotaClamp *common.QuotaClamp
 
 	// TieredBillingSnapshot is a frozen snapshot of tiered billing rules
 	// captured at pre-consume time. Non-nil only when billing mode is "tiered_expr".
@@ -688,12 +697,25 @@ func (info *RelayInfo) HasSendResponse() bool {
 	return info.FirstResponseTime.After(info.StartTime)
 }
 
+// OriginTaskRef 是插件声明的 origin 任务依赖的引用快照（官方 rc.37）。
+type OriginTaskRef struct {
+	TaskID         string
+	UpstreamTaskID string
+	Action         string
+	Status         string
+	Data           []byte
+}
+
 type TaskRelayInfo struct {
 	Action       string
 	OriginTaskID string
 	// PublicTaskID 是提交时预生成的 task_xxxx 格式公开 ID，
 	// 供 DoResponse 在返回给客户端时使用（避免暴露上游真实 ID）。
 	PublicTaskID string
+
+	// OriginTasks are plugin-declared public-task dependencies resolved by the
+	// origin task middleware before submit.（官方 rc.37）
+	OriginTasks []OriginTaskRef
 
 	ConsumeQuota bool
 
@@ -795,6 +817,8 @@ type TaskInfo struct {
 	Progress         string `json:"progress,omitempty"`
 	CompletionTokens int    `json:"completion_tokens,omitempty"` // 用于按倍率计费
 	TotalTokens      int    `json:"total_tokens,omitempty"`      // 用于按倍率计费
+	UsageFacts       map[string]any  `json:"usage_facts,omitempty"`  // （官方 rc.37）完成时的规范化用量事实
+	PluginState      json.RawMessage `json:"plugin_state,omitempty"` // （官方 rc.37）插件侧任务状态
 }
 
 func FailTaskInfo(reason string) *TaskInfo {
@@ -923,4 +947,17 @@ func RemoveGeminiDisabledFields(jsonData []byte) ([]byte, error) {
 		return jsonData, nil
 	}
 	return jsonDataAfter, nil
+}
+
+// GetBillingModelName 返回计费模型名：优先 BillingModelName，回退 OriginModelName。（官方 rc.37）
+func (info *RelayInfo) HasChannelMeta() bool { return info != nil && info.ChannelMeta != nil }
+
+func (info *RelayInfo) GetBillingModelName() string {
+	if info == nil {
+		return ""
+	}
+	if info.BillingModelName != "" {
+		return info.BillingModelName
+	}
+	return info.OriginModelName
 }

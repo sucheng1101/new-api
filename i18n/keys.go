@@ -437,3 +437,13 @@ const (
 	MsgSystemEventPerfFlushFailed       = "system_event.perf_flush_failed"
 	MsgSystemEventUpstreamFinalFailure  = "system_event.upstream_final_failure"
 )
+
+// 官方 v1.0.0-rc.37 新增消息 key（任务插件等）
+const (
+	MsgPaymentComplianceRequired = "payment.compliance_required"
+	MsgPasskeyRPIDRemovalConfirmation = "passkey.rp_id_removal_confirmation"
+	MsgDistributorNoAvailableChannelTaskPlugin = "distributor.no_available_channel_task_plugin"
+)
+
+// 官方 v1.0.0-rc.37 任务插件消息 key（keys.go 顶部散定义，合并时补齐）
+const MsgTaskPluginUnknownMetaField = "task_plugin.unknown_meta_field"

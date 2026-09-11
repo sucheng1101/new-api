@@ -2,11 +2,14 @@ package service
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -287,4 +290,48 @@ func InjectTieredBillingInfo(other map[string]interface{}, relayInfo *relaycommo
 	if result != nil {
 		other["matched_tier"] = result.MatchedTier
 	}
+}
+
+// attachQuotaSaturationToOther 把额度饱和钳制审计写入 Other.admin_info。（官方 rc.37）
+func attachQuotaSaturationToOther(other *model.LogOther, clamp *common.QuotaClamp) {
+	if clamp == nil || other == nil {
+		return
+	}
+	other.SetAdmin("quota_saturation", clamp.AuditMap())
+}
+
+// attachQuotaSaturation records the request's quota clamp (if any) onto the
+// consume log's other.admin_info and emits a request-correlated backend audit
+// line. Called right before RecordConsumeLog on the text/audio/wss paths.
+func attachQuotaSaturation(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other *model.LogOther) {
+	if relayInfo == nil {
+		return
+	}
+	clamp := relayInfo.QuotaClamp
+	if clamp == nil {
+		return
+	}
+	attachQuotaSaturationToOther(other, clamp)
+	logger.LogWarn(ctx, fmt.Sprintf("quota saturation on consume log: op=%s kind=%s original=%g clamped=%d user=%d model=%s",
+		clamp.Op, clamp.Kind, clamp.Original, clamp.Clamped, relayInfo.UserId, relayInfo.GetBillingModelName()))
+}
+
+// attachQuotaSaturationMap 是 attachQuotaSaturation 的 map 兼容变体：
+// Fork 的文本路径 Other 仍为 map[string]interface{}。（Skye 适配）
+func attachQuotaSaturationMap(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+	clamp := relayInfo.QuotaClamp
+	if clamp == nil {
+		return
+	}
+	logOther := model.NewLogOther()
+	logOther.MergePublic(other)
+	logOther.SetAdmin("quota_saturation", clamp.AuditMap())
+	for k, v := range logOther.Snapshot() {
+		other[k] = v
+	}
+	logger.LogWarn(ctx, fmt.Sprintf("quota saturation on consume log: op=%s kind=%s original=%g clamped=%d user=%d model=%s",
+		clamp.Op, clamp.Kind, clamp.Original, clamp.Clamped, relayInfo.UserId, relayInfo.GetBillingModelName()))
 }

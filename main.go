@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -138,13 +139,19 @@ func main() {
 
 	// Channel upstream model update check task
 	controller.StartChannelUpstreamModelUpdateTask()
+	go controller.SyncTaskPlugins() // 任务插件同步（编译失败保留旧实例，30s 重试）
 
 	if common.IsMasterNode && constant.UpdateTask {
 		gopool.Go(func() {
 			controller.UpdateMidjourneyTaskBulk()
 		})
+		// 阶段1：任务轮询循环（rc.37 改为 RunTaskPollingOnce 驱动，原 controller.UpdateTaskBulk 已随
+		// 旧适配器退役；阶段5 若引入 system-task runner 再统一搬迁）
 		gopool.Go(func() {
-			controller.UpdateTaskBulk()
+			for {
+				service.RunTaskPollingOnce(context.Background(), nil)
+				time.Sleep(15 * time.Second)
+			}
 		})
 	}
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {

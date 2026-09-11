@@ -213,3 +213,11 @@ var ChannelSpecialBases = map[string]ChannelSpecialBase{
 		OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
 	},
 }
+
+// GetChannelBaseURL 返回渠道类型的默认上游地址（越界返回空串）。（官方 rc.37）
+func GetChannelBaseURL(channelType int) string {
+	if channelType < 0 || channelType >= len(ChannelBaseURLs) {
+		return ""
+	}
+	return ChannelBaseURLs[channelType]
+}

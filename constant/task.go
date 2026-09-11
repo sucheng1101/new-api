@@ -8,17 +8,37 @@ const (
 )
 
 const (
-	SunoActionMusic  = "MUSIC"
-	SunoActionLyrics = "LYRICS"
-
-	TaskActionGenerate          = "generate"
-	TaskActionTextGenerate      = "textGenerate"
-	TaskActionFirstTailGenerate = "firstTailGenerate"
-	TaskActionReferenceGenerate = "referenceGenerate"
-	TaskActionRemix             = "remixGenerate"
+	TaskActionImageToVideo     = "image_to_video"
+	TaskActionTextToVideo      = "text_to_video"
+	TaskActionFirstTailToVideo = "first_tail_to_video"
+	TaskActionReferenceToVideo = "reference_to_video"
+	TaskActionRemix            = "remix"
 )
 
-var SunoModel2Action = map[string]string{
-	"suno_music":  SunoActionMusic,
-	"suno_lyrics": SunoActionLyrics,
+// 遗留 action 常量别名（v0.13.2 命名；kling/jimeng 转换中间件仍在引用，
+// 规范化时经 NormalizeTaskAction 映射为 canonical 值）。
+const (
+	TaskActionGenerate     = "generate"
+	TaskActionTextGenerate = "textGenerate"
+)
+
+var legacyTaskActionAliases = map[string]string{
+	"generate":          TaskActionImageToVideo,
+	"textGenerate":      TaskActionTextToVideo,
+	"firstTailGenerate": TaskActionFirstTailToVideo,
+	"referenceGenerate": TaskActionReferenceToVideo,
+	"remixGenerate":     TaskActionRemix,
+}
+
+// TaskPluginEnabled is the master switch for the whole task-plugin system.
+// When disabled, factory and override plugins both stop serving.
+var TaskPluginEnabled = true
+
+// NormalizeTaskAction maps persisted legacy action names to the canonical task
+// action vocabulary. Unknown platform-specific actions pass through unchanged.
+func NormalizeTaskAction(action string) string {
+	if canonical, ok := legacyTaskActionAliases[action]; ok {
+		return canonical
+	}
+	return action
 }

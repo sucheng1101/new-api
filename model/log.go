@@ -305,7 +305,8 @@ type RecordTaskBillingLogParams struct {
 	Quota     int
 	TokenId   int
 	Group     string
-	Other     map[string]interface{}
+	Other     *LogOther
+	NodeName  string // 任务发起节点；为空时回退当前节点（官方 rc.37 字段）
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -331,7 +332,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		ChannelId: params.ChannelId,
 		TokenId:   params.TokenId,
 		Group:     params.Group,
-		Other:     common.MapToJsonStr(params.Other),
+		Other:     params.Other.JSONString(),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {

@@ -5,8 +5,10 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	jsplugin "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
@@ -159,4 +161,87 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 	}
 	return channel, selectGroup, nil
+}
+
+// ---------------------------------------------------------------------------
+// 任务插件渠道约束（自官方 v1.0.0-rc.37 移植，供插件路径与阶段4协议路由使用）
+// ---------------------------------------------------------------------------
+
+// GetChannelConstraints 返回（并按需初始化）本次请求的渠道约束集合。
+func GetChannelConstraints(c *gin.Context) *dto.ChannelConstraints {
+	if c == nil {
+		return &dto.ChannelConstraints{}
+	}
+	if existing, ok := common.GetContextKeyType[*dto.ChannelConstraints](c, constant.ContextKeyChannelConstraints); ok && existing != nil {
+		return existing
+	}
+	constraints := &dto.ChannelConstraints{}
+	common.SetContextKey(c, constant.ContextKeyChannelConstraints, constraints)
+	return constraints
+}
+
+// AppendTaskPluginIdentityFilter 为插件任务请求追加渠道身份过滤。
+func AppendTaskPluginIdentityFilter(c *gin.Context, pluginKey string) {
+	if c == nil {
+		return
+	}
+	channelTypes, pluginKeys := pinnedTaskPluginIdentities(c, pluginKey)
+	GetChannelConstraints(c).AddFilter(dto.ChannelFilter{
+		Kind:                   dto.FilterTaskPluginIdentity,
+		TaskPluginKey:          pluginKey,
+		TaskPluginChannelTypes: channelTypes,
+		TaskPluginKeys:         pluginKeys,
+	})
+}
+
+func pinnedTaskPluginIdentities(c *gin.Context, expected string) ([]int, []string) {
+	if c == nil || expected == "" {
+		return nil, nil
+	}
+	if value, exists := c.Get(jsplugin.ContextKeyPinnedEndpoint); exists {
+		pinned, ok := value.(jsplugin.PinnedEndpoint)
+		if ok && pinned.Generation != nil && len(pinned.Candidates) > 1 {
+			expectedFound := false
+			channelTypes := make([]int, 0, len(pinned.Candidates))
+			pluginKeys := make([]string, 0, len(pinned.Candidates))
+			seen := make(map[int]struct{}, len(pinned.Candidates))
+			for _, candidate := range pinned.Candidates {
+				if candidate.Plugin == nil {
+					continue
+				}
+				if candidate.Plugin.Meta.Key == expected {
+					expectedFound = true
+				}
+				pluginKeys = append(pluginKeys, candidate.Plugin.Meta.Key)
+				for _, channelType := range candidate.Plugin.Meta.ChannelTypes {
+					if channelType == 0 || channelType == constant.ChannelTypeTaskPlugin {
+						continue
+					}
+					if _, duplicate := seen[channelType]; duplicate {
+						continue
+					}
+					if plugin, indexed := pinned.Generation.GetByChannelType(channelType); indexed && plugin == candidate.Plugin {
+						seen[channelType] = struct{}{}
+						channelTypes = append(channelTypes, channelType)
+					}
+				}
+			}
+			if expectedFound {
+				return channelTypes, pluginKeys
+			}
+		}
+	}
+	value, exists := c.Get(jsplugin.ContextKeyPinnedPlugin)
+	pinned, ok := value.(jsplugin.PinnedPlugin)
+	if !exists || !ok || pinned.Generation == nil || pinned.Plugin == nil || pinned.Plugin.Meta.Key != expected {
+		return nil, nil
+	}
+	channelTypes := make([]int, 0, len(pinned.Plugin.Meta.ChannelTypes))
+	for _, channelType := range pinned.Plugin.Meta.ChannelTypes {
+		if channelType == 0 || channelType == constant.ChannelTypeTaskPlugin {
+			continue
+		}
+		channelTypes = append(channelTypes, channelType)
+	}
+	return channelTypes, []string{expected}
 }

@@ -660,31 +660,51 @@ func RelayTask(c *gin.Context) {
 		logger.LogInfo(c, retryLogStr)
 	}
 
-	// ── 成功：结算 + 日志 + 插入任务 ──
+	// ── 成功：结算 + 日志 + 插入任务（融合 rc.37 TieredSnapshot/PluginState/immediate 与 Skye 渠道账本字段）──
 	if taskErr == nil {
 		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
 			common.SysError("settle task billing error: " + settleErr.Error())
 		}
-		usageRecordedAt, channelStandardQuota := service.LogTaskConsumption(c, relayInfo)
 
 		task := model.InitTask(result.Platform, relayInfo)
-		task.PrivateData.ChannelUsageRecordedAt = usageRecordedAt.Unix()
-		task.PrivateData.ChannelStandardQuota = channelStandardQuota
+		task.PrivateData.Execution = service.TaskExecutionSnapshotFromContext(c)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
+		task.PrivateData.NodeName = common.NodeName
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
 			ModelPrice:      relayInfo.PriceData.ModelPrice,
 			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
 			ModelRatio:      relayInfo.PriceData.ModelRatio,
-			OtherRatios:     relayInfo.PriceData.OtherRatios,
+			OtherRatios:     relayInfo.PriceData.OtherRatios(),
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			TieredSnapshot:  relayInfo.TieredBillingSnapshot,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData
+		if len(result.PluginState) > 0 {
+			task.PrivateData.PluginState = result.PluginState
+		}
 		task.Action = relayInfo.Action
+		if immediate := result.Immediate; immediate != nil {
+			task.Status = model.TaskStatus(immediate.Status)
+			task.Progress = immediate.Progress
+			if immediate.Status == model.TaskStatusSuccess || immediate.Status == model.TaskStatusFailure {
+				task.FinishTime = time.Now().Unix()
+			}
+			if immediate.Status == model.TaskStatusFailure {
+				task.FailReason = immediate.Reason
+			}
+			if immediate.Url != "" {
+				task.PrivateData.ResultURL = immediate.Url
+			}
+		}
+		// Skye：渠道账本记账时间与标准口径预扣（LogTaskConsumption 返回值）
+		usageRecordedAt, channelStandardQuota := service.LogTaskConsumption(c, relayInfo, task)
+		task.PrivateData.ChannelUsageRecordedAt = usageRecordedAt.Unix()
+		task.PrivateData.ChannelStandardQuota = channelStandardQuota
 		if insertErr := task.Insert(); insertErr != nil {
 			common.SysError("insert task error: " + insertErr.Error())
 		}
