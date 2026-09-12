@@ -1,4 +1,23 @@
 /*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+/*
  * 任务用量计费的"规范表达式"逻辑库。
  *
  * 自官方 v1.0.0-rc.37 web/src/features/pricing/lib/task-expr.ts 移植并适配：
@@ -163,7 +182,28 @@ function splitTopLevel(text, separator) {
   return parts.map((part) => part.trim()).filter((part) => part.length > 0);
 }
 
-const NUMERIC_LITERAL_REGEX = /^-?\d+(\.\d+)?$/;
+function findTopLevelToken(text, token) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (depth === 0 && text.startsWith(token, index)) return index;
+  }
+  return -1;
+}
 
 function parseConditionExpression(text) {
   const conditions = [];
@@ -218,24 +258,28 @@ function parseTierCall(text, schema) {
 
 export function parseTaskTiersFromCanonicalExpr(exprStr, schema) {
   if (!exprStr || !schema || Object.keys(schema).length === 0) return [];
-  const trimmed = exprStr.trim();
+  let remaining = exprStr.trim();
   const tiers = [];
-  const chain = splitTopLevel(trimmed, ' ? ');
-  for (let index = 0; index < chain.length; index += 1) {
-    const segment = chain[index];
-    if (index < chain.length - 1) {
-      const parts = splitTopLevel(segment, ' : ');
-      if (parts.length !== 2) return [];
-      const conditions = parseConditionExpression(parts[0]);
-      if (!conditions) return [];
-      const call = parseTierCall(parts[1], schema);
-      if (!call) return [];
-      tiers.push({ ...call, conditions });
-    } else {
-      const call = parseTierCall(segment, schema);
-      if (!call) return [];
-      tiers.push({ ...call, conditions: [] });
+  while (remaining) {
+    const questionMark = findTopLevelToken(remaining, ' ? ');
+    if (questionMark === -1) {
+      const fallback = parseTierCall(remaining, schema);
+      if (!fallback) return [];
+      tiers.push({ ...fallback, conditions: [] });
+      break;
     }
+
+    const conditions = parseConditionExpression(
+      remaining.slice(0, questionMark),
+    );
+    if (!conditions) return [];
+    const trueAndFallback = remaining.slice(questionMark + 3);
+    const colon = findTopLevelToken(trueAndFallback, ' : ');
+    if (colon === -1) return [];
+    const call = parseTierCall(trueAndFallback.slice(0, colon), schema);
+    if (!call) return [];
+    tiers.push({ ...call, conditions });
+    remaining = trueAndFallback.slice(colon + 3).trim();
   }
   if (tiers.length === 0) return [];
   const fallback = tiers[tiers.length - 1];
@@ -423,7 +467,11 @@ export function evaluateTaskUsageExamples(expression, schema, examples) {
   for (const example of examples) {
     const result = evaluateTaskVisualConfig(config, example.facts, schema);
     if (!result) continue;
-    rows.push({ label: example.label, total: result.total });
+    rows.push({
+      label: example.label,
+      facts: example.facts,
+      total: result.total,
+    });
   }
   return rows;
 }

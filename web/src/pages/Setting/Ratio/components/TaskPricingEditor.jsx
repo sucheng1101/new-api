@@ -1,29 +1,41 @@
 /*
- * 任务用量定价编辑器（时长 × 分辨率等 usage facts 的后台可配置定价）。
- *
- * 自官方 v1.0.0-rc.37 task-usage-pricing-editor / task-pricing-matrix 移植，
- * 壳适配本 Fork 的 jsx + Semi UI 结构。支持 D6 双模式：
- *   - 可视化矩阵：按 schema 的枚举字段组合 × 数值字段单价生成规范表达式
- *   - 表达式：直接编辑表达式（后端保存时做 schema 引用与 smoke 校验）
- * 数据契约：billing_setting.plugin_billing_expr = {"pluginKey::model": expr}
- */
-import React, { useEffect, useMemo, useState } from 'react';
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
-  Card,
   InputNumber,
+  Modal,
   Select,
-  Spin,
   Table,
   Tabs,
   Tag,
   TextArea,
   Typography,
 } from '@douyinfe/semi-ui';
+import { IconDelete } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
-import { API, showError, showSuccess } from '../../../../helpers';
 
+import {
+  combineBillingExpr,
+  splitBillingExprAndRequestRules,
+} from './requestRuleExpr';
 import {
   createDefaultTaskMatrixConfig,
   evaluateTaskUsageExamples,
@@ -31,43 +43,11 @@ import {
   getTaskEnumFields,
   getTaskNumberFields,
   taskMatrixRowLabel,
+  taskMatrixToTiers,
+  evaluateTaskVisualConfig,
   tryParseTaskMatrixConfig,
+  tryParseTaskVisualConfig,
 } from './task-expr';
-
-const PLUGIN_EXPR_OPTION_KEY = 'billing_setting.plugin_billing_expr';
-
-function parseExprMap(raw) {
-  if (!raw) return {};
-  if (typeof raw === 'object') return raw;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function resolveSchema(plugin, model) {
-  if (!plugin) return null;
-  const profiles = plugin.usageProfiles ?? [];
-  for (const profile of profiles) {
-    if (Array.isArray(profile.models) && profile.models.includes(model)) {
-      return profile.schema ?? plugin.usageSchema ?? null;
-    }
-  }
-  return plugin.usageSchema ?? null;
-}
-
-function resolveExamples(plugin, model) {
-  if (!plugin) return null;
-  const profiles = plugin.usageProfiles ?? [];
-  for (const profile of profiles) {
-    if (Array.isArray(profile.models) && profile.models.includes(model)) {
-      return profile.examples ?? profile.usageExamples ?? plugin.usageExamples ?? null;
-    }
-  }
-  return plugin.usageExamples ?? null;
-}
 
 const UNIT_LABELS = {
   second: '秒',
@@ -76,161 +56,217 @@ const UNIT_LABELS = {
   credit: 'credit',
 };
 
-export default function TaskPricingEditor({ options, refresh }) {
+const hasSchema = (schema) => Boolean(Object.keys(schema ?? {}).length);
+
+const fieldLabel = (field, definition) => {
+  const description = definition?.description;
+  if (typeof description === 'string') return description;
+  return description?.zh ?? description?.en ?? field;
+};
+
+const toPrice = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+};
+
+const formatFacts = (facts, schema) =>
+  Object.entries(facts ?? {})
+    .filter(([field]) => schema?.[field])
+    .map(([field, value]) => `${fieldLabel(field, schema[field])}: ${value}`)
+    .join(' · ');
+
+const taskPricingSourceKey = ({
+  modelName,
+  schema,
+  billingExpr,
+  requestRuleExpr,
+}) =>
+  JSON.stringify({
+    modelName,
+    schema: schema ?? {},
+    billingExpr: billingExpr ?? '',
+    requestRuleExpr: requestRuleExpr ?? '',
+  });
+
+const createPreviewFacts = (schema, examples) => {
+  if (examples[0]?.facts) return { ...examples[0].facts };
+  const facts = {};
+  for (const [field, definition] of getTaskEnumFields(schema)) {
+    facts[field] = definition.enum?.[0] ?? '';
+  }
+  for (const [field, definition] of getTaskNumberFields(schema)) {
+    facts[field] = definition.unit === 'second' ? 5 : 0;
+  }
+  return facts;
+};
+
+export default function TaskPricingEditor({
+  modelName,
+  schema,
+  examples = [],
+  billingExpr,
+  requestRuleExpr = '',
+  onBillingExprChange,
+  onRequestRuleExprChange,
+}) {
   const { t } = useTranslation();
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [plugins, setPlugins] = useState([]);
-  const [selectedKey, setSelectedKey] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
-  const [exprMap, setExprMap] = useState({});
   const [mode, setMode] = useState('visual');
   const [matrix, setMatrix] = useState(null);
   const [rawExpr, setRawExpr] = useState('');
-
-  const currentKey = selectedKey && selectedModel ? `${selectedKey}::${selectedModel}` : '';
-  const currentExpr = exprMap[currentKey] ?? '';
-
-  const plugin = useMemo(
-    () => plugins.find((item) => item.key === selectedKey) ?? null,
-    [plugins, selectedKey],
+  const [previewFacts, setPreviewFacts] = useState(() =>
+    createPreviewFacts(schema, examples),
   );
-  const schema = useMemo(
-    () => resolveSchema(plugin, selectedModel),
-    [plugin, selectedModel],
+  const [confirmVisualSwitch, setConfirmVisualSwitch] = useState(false);
+  const combinedExpression = combineBillingExpr(billingExpr, requestRuleExpr);
+  const sourceKey = useMemo(
+    () =>
+      taskPricingSourceKey({
+        modelName,
+        schema,
+        billingExpr,
+        requestRuleExpr,
+      }),
+    [billingExpr, modelName, requestRuleExpr, schema],
   );
-  const examples = useMemo(
-    () => resolveExamples(plugin, selectedModel),
-    [plugin, selectedModel],
-  );
+  const localSourceKeyRef = useRef(null);
 
-  const loadPlugins = async () => {
-    setLoading(true);
-    try {
-      const res = await API.get('/api/task_plugin_options');
-      if (res?.data?.success) {
-        setPlugins(res.data.data ?? []);
-      } else {
-        showError(res?.data?.message ?? t('加载任务插件失败'));
-      }
-    } catch (error) {
-      showError(t('加载任务插件失败') + ': ' + String(error));
-    } finally {
-      setLoading(false);
-    }
+  const markLocalUpdate = (nextBillingExpr, nextRequestRuleExpr) => {
+    localSourceKeyRef.current = taskPricingSourceKey({
+      modelName,
+      schema,
+      billingExpr: nextBillingExpr,
+      requestRuleExpr: nextRequestRuleExpr,
+    });
   };
 
   useEffect(() => {
-    loadPlugins();
-    setExprMap(parseExprMap(options?.[PLUGIN_EXPR_OPTION_KEY]));
-  }, []);
-
-  useEffect(() => {
-    setExprMap(parseExprMap(options?.[PLUGIN_EXPR_OPTION_KEY]));
-  }, [options]);
-
-  useEffect(() => {
-    if (plugin && !selectedModel && plugin.models?.length) {
-      setSelectedModel(plugin.models[0]);
-    }
-  }, [plugin]);
-
-  useEffect(() => {
-    // 切换目标时载入既有表达式；能解析为规范形态则进入矩阵模式
-    setRawExpr(currentExpr);
-    if (schema) {
-      const parsed = tryParseTaskMatrixConfig(currentExpr, schema);
-      setMatrix(parsed ?? createDefaultTaskMatrixConfig(schema));
-      setMode(parsed ? 'visual' : 'raw');
-    } else {
-      setMatrix(null);
-      setMode('raw');
-    }
-  }, [currentKey, schema]);
-
-  const numberFields = getTaskNumberFields(schema);
-  const enumFields = getTaskEnumFields(schema);
-
-  const generateExpr = () => {
-    if (mode === 'visual' && matrix) {
-      return generateTaskExprFromConfig({ tiers: taskMatrixToTiers(matrix, schema) }, schema);
-    }
-    return rawExpr.trim();
-  };
-
-  const previews = useMemo(() => {
-    if (mode === 'visual' && matrix) {
-      const expr = generateExpr();
-      return evaluateTaskUsageExamples(expr, schema, examples);
-    }
-    return evaluateTaskUsageExamples(rawExpr.trim(), schema, examples);
-  }, [mode, matrix, rawExpr, schema, examples]);
-
-  const save = async () => {
-    const expr = generateExpr();
-    if (!expr) {
-      showError(t('表达式为空或无法生成，请检查 schema 配置'));
+    if (sourceKey === localSourceKeyRef.current) {
+      localSourceKeyRef.current = null;
       return;
     }
-    const nextMap = { ...exprMap };
-    if (expr) {
-      nextMap[currentKey] = expr;
-    } else {
-      delete nextMap[currentKey];
+    if (!hasSchema(schema)) {
+      setMatrix(null);
+      setRawExpr('');
+      setMode('raw');
+      return;
     }
-    setSaving(true);
-    try {
-      const res = await API.put('/api/option/', {
-        key: PLUGIN_EXPR_OPTION_KEY,
-        value: JSON.stringify(nextMap, null, 2),
-      });
-      if (res?.data?.success) {
-        showSuccess(t('任务计费表达式已保存（后端已做 schema 引用与 smoke 校验）'));
-        setExprMap(nextMap);
-        refresh?.();
-      } else {
-        showError(res?.data?.message ?? t('保存失败'));
-      }
-    } catch (error) {
-      showError(t('保存失败，请重试'));
-    } finally {
-      setSaving(false);
-    }
+    const expression = billingExpr ?? '';
+    const parsed = tryParseTaskMatrixConfig(expression, schema);
+    setMatrix(parsed ?? createDefaultTaskMatrixConfig(schema));
+    setRawExpr(combinedExpression);
+    setMode(parsed || !expression ? 'visual' : 'raw');
+  }, [billingExpr, combinedExpression, schema, sourceKey]);
+
+  useEffect(() => {
+    setPreviewFacts(createPreviewFacts(schema, examples));
+  }, [examples, modelName, schema]);
+
+  const numberFields = useMemo(() => getTaskNumberFields(schema), [schema]);
+  const enumFields = useMemo(() => getTaskEnumFields(schema), [schema]);
+
+  const buildMatrixExpression = (nextMatrix) =>
+    generateTaskExprFromConfig(
+      { tiers: taskMatrixToTiers(nextMatrix, schema) },
+      schema,
+    );
+
+  const publishMatrix = (nextMatrix) => {
+    const nextBillingExpr = buildMatrixExpression(nextMatrix);
+    setMatrix(nextMatrix);
+    markLocalUpdate(nextBillingExpr, requestRuleExpr);
+    onBillingExprChange(nextBillingExpr);
   };
 
-  const removeExpr = async () => {
-    const nextMap = { ...exprMap };
-    delete nextMap[currentKey];
-    setSaving(true);
-    try {
-      const res = await API.put('/api/option/', {
-        key: PLUGIN_EXPR_OPTION_KEY,
-        value: JSON.stringify(nextMap, null, 2),
-      });
-      if (res?.data?.success) {
-        showSuccess(t('已清除该模型的任务计费表达式'));
-        setExprMap(nextMap);
-        setRawExpr('');
-        refresh?.();
-      } else {
-        showError(res?.data?.message ?? t('保存失败'));
-      }
-    } catch (error) {
-      showError(t('保存失败，请重试'));
-    } finally {
-      setSaving(false);
-    }
+  const updateRow = (rowIndex, updater) => {
+    if (!matrix) return;
+    publishMatrix({
+      rows: matrix.rows.map((row, index) =>
+        index === rowIndex ? updater(row) : row,
+      ),
+    });
   };
 
-  if (loading && plugins.length === 0) {
-    return <Spin style={{ display: 'block', margin: '24px auto' }} />;
-  }
+  const handleRawChange = (value) => {
+    setRawExpr(value);
+    const split = splitBillingExprAndRequestRules(value);
+    markLocalUpdate(split.billingExpr, split.requestRuleExpr);
+    onBillingExprChange(split.billingExpr);
+    onRequestRuleExprChange(split.requestRuleExpr);
+  };
 
-  if (plugins.length === 0) {
+  const handleRequestRuleChange = (value) => {
+    markLocalUpdate(billingExpr, value);
+    onRequestRuleExprChange(value);
+  };
+
+  const handleModeChange = (nextMode) => {
+    if (nextMode === mode) return;
+    if (nextMode === 'raw') {
+      setRawExpr(combinedExpression);
+      setMode('raw');
+      return;
+    }
+    if (billingExpr && !tryParseTaskMatrixConfig(billingExpr, schema)) {
+      setConfirmVisualSwitch(true);
+      return;
+    }
+    setMode('visual');
+  };
+
+  const switchToVisual = () => {
+    const parsed = tryParseTaskMatrixConfig(billingExpr, schema);
+    const nextMatrix = parsed ?? createDefaultTaskMatrixConfig(schema);
+    setMatrix(nextMatrix);
+    if (!parsed) {
+      const nextBillingExpr = buildMatrixExpression(nextMatrix);
+      markLocalUpdate(nextBillingExpr, '');
+      onBillingExprChange(nextBillingExpr);
+      onRequestRuleExprChange('');
+    }
+    setConfirmVisualSwitch(false);
+    setMode('visual');
+  };
+
+  const handleClear = () => {
+    markLocalUpdate('', '');
+    onBillingExprChange('');
+    onRequestRuleExprChange('');
+  };
+
+  const rawSplit = splitBillingExprAndRequestRules(rawExpr);
+  const previewBillingExpr =
+    mode === 'visual' && matrix
+      ? buildMatrixExpression(matrix)
+      : rawSplit.billingExpr;
+  const previewExpression = combineBillingExpr(
+    previewBillingExpr,
+    mode === 'visual' ? requestRuleExpr : rawSplit.requestRuleExpr,
+  );
+  const previewConfig = useMemo(
+    () => tryParseTaskVisualConfig(previewBillingExpr, schema),
+    [previewBillingExpr, schema],
+  );
+  const previews = useMemo(
+    () => evaluateTaskUsageExamples(previewBillingExpr, schema, examples),
+    [examples, previewBillingExpr, schema],
+  );
+  const livePreview = useMemo(
+    () =>
+      previewConfig
+        ? evaluateTaskVisualConfig(previewConfig, previewFacts, schema)
+        : null,
+    [previewConfig, previewFacts, schema],
+  );
+  const updatePreviewFact = (field, value) => {
+    setPreviewFacts((current) => ({ ...current, [field]: value }));
+  };
+
+  if (!hasSchema(schema)) {
     return (
       <Banner
-        type='info'
-        description={t('当前没有可用的任务插件。请先在"任务插件"设置页上传或启用插件。')}
+        type='warning'
+        closeIcon={null}
+        description={t('该模型没有声明任务用量 schema，无法配置规格计费。')}
       />
     );
   }
@@ -239,224 +275,329 @@ export default function TaskPricingEditor({ options, refresh }) {
     {
       title: t('规格组合'),
       dataIndex: '__label',
-      width: 180,
-      render: (text, row) => <Tag>{taskMatrixRowLabel(row.combination)}</Tag>,
+      width: 160,
+      render: (text) => <Tag>{text}</Tag>,
     },
     ...numberFields.map(([field, definition]) => ({
-      title:
-        t('每') +
-        (UNIT_LABELS[definition.unit] ?? field) +
-        t('单价') +
-        ` (${field})`,
+      title: `${t('每')}${fieldLabel(field, definition)}${t('单价')}`,
       dataIndex: field,
-      render: (text, row) => (
+      width: 184,
+      render: (_, row, rowIndex) => (
         <InputNumber
           min={0}
-          step={definition.unit === 'token' ? 0.001 : 0.01}
-          value={row.unitPrices[field] ?? 0}
-          onChange={(value) =>
-            setMatrix((prev) => ({
-              rows: prev.rows.map((item) =>
-                taskMatrixRowLabel(item.combination) ===
-                taskMatrixRowLabel(row.combination)
-                  ? {
-                      ...item,
-                      unitPrices: { ...item.unitPrices, [field]: Number(value) || 0 },
-                    }
-                  : item,
-              ),
+          step={definition.unit === 'token' ? 0.001 : 0.000001}
+          value={row.unitPrices?.[field] ?? 0}
+          prefix='$'
+          suffix={`/${UNIT_LABELS[definition.unit] ?? field}`}
+          onChange={(nextValue) =>
+            updateRow(rowIndex, (current) => ({
+              ...current,
+              unitPrices: {
+                ...current.unitPrices,
+                [field]: toPrice(nextValue),
+              },
             }))
           }
         />
       ),
     })),
+    {
+      title: t('每次附加费用'),
+      dataIndex: 'constant',
+      width: 164,
+      render: (_, row, rowIndex) => (
+        <InputNumber
+          min={0}
+          step={0.000001}
+          value={row.constant ?? 0}
+          prefix='$'
+          suffix={`/${t('次')}`}
+          onChange={(nextValue) =>
+            updateRow(rowIndex, (current) => ({
+              ...current,
+              constant: toPrice(nextValue),
+            }))
+          }
+        />
+      ),
+    },
   ];
 
   return (
-    <Card
-      title={t('任务用量计费（时长 × 分辨率等维度）')}
-      style={{ marginTop: 12 }}
-    >
+    <div>
+      <Modal
+        title={t('切换到可视化矩阵')}
+        visible={confirmVisualSwitch}
+        okText={t('切换并重建矩阵')}
+        cancelText={t('保留表达式')}
+        onCancel={() => setConfirmVisualSwitch(false)}
+        onOk={switchToVisual}
+      >
+        <Typography.Paragraph>
+          {t(
+            '当前表达式不能完整映射到价格矩阵。确认后会用空白规格矩阵替换表达式和请求规则，变更仅在点击“应用更改”后保存。',
+          )}
+        </Typography.Paragraph>
+      </Modal>
       <Banner
         type='info'
         closeIcon={null}
-        description={t(
-          '任务表达式按提交时冻结的快照结算：修改只影响新任务，历史任务按其保存的规则版本结算。',
-        )}
         style={{ marginBottom: 12 }}
-      />
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <Select
-          placeholder={t('选择任务插件')}
-          value={selectedKey}
-          onChange={(value) => {
-            setSelectedKey(value);
-            setSelectedModel('');
-          }}
-          style={{ width: 240 }}
-          optionList={plugins.map((item) => ({
-            value: item.key,
-            label: item.name ? `${item.name} (${item.key})` : item.key,
-          }))}
-        />
-        <Select
-          placeholder={t('选择模型')}
-          value={selectedModel}
-          onChange={setSelectedModel}
-          style={{ width: 280 }}
-          optionList={(plugin?.models ?? []).map((model) => ({
-            value: model,
-            label: model,
-          }))}
-        />
-        {currentExpr ? (
-          <Tag color='green' style={{ alignSelf: 'center' }}>
-            {t('已配置')}
-          </Tag>
-        ) : (
-          <Tag color='grey' style={{ alignSelf: 'center' }}>
-            {t('未配置')}
-          </Tag>
+        description={t(
+          '规格价格会随模型配置版本保存；已提交任务使用提交时冻结的价格快照。',
         )}
-      </div>
-
-      {selectedKey && selectedModel && (
-        <>
-          {schema ? (
-            <Card title={t('用量 Schema（字段声明）')} style={{ marginBottom: 12 }}>
+      />
+      <div style={{ padding: 16, background: 'var(--semi-color-fill-0)' }}>
+        <div className='mb-3 flex items-center justify-between gap-3'>
+          <div>
+            <Typography.Text strong>{t('任务规格定价')}</Typography.Text>
+            <Typography.Text type='tertiary' className='ml-2'>
+              {modelName}
+            </Typography.Text>
+          </div>
+          {billingExpr || requestRuleExpr ? (
+            <Button
+              icon={<IconDelete />}
+              size='small'
+              type='danger'
+              theme='borderless'
+              onClick={handleClear}
+            >
+              {t('清除配置')}
+            </Button>
+          ) : null}
+        </div>
+        <div className='mb-4 flex flex-wrap gap-2'>
+          {enumFields.map(([field, definition]) => (
+            <Tag key={field} color='blue'>
+              {fieldLabel(field, definition)}:{' '}
+              {(definition.enum ?? []).join(' / ')}
+            </Tag>
+          ))}
+          {numberFields.map(([field, definition]) => (
+            <Tag key={field} color='grey'>
+              {fieldLabel(field, definition)} (
+              {UNIT_LABELS[definition.unit] ?? definition.unit})
+            </Tag>
+          ))}
+        </div>
+        <Tabs type='button' activeKey={mode} onChange={handleModeChange}>
+          <Tabs.TabPane tab={t('可视化矩阵')} itemKey='visual'>
+            {matrix?.rows?.length ? (
               <Table
-                columns={[
-                  { title: t('字段'), dataIndex: 'field' },
-                  {
-                    title: t('类型'),
-                    render: (text, record) => (
-                      <Tag>
-                        {record.def.type}
-                        {record.def.unit ? ` (${UNIT_LABELS[record.def.unit] ?? record.def.unit})` : ''}
-                      </Tag>
-                    ),
-                  },
-                  {
-                    title: t('枚举/约束'),
-                    render: (text, record) =>
-                      record.def.enum?.length ? (
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                          {record.def.enum.map((value) => (
-                            <Tag key={value}>{value}</Tag>
-                          ))}
-                        </div>
-                      ) : (
-                        <span>{record.def.enum ? '[]' : '-'}</span>
-                      ),
-                  },
-                  {
-                    title: t('说明'),
-                    render: (text, record) => {
-                      const desc = record.def.description;
-                      if (!desc) return '-';
-                      return typeof desc === 'string' ? desc : (desc.zh ?? desc.en ?? '-');
-                    },
-                  },
-                ]}
-                dataSource={Object.entries(schema).map(([field, def]) => ({
-                  key: field,
-                  field,
-                  def,
+                columns={matrixColumns}
+                dataSource={matrix.rows.map((row) => ({
+                  ...row,
+                  __label: taskMatrixRowLabel(row.combination),
                 }))}
+                rowKey='__label'
                 pagination={false}
                 size='small'
+                scroll={{ x: 760 }}
               />
-            </Card>
-          ) : (
-            <Banner
-              type='warning'
-              closeIcon={null}
-              description={t('该模型没有声明 usageSchema，无法配置任务表达式计费。')}
-              style={{ marginBottom: 12 }}
-            />
-          )}
-
-          {schema && (
-            <Tabs
-              type='button'
-              activeKey={mode}
-              onChange={(key) => setMode(key)}
-              tabBarExtraContent={
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button
-                    theme='solid'
-                    type='primary'
-                    loading={saving}
-                    onClick={save}
-                  >
-                    {t('保存表达式')}
-                  </Button>
-                  {currentExpr && (
-                    <Button type='danger' loading={saving} onClick={removeExpr}>
-                      {t('清除')}
-                    </Button>
-                  )}
-                </div>
-              }
-            >
-              <Tabs.TabPane tab={t('可视化矩阵')} itemKey='visual'>
-                {matrix && matrix.rows.length > 0 ? (
-                  <Table
-                    columns={matrixColumns}
-                    dataSource={matrix.rows.map((row) => ({
-                      ...row,
-                      __label: taskMatrixRowLabel(row.combination),
-                      __key: taskMatrixRowLabel(row.combination),
-                    }))}
-                    rowKey='__key'
-                    pagination={false}
-                    size='small'
-                  />
-                ) : (
-                  <Banner
-                    type='warning'
-                    closeIcon={null}
-                    description={t(
-                      '该 schema 缺少数值字段（如 seconds），无法生成任务表达式。',
-                    )}
-                  />
+            ) : (
+              <Banner
+                type='warning'
+                closeIcon={null}
+                description={t(
+                  '该 schema 缺少可计量字段，无法生成任务计费表达式。',
                 )}
-                <Typography.Text type='tertiary' style={{ display: 'block', marginTop: 8 }}>
-                  {t(
-                    '矩阵行 = 枚举字段组合，列 = 数量字段的单位价格；保存时按首条匹配规则生成 tier 表达式。',
-                  )}
-                </Typography.Text>
-              </Tabs.TabPane>
-              <Tabs.TabPane tab={t('表达式')} itemKey='raw'>
+              />
+            )}
+            <Typography.Text
+              type='tertiary'
+              style={{ display: 'block', marginTop: 10 }}
+            >
+              {t('每一行对应一个规格组合；保存时会生成可审计的计费表达式。')}
+            </Typography.Text>
+            {matrix?.rows?.length ? (
+              <div style={{ marginTop: 14 }}>
+                <Typography.Text strong>{t('请求规则')}</Typography.Text>
                 <TextArea
-                  value={rawExpr}
-                  onChange={(value) => setRawExpr(value)}
-                  autosize={{ minRows: 6, maxRows: 16 }}
-                  placeholder={'u("resolution") == "720p" ? tier("720p", u("seconds") * 0.03) : tier("base", u("seconds") * 0.06)'}
+                  value={requestRuleExpr}
+                  onChange={handleRequestRuleChange}
+                  autosize={{ minRows: 2, maxRows: 5 }}
+                  placeholder='when(header("x-priority") == "high") * 2'
+                  style={{ marginTop: 6 }}
                 />
-                <Typography.Text type='tertiary' style={{ display: 'block', marginTop: 8 }}>
-                  {t(
-                    '变量通过 u("字段名") 读取用量事实；tier(名称, 表达式) 记录匹配档位。可视化矩阵仅支持规范形态的表达式。',
-                  )}
+              </div>
+            ) : null}
+          </Tabs.TabPane>
+          <Tabs.TabPane tab={t('表达式')} itemKey='raw'>
+            <Banner
+              type='info'
+              closeIcon={null}
+              style={{ marginBottom: 10 }}
+              description={t('可用参数：{{fields}}', {
+                fields: Object.keys(schema)
+                  .sort((left, right) => left.localeCompare(right))
+                  .map((field) => `u(${JSON.stringify(field)})`)
+                  .join(', '),
+              })}
+            />
+            <TextArea
+              value={rawExpr}
+              onChange={handleRawChange}
+              autosize={{ minRows: 8, maxRows: 18 }}
+              placeholder={
+                'u("resolution") == "2K" ? tier("2K", u("seconds") * 0.1) : tier("768P", u("seconds") * 0.05)'
+              }
+            />
+            <Typography.Text
+              type='tertiary'
+              style={{ display: 'block', marginTop: 10 }}
+            >
+              {t(
+                '用 u("字段") 引用插件声明的用量事实；tier(名称, 价格) 记录结算档位。',
+              )}
+            </Typography.Text>
+          </Tabs.TabPane>
+        </Tabs>
+      </div>
+      {examples.length > 0 ? (
+        <div style={{ marginTop: 18 }}>
+          <Typography.Text strong>{t('任务价格预估')}</Typography.Text>
+          <Typography.Text
+            type='tertiary'
+            style={{ display: 'block', marginTop: 4 }}
+          >
+            {t(
+              '按当前规格预览基础价格；分组倍率和请求规则会在结算时额外应用。',
+            )}
+          </Typography.Text>
+          {examples.length > 0 ? (
+            <Select
+              style={{ width: '100%', marginTop: 10 }}
+              placeholder={t('选择规格示例')}
+              value={
+                examples.find((example) =>
+                  Object.entries(example.facts ?? {}).every(
+                    ([field, value]) => previewFacts[field] === value,
+                  ),
+                )?.label
+              }
+              optionList={examples.map((example) => ({
+                label: example.label,
+                value: example.label,
+              }))}
+              onChange={(label) => {
+                const example = examples.find((item) => item.label === label);
+                if (example) setPreviewFacts({ ...example.facts });
+              }}
+            />
+          ) : null}
+          <div
+            style={{
+              display: 'grid',
+              gap: 10,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              marginTop: 10,
+            }}
+          >
+            {enumFields.map(([field, definition]) => (
+              <div key={field}>
+                <Typography.Text type='tertiary'>
+                  {fieldLabel(field, definition)}
                 </Typography.Text>
-              </Tabs.TabPane>
-            </Tabs>
+                <Select
+                  style={{ marginTop: 4, width: '100%' }}
+                  value={previewFacts[field] ?? ''}
+                  optionList={(definition.enum ?? []).map((value) => ({
+                    label: value,
+                    value,
+                  }))}
+                  onChange={(value) => updatePreviewFact(field, value)}
+                />
+              </div>
+            ))}
+            {numberFields.map(([field, definition]) => (
+              <div key={field}>
+                <Typography.Text type='tertiary'>
+                  {fieldLabel(field, definition)} (
+                  {UNIT_LABELS[definition.unit] ?? definition.unit})
+                </Typography.Text>
+                <InputNumber
+                  style={{ marginTop: 4, width: '100%' }}
+                  min={0}
+                  value={previewFacts[field] ?? 0}
+                  onChange={(value) => updatePreviewFact(field, toPrice(value))}
+                />
+              </div>
+            ))}
+          </div>
+          {livePreview ? (
+            <div
+              style={{
+                marginTop: 10,
+                padding: 12,
+                background: 'var(--semi-color-primary-light-default)',
+              }}
+            >
+              <Typography.Text type='tertiary'>
+                {t('当前规格预估价格')}
+              </Typography.Text>
+              <Typography.Text
+                strong
+                style={{ display: 'block', marginTop: 4 }}
+              >
+                ${Number(livePreview.total).toFixed(6)}
+              </Typography.Text>
+            </div>
+          ) : (
+            <Typography.Text
+              type='tertiary'
+              style={{ display: 'block', marginTop: 10 }}
+            >
+              {t('自定义表达式将在保存时由服务端校验。')}
+            </Typography.Text>
           )}
-
-          {previews.length > 0 && (
-            <Card title={t('规格示例预览')} style={{ marginTop: 12 }}>
-              {previews.map((row) => (
-                <div key={row.label} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Tag>{row.label}</Tag>
-                  <Typography.Text strong>
-                    {row.total.toFixed(4)} {t('美元额度单位')}
-                  </Typography.Text>
-                </div>
-              ))}
-            </Card>
+          <Typography.Text strong style={{ display: 'block', marginTop: 18 }}>
+            {t('规格示例预览')}
+          </Typography.Text>
+          {previews.length > 0 ? (
+            <Table
+              style={{ marginTop: 8 }}
+              columns={[
+                {
+                  title: t('示例'),
+                  dataIndex: 'label',
+                  render: (label) => <Tag>{label}</Tag>,
+                },
+                {
+                  title: t('用量'),
+                  dataIndex: 'facts',
+                  render: (facts) => formatFacts(facts, schema),
+                },
+                {
+                  title: t('预估价格'),
+                  dataIndex: 'total',
+                  width: 140,
+                  render: (total) => (
+                    <Typography.Text strong>
+                      ${Number(total).toFixed(6)}
+                    </Typography.Text>
+                  ),
+                },
+              ]}
+              dataSource={previews}
+              rowKey='label'
+              pagination={false}
+              size='small'
+              scroll={{ x: 680 }}
+            />
+          ) : (
+            <Typography.Text type='tertiary'>
+              {t('自定义表达式将在保存时由服务端校验。')}
+            </Typography.Text>
           )}
-        </>
-      )}
-    </Card>
+          <Typography.Text
+            type='tertiary'
+            style={{ display: 'block', marginTop: 8, wordBreak: 'break-all' }}
+          >
+            {previewExpression}
+          </Typography.Text>
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -50,6 +50,7 @@ import {
 } from '../hooks/useModelPricingEditorState';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import TieredPricingEditor from './TieredPricingEditor';
+import TaskPricingEditor from './TaskPricingEditor';
 
 const { Text } = Typography;
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
@@ -138,14 +139,20 @@ export default function ModelPricingEditor({
     filterMode,
   });
 
-  const getExprModeLabel = useCallback((model) => {
-    if (model?.billingMode !== 'tiered_expr') {
-      return '';
-    }
-    return (model.billingExpr || '').includes('tier(')
-      ? t('阶梯计费')
-      : t('表达式计费');
-  }, [t]);
+  const getExprModeLabel = useCallback(
+    (model) => {
+      if (model?.taskPricing) {
+        return t('任务规格计费');
+      }
+      if (model?.billingMode !== 'tiered_expr') {
+        return '';
+      }
+      return (model.billingExpr || '').includes('tier(')
+        ? t('阶梯计费')
+        : t('表达式计费');
+    },
+    [t],
+  );
 
   const columns = useMemo(
     () => [
@@ -189,18 +196,22 @@ export default function ModelPricingEditor({
         render: (_, record) => (
           <Tag
             color={
-              record.billingMode === 'per-request'
-                ? 'teal'
-                : record.billingMode === 'tiered_expr'
-                  ? 'amber'
-                  : 'violet'
+              record.taskPricing
+                ? 'cyan'
+                : record.billingMode === 'per-request'
+                  ? 'teal'
+                  : record.billingMode === 'tiered_expr'
+                    ? 'amber'
+                    : 'violet'
             }
           >
-            {record.billingMode === 'per-request'
-              ? t('按次计费')
-              : record.billingMode === 'tiered_expr'
-                ? getExprModeLabel(record)
-                : t('按量计费')}
+            {record.taskPricing
+              ? t('任务规格计费')
+              : record.billingMode === 'per-request'
+                ? t('按次计费')
+                : record.billingMode === 'tiered_expr'
+                  ? getExprModeLabel(record)
+                  : t('按量计费')}
           </Tag>
         ),
       },
@@ -272,14 +283,18 @@ export default function ModelPricingEditor({
           >
             {t('应用更改')}
           </Button>
-          <Button
-            disabled={!selectedModel || selectedModelNames.length === 0}
-            onClick={() => setBatchVisible(true)}
-            style={isMobile ? { width: '100%' } : undefined}
-          >
-            {t('批量应用当前模型价格')}
-            {selectedModelNames.length > 0 ? ` (${selectedModelNames.length})` : ''}
-          </Button>
+          {!selectedModel?.taskPricing ? (
+            <Button
+              disabled={!selectedModel || selectedModelNames.length === 0}
+              onClick={() => setBatchVisible(true)}
+              style={isMobile ? { width: '100%' } : undefined}
+            >
+              {t('批量应用当前模型价格')}
+              {selectedModelNames.length > 0
+                ? ` (${selectedModelNames.length})`
+                : ''}
+            </Button>
+          ) : null}
           <Input
             prefix={<IconSearch />}
             placeholder={t('搜索模型名称')}
@@ -378,18 +393,22 @@ export default function ModelPricingEditor({
               selectedModel ? (
                 <Tag
                   color={
-                    selectedModel.billingMode === 'per-request'
-                      ? 'teal'
-                      : selectedModel.billingMode === 'tiered_expr'
-                        ? 'amber'
-                        : 'blue'
+                    selectedModel.taskPricing
+                      ? 'cyan'
+                      : selectedModel.billingMode === 'per-request'
+                        ? 'teal'
+                        : selectedModel.billingMode === 'tiered_expr'
+                          ? 'amber'
+                          : 'blue'
                   }
                 >
-                  {selectedModel.billingMode === 'per-request'
-                    ? t('按次计费')
-                    : selectedModel.billingMode === 'tiered_expr'
-                      ? getExprModeLabel(selectedModel)
-                      : t('按量计费')}
+                  {selectedModel.taskPricing
+                    ? t('任务规格计费')
+                    : selectedModel.billingMode === 'per-request'
+                      ? t('按次计费')
+                      : selectedModel.billingMode === 'tiered_expr'
+                        ? getExprModeLabel(selectedModel)
+                        : t('按量计费')}
                 </Tag>
               ) : null
             }
@@ -403,326 +422,422 @@ export default function ModelPricingEditor({
               />
             ) : (
               <div>
-                <div className='mb-4'>
-                  <div className='mb-2 font-medium text-gray-700'>
-                    {t('计费方式')}
-                  </div>
-                  <RadioGroup
-                    type='button'
-                    value={selectedModel.billingMode}
-                    onChange={(event) => handleBillingModeChange(event.target.value)}
-                  >
-                    <Radio value='per-token'>{t('按量计费')}</Radio>
-                    <Radio value='per-request'>{t('按次计费')}</Radio>
-                    <Radio value='tiered_expr'>{t('表达式/阶梯计费')}</Radio>
-                  </RadioGroup>
-                  <div className='mt-2 text-xs text-gray-500'>
-                    {t(
-                      '普通按量/按次直接填价格就行；如果价格要跟请求参数或请求头联动，请切到表达式/阶梯计费。',
-                    )}
-                  </div>
-                </div>
-
-                {selectedWarnings.length > 0 ? (
-                  <Card
-                    bodyStyle={{ padding: 12 }}
-                    style={{
-                      marginBottom: 16,
-                      background: 'var(--semi-color-warning-light-default)',
-                    }}
-                  >
-                    <div className='font-medium mb-2'>{t('当前提示')}</div>
-                    {selectedWarnings.map((warning) => (
-                      <div key={warning} className='text-sm text-gray-700 mb-1'>
-                        {warning}
-                      </div>
-                    ))}
-                  </Card>
-                ) : null}
-
-                {selectedModel.billingMode === 'per-request' ? (
-                  <PriceInput
-                    label={t('固定价格')}
-                    value={selectedModel.fixedPrice}
-                    placeholder={t('输入每次调用价格')}
-                    suffix={t('$/次')}
-                    onChange={(value) => handleNumericFieldChange('fixedPrice', value)}
-                    extraText={t('适合 MJ / 任务类等按次收费模型。')}
-                  />
-                ) : selectedModel.billingMode === 'tiered_expr' ? (
-                  <TieredPricingEditor
-                    model={selectedModel}
-                    onExprChange={handleBillingExprChange}
+                {selectedModel.taskPricing ? (
+                  <TaskPricingEditor
+                    modelName={selectedModel.name}
+                    schema={selectedModel.usageSchema}
+                    examples={selectedModel.usageExamples}
+                    billingExpr={selectedModel.billingExpr}
                     requestRuleExpr={selectedModel.requestRuleExpr}
+                    onBillingExprChange={handleBillingExprChange}
                     onRequestRuleExprChange={handleRequestRuleExprChange}
-                    t={t}
                   />
                 ) : (
                   <>
-                    <Card
-                      bodyStyle={{ padding: 16 }}
-                      style={{
-                        marginBottom: 16,
-                        background: 'var(--semi-color-fill-0)',
-                      }}
-                    >
-                      <div className='font-medium mb-3'>{t('基础价格')}</div>
-                      <PriceInput
-                        label={t('输入价格')}
-                        value={selectedModel.inputPrice}
-                        placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) => handleNumericFieldChange('inputPrice', value)}
-                      />
-                      {selectedModel.completionRatioLocked ? (
-                        <Banner
-                          type='warning'
-                          bordered
-                          fullMode={false}
-                          closeIcon={null}
-                          style={{ marginBottom: 12 }}
-                          title={t('补全价格已锁定')}
-                          description={t(
-                            '该模型补全倍率由后端固定为 {{ratio}}。补全价格不能在这里修改。',
-                            {
-                              ratio: selectedModel.lockedCompletionRatio || '-',
-                            },
-                          )}
-                        />
-                      ) : null}
-                      <PriceInput
-                        label={t('补全价格')}
-                        value={selectedModel.completionPrice}
-                        placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) =>
-                          handleNumericFieldChange('completionPrice', value)
+                    <div className='mb-4'>
+                      <div className='mb-2 font-medium text-gray-700'>
+                        {t('计费方式')}
+                      </div>
+                      <RadioGroup
+                        type='button'
+                        value={selectedModel.billingMode}
+                        onChange={(event) =>
+                          handleBillingModeChange(event.target.value)
                         }
-                        headerAction={
-                          <Switch
-                            size='small'
-                            checked={isOptionalFieldEnabled(
-                              selectedModel,
-                              'completionPrice',
-                            )}
-                            disabled={selectedModel.completionRatioLocked}
-                            onChange={(checked) =>
-                              handleOptionalFieldToggle('completionPrice', checked)
+                      >
+                        <Radio value='per-token'>{t('按量计费')}</Radio>
+                        <Radio value='per-request'>{t('按次计费')}</Radio>
+                        <Radio value='tiered_expr'>
+                          {t('表达式/阶梯计费')}
+                        </Radio>
+                      </RadioGroup>
+                      <div className='mt-2 text-xs text-gray-500'>
+                        {t(
+                          '普通按量/按次直接填价格就行；如果价格要跟请求参数或请求头联动，请切到表达式/阶梯计费。',
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedWarnings.length > 0 ? (
+                      <Card
+                        bodyStyle={{ padding: 12 }}
+                        style={{
+                          marginBottom: 16,
+                          background: 'var(--semi-color-warning-light-default)',
+                        }}
+                      >
+                        <div className='font-medium mb-2'>{t('当前提示')}</div>
+                        {selectedWarnings.map((warning) => (
+                          <div
+                            key={warning}
+                            className='text-sm text-gray-700 mb-1'
+                          >
+                            {warning}
+                          </div>
+                        ))}
+                      </Card>
+                    ) : null}
+
+                    {selectedModel.billingMode === 'per-request' ? (
+                      <PriceInput
+                        label={t('固定价格')}
+                        value={selectedModel.fixedPrice}
+                        placeholder={t('输入每次调用价格')}
+                        suffix={t('$/次')}
+                        onChange={(value) =>
+                          handleNumericFieldChange('fixedPrice', value)
+                        }
+                        extraText={t('适合 MJ / 任务类等按次收费模型。')}
+                      />
+                    ) : selectedModel.billingMode === 'tiered_expr' ? (
+                      <TieredPricingEditor
+                        model={selectedModel}
+                        onExprChange={handleBillingExprChange}
+                        requestRuleExpr={selectedModel.requestRuleExpr}
+                        onRequestRuleExprChange={handleRequestRuleExprChange}
+                        t={t}
+                      />
+                    ) : (
+                      <>
+                        <Card
+                          bodyStyle={{ padding: 16 }}
+                          style={{
+                            marginBottom: 16,
+                            background: 'var(--semi-color-fill-0)',
+                          }}
+                        >
+                          <div className='font-medium mb-3'>
+                            {t('基础价格')}
+                          </div>
+                          <PriceInput
+                            label={t('输入价格')}
+                            value={selectedModel.inputPrice}
+                            placeholder={t('输入 $/1M tokens')}
+                            onChange={(value) =>
+                              handleNumericFieldChange('inputPrice', value)
                             }
                           />
-                        }
-                        hidden={
-                          !isOptionalFieldEnabled(selectedModel, 'completionPrice')
-                        }
-                        disabled={
-                          !hasValue(selectedModel.inputPrice) ||
-                          selectedModel.completionRatioLocked
-                        }
-                        extraText={
-                          selectedModel.completionRatioLocked
-                            ? t(
-                                '后端固定倍率：{{ratio}}。该字段仅展示换算后的价格。',
+                          {selectedModel.completionRatioLocked ? (
+                            <Banner
+                              type='warning'
+                              bordered
+                              fullMode={false}
+                              closeIcon={null}
+                              style={{ marginBottom: 12 }}
+                              title={t('补全价格已锁定')}
+                              description={t(
+                                '该模型补全倍率由后端固定为 {{ratio}}。补全价格不能在这里修改。',
                                 {
-                                  ratio: selectedModel.lockedCompletionRatio || '-',
+                                  ratio:
+                                    selectedModel.lockedCompletionRatio || '-',
                                 },
-                              )
-                            : !isOptionalFieldEnabled(
+                              )}
+                            />
+                          ) : null}
+                          <PriceInput
+                            label={t('补全价格')}
+                            value={selectedModel.completionPrice}
+                            placeholder={t('输入 $/1M tokens')}
+                            onChange={(value) =>
+                              handleNumericFieldChange('completionPrice', value)
+                            }
+                            headerAction={
+                              <Switch
+                                size='small'
+                                checked={isOptionalFieldEnabled(
                                   selectedModel,
                                   'completionPrice',
-                                )
-                              ? t('当前未启用，需要时再打开即可。')
-                              : ''
-                        }
-                      />
-                      <PriceInput
-                        label={t('缓存读取价格')}
-                        value={selectedModel.cachePrice}
-                        placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) => handleNumericFieldChange('cachePrice', value)}
-                        headerAction={
-                          <Switch
-                            size='small'
-                            checked={isOptionalFieldEnabled(selectedModel, 'cachePrice')}
-                            onChange={(checked) =>
-                              handleOptionalFieldToggle('cachePrice', checked)
+                                )}
+                                disabled={selectedModel.completionRatioLocked}
+                                onChange={(checked) =>
+                                  handleOptionalFieldToggle(
+                                    'completionPrice',
+                                    checked,
+                                  )
+                                }
+                              />
+                            }
+                            hidden={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'completionPrice',
+                              )
+                            }
+                            disabled={
+                              !hasValue(selectedModel.inputPrice) ||
+                              selectedModel.completionRatioLocked
+                            }
+                            extraText={
+                              selectedModel.completionRatioLocked
+                                ? t(
+                                    '后端固定倍率：{{ratio}}。该字段仅展示换算后的价格。',
+                                    {
+                                      ratio:
+                                        selectedModel.lockedCompletionRatio ||
+                                        '-',
+                                    },
+                                  )
+                                : !isOptionalFieldEnabled(
+                                      selectedModel,
+                                      'completionPrice',
+                                    )
+                                  ? t('当前未启用，需要时再打开即可。')
+                                  : ''
                             }
                           />
-                        }
-                        hidden={!isOptionalFieldEnabled(selectedModel, 'cachePrice')}
-                        disabled={!hasValue(selectedModel.inputPrice)}
-                        extraText={
-                          !isOptionalFieldEnabled(selectedModel, 'cachePrice')
-                            ? t('当前未启用，需要时再打开即可。')
-                            : ''
-                        }
-                      />
-                      <PriceInput
-                        label={t('缓存创建价格')}
-                        value={selectedModel.createCachePrice}
-                        placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) =>
-                          handleNumericFieldChange('createCachePrice', value)
-                        }
-                        headerAction={
-                          <Switch
-                            size='small'
-                            checked={isOptionalFieldEnabled(
-                              selectedModel,
-                              'createCachePrice',
-                            )}
-                            onChange={(checked) =>
-                              handleOptionalFieldToggle('createCachePrice', checked)
+                          <PriceInput
+                            label={t('缓存读取价格')}
+                            value={selectedModel.cachePrice}
+                            placeholder={t('输入 $/1M tokens')}
+                            onChange={(value) =>
+                              handleNumericFieldChange('cachePrice', value)
+                            }
+                            headerAction={
+                              <Switch
+                                size='small'
+                                checked={isOptionalFieldEnabled(
+                                  selectedModel,
+                                  'cachePrice',
+                                )}
+                                onChange={(checked) =>
+                                  handleOptionalFieldToggle(
+                                    'cachePrice',
+                                    checked,
+                                  )
+                                }
+                              />
+                            }
+                            hidden={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'cachePrice',
+                              )
+                            }
+                            disabled={!hasValue(selectedModel.inputPrice)}
+                            extraText={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'cachePrice',
+                              )
+                                ? t('当前未启用，需要时再打开即可。')
+                                : ''
                             }
                           />
-                        }
-                        hidden={
-                          !isOptionalFieldEnabled(selectedModel, 'createCachePrice')
-                        }
-                        disabled={!hasValue(selectedModel.inputPrice)}
-                        extraText={
-                          !isOptionalFieldEnabled(
-                            selectedModel,
-                            'createCachePrice',
-                          )
-                            ? t('当前未启用，需要时再打开即可。')
-                            : ''
-                        }
-                      />
-                    </Card>
+                          <PriceInput
+                            label={t('缓存创建价格')}
+                            value={selectedModel.createCachePrice}
+                            placeholder={t('输入 $/1M tokens')}
+                            onChange={(value) =>
+                              handleNumericFieldChange(
+                                'createCachePrice',
+                                value,
+                              )
+                            }
+                            headerAction={
+                              <Switch
+                                size='small'
+                                checked={isOptionalFieldEnabled(
+                                  selectedModel,
+                                  'createCachePrice',
+                                )}
+                                onChange={(checked) =>
+                                  handleOptionalFieldToggle(
+                                    'createCachePrice',
+                                    checked,
+                                  )
+                                }
+                              />
+                            }
+                            hidden={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'createCachePrice',
+                              )
+                            }
+                            disabled={!hasValue(selectedModel.inputPrice)}
+                            extraText={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'createCachePrice',
+                              )
+                                ? t('当前未启用，需要时再打开即可。')
+                                : ''
+                            }
+                          />
+                        </Card>
+
+                        <Card
+                          bodyStyle={{ padding: 16 }}
+                          style={{
+                            marginBottom: 16,
+                            background: 'var(--semi-color-fill-0)',
+                          }}
+                        >
+                          <div className='mb-3'>
+                            <div className='font-medium'>{t('扩展价格')}</div>
+                            <div className='text-xs text-gray-500 mt-1'>
+                              {t('这些价格都是可选项，不填也可以。')}
+                            </div>
+                          </div>
+                          <PriceInput
+                            label={t('图片输入价格')}
+                            value={selectedModel.imagePrice}
+                            placeholder={t('输入 $/1M tokens')}
+                            onChange={(value) =>
+                              handleNumericFieldChange('imagePrice', value)
+                            }
+                            headerAction={
+                              <Switch
+                                size='small'
+                                checked={isOptionalFieldEnabled(
+                                  selectedModel,
+                                  'imagePrice',
+                                )}
+                                onChange={(checked) =>
+                                  handleOptionalFieldToggle(
+                                    'imagePrice',
+                                    checked,
+                                  )
+                                }
+                              />
+                            }
+                            hidden={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'imagePrice',
+                              )
+                            }
+                            disabled={!hasValue(selectedModel.inputPrice)}
+                            extraText={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'imagePrice',
+                              )
+                                ? t('当前未启用，需要时再打开即可。')
+                                : ''
+                            }
+                          />
+                          <PriceInput
+                            label={t('音频输入价格')}
+                            value={selectedModel.audioInputPrice}
+                            placeholder={t('输入 $/1M tokens')}
+                            onChange={(value) =>
+                              handleNumericFieldChange('audioInputPrice', value)
+                            }
+                            headerAction={
+                              <Switch
+                                size='small'
+                                checked={isOptionalFieldEnabled(
+                                  selectedModel,
+                                  'audioInputPrice',
+                                )}
+                                onChange={(checked) =>
+                                  handleOptionalFieldToggle(
+                                    'audioInputPrice',
+                                    checked,
+                                  )
+                                }
+                              />
+                            }
+                            hidden={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'audioInputPrice',
+                              )
+                            }
+                            disabled={!hasValue(selectedModel.inputPrice)}
+                            extraText={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'audioInputPrice',
+                              )
+                                ? t('当前未启用，需要时再打开即可。')
+                                : ''
+                            }
+                          />
+                          <PriceInput
+                            label={t('音频补全价格')}
+                            value={selectedModel.audioOutputPrice}
+                            placeholder={t('输入 $/1M tokens')}
+                            onChange={(value) =>
+                              handleNumericFieldChange(
+                                'audioOutputPrice',
+                                value,
+                              )
+                            }
+                            headerAction={
+                              <Switch
+                                size='small'
+                                checked={isOptionalFieldEnabled(
+                                  selectedModel,
+                                  'audioOutputPrice',
+                                )}
+                                disabled={
+                                  !isOptionalFieldEnabled(
+                                    selectedModel,
+                                    'audioInputPrice',
+                                  )
+                                }
+                                onChange={(checked) =>
+                                  handleOptionalFieldToggle(
+                                    'audioOutputPrice',
+                                    checked,
+                                  )
+                                }
+                              />
+                            }
+                            hidden={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'audioOutputPrice',
+                              )
+                            }
+                            disabled={!hasValue(selectedModel.audioInputPrice)}
+                            extraText={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'audioInputPrice',
+                              )
+                                ? t('请先开启并填写音频输入价格。')
+                                : !isOptionalFieldEnabled(
+                                      selectedModel,
+                                      'audioOutputPrice',
+                                    )
+                                  ? t('当前未启用，需要时再打开即可。')
+                                  : ''
+                            }
+                          />
+                        </Card>
+                      </>
+                    )}
 
                     <Card
                       bodyStyle={{ padding: 16 }}
-                      style={{
-                        marginBottom: 16,
-                        background: 'var(--semi-color-fill-0)',
-                      }}
+                      style={{ background: 'var(--semi-color-fill-0)' }}
                     >
-                      <div className='mb-3'>
-                        <div className='font-medium'>{t('扩展价格')}</div>
-                        <div className='text-xs text-gray-500 mt-1'>
-                          {t('这些价格都是可选项，不填也可以。')}
-                        </div>
+                      <div className='font-medium mb-3'>{t('保存预览')}</div>
+                      <div className='text-xs text-gray-500 mb-3'>
+                        {t(
+                          '下面展示这个模型保存后会写入哪些后端字段，便于和原始 JSON 编辑框保持一致。',
+                        )}
                       </div>
-                      <PriceInput
-                        label={t('图片输入价格')}
-                        value={selectedModel.imagePrice}
-                        placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) => handleNumericFieldChange('imagePrice', value)}
-                        headerAction={
-                          <Switch
-                            size='small'
-                            checked={isOptionalFieldEnabled(selectedModel, 'imagePrice')}
-                            onChange={(checked) =>
-                              handleOptionalFieldToggle('imagePrice', checked)
-                            }
-                          />
-                        }
-                        hidden={!isOptionalFieldEnabled(selectedModel, 'imagePrice')}
-                        disabled={!hasValue(selectedModel.inputPrice)}
-                        extraText={
-                          !isOptionalFieldEnabled(selectedModel, 'imagePrice')
-                            ? t('当前未启用，需要时再打开即可。')
-                            : ''
-                        }
-                      />
-                      <PriceInput
-                        label={t('音频输入价格')}
-                        value={selectedModel.audioInputPrice}
-                        placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) =>
-                          handleNumericFieldChange('audioInputPrice', value)
-                        }
-                        headerAction={
-                          <Switch
-                            size='small'
-                            checked={isOptionalFieldEnabled(
-                              selectedModel,
-                              'audioInputPrice',
-                            )}
-                            onChange={(checked) =>
-                              handleOptionalFieldToggle('audioInputPrice', checked)
-                            }
-                          />
-                        }
-                        hidden={!isOptionalFieldEnabled(selectedModel, 'audioInputPrice')}
-                        disabled={!hasValue(selectedModel.inputPrice)}
-                        extraText={
-                          !isOptionalFieldEnabled(
-                            selectedModel,
-                            'audioInputPrice',
-                          )
-                            ? t('当前未启用，需要时再打开即可。')
-                            : ''
-                        }
-                      />
-                      <PriceInput
-                        label={t('音频补全价格')}
-                        value={selectedModel.audioOutputPrice}
-                        placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) =>
-                          handleNumericFieldChange('audioOutputPrice', value)
-                        }
-                        headerAction={
-                          <Switch
-                            size='small'
-                            checked={isOptionalFieldEnabled(
-                              selectedModel,
-                              'audioOutputPrice',
-                            )}
-                            disabled={!isOptionalFieldEnabled(
-                              selectedModel,
-                              'audioInputPrice',
-                            )}
-                            onChange={(checked) =>
-                              handleOptionalFieldToggle('audioOutputPrice', checked)
-                            }
-                          />
-                        }
-                        hidden={
-                          !isOptionalFieldEnabled(selectedModel, 'audioOutputPrice')
-                        }
-                        disabled={!hasValue(selectedModel.audioInputPrice)}
-                        extraText={
-                          !isOptionalFieldEnabled(
-                            selectedModel,
-                            'audioInputPrice',
-                          )
-                            ? t('请先开启并填写音频输入价格。')
-                            : !isOptionalFieldEnabled(
-                                  selectedModel,
-                                  'audioOutputPrice',
-                                )
-                              ? t('当前未启用，需要时再打开即可。')
-                              : ''
-                        }
-                      />
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(140px, 180px) 1fr',
+                          gap: 8,
+                        }}
+                      >
+                        {previewRows.map((row) => (
+                          <React.Fragment key={row.key}>
+                            <Text strong>{row.label}</Text>
+                            <Text>{row.value}</Text>
+                          </React.Fragment>
+                        ))}
+                      </div>
                     </Card>
                   </>
                 )}
-
-                <Card
-                  bodyStyle={{ padding: 16 }}
-                  style={{ background: 'var(--semi-color-fill-0)' }}
-                >
-                  <div className='font-medium mb-3'>{t('保存预览')}</div>
-                  <div className='text-xs text-gray-500 mb-3'>
-                    {t(
-                      '下面展示这个模型保存后会写入哪些后端字段，便于和原始 JSON 编辑框保持一致。',
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'minmax(140px, 180px) 1fr',
-                      gap: 8,
-                    }}
-                  >
-                    {previewRows.map((row) => (
-                      <React.Fragment key={row.key}>
-                        <Text strong>{row.label}</Text>
-                        <Text>{row.value}</Text>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </Card>
               </div>
             )}
           </Card>
