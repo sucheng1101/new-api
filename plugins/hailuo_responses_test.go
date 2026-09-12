@@ -411,6 +411,25 @@ func TestHailuoExtractUsageFacts(t *testing.T) {
 	}
 }
 
+func TestHailuoH3UsageProfile(t *testing.T) {
+	plugin := loadHailuoPlugin(t)
+
+	schema, examples := plugin.Meta.UsageForModel("MiniMax-H3")
+	resolution, exists := schema["resolution"]
+	require.True(t, exists)
+	assert.Equal(t, []string{"768P", "2K"}, resolution.Enum)
+	for _, name := range []string{"seconds", "input_images", "input_video_seconds"} {
+		assert.Contains(t, schema, name)
+	}
+	require.Len(t, examples, 3)
+	assert.Equal(t, "768P", examples[0].Facts["resolution"])
+	assert.Equal(t, "2K", examples[1].Facts["resolution"])
+	assert.Equal(t, "2K", examples[2].Facts["resolution"])
+
+	legacySchema, _ := plugin.Meta.UsageForModel("MiniMax-Hailuo-02")
+	assert.Contains(t, legacySchema["resolution"].Enum, "512P")
+}
+
 func TestHailuoH3CompletionUsageFacts(t *testing.T) {
 	plugin := loadHailuoPlugin(t)
 	testCases := []struct {

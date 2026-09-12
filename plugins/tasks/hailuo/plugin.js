@@ -66,6 +66,41 @@ export const meta = {
     { label: "H3 2K 5s · 9 images", facts: { seconds: 5, resolution: "2K", input_images: 9, input_video_seconds: 0 } },
     { label: "H3 2K 5s · input video", facts: { seconds: 5, resolution: "2K", input_images: 0, input_video_seconds: 15 } },
   ],
+  usageProfiles: [
+    {
+      models: ["MiniMax-H3"],
+      schema: {
+        seconds: {
+          type: "number",
+          unit: "second",
+          description: { en: "Video generation unit price", zh: "视频生成单价" },
+        },
+        resolution: {
+          enum: ["768P", "2K"],
+          enumLabels: {
+            "768P": { en: "768P", zh: "768P" },
+            "2K": { en: "2K", zh: "2K" },
+          },
+          description: { en: "H3 output video resolution", zh: "H3 输出视频分辨率" },
+        },
+        input_images: {
+          type: "number",
+          unit: "count",
+          description: { en: "Input image unit price", zh: "输入图片单价" },
+        },
+        input_video_seconds: {
+          type: "number",
+          unit: "second",
+          description: { en: "Input video unit price", zh: "输入视频单价" },
+        },
+      },
+      examples: [
+        { label: "H3 768P 5s", facts: { seconds: 5, resolution: "768P", input_images: 0, input_video_seconds: 0 } },
+        { label: "H3 2K 5s · 9 images", facts: { seconds: 5, resolution: "2K", input_images: 9, input_video_seconds: 0 } },
+        { label: "H3 2K 5s · input video", facts: { seconds: 5, resolution: "2K", input_images: 0, input_video_seconds: 15 } },
+      ],
+    },
+  ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
 };
 
