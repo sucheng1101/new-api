@@ -262,6 +262,9 @@ func UpdateOption(key string, value string) error {
 	if err != nil {
 		return err
 	}
+	if IsModelPricingOption(key) {
+		return UpdateModelPricingOptions(map[string]string{key: validatedValue})
+	}
 
 	// Save to database first
 	option := Option{
