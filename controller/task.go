@@ -186,10 +186,7 @@ func initTaskArtifactAdaptor(task *model.Task) (relaychannel.TaskAdaptor, error)
 	if adaptor == nil {
 		return nil, errTaskArtifactPluginUnavailable
 	}
-	pluginKey := task.PrivateData.Key
-	if pluginKey == "" {
-		pluginKey = channelModel.Key
-	}
+	pluginKey := taskArtifactAPIKey(task, channelModel)
 	baseURL := channelModel.GetBaseURL()
 	if baseURL == "" {
 		baseURL = constant.GetChannelBaseURL(channelModel.Type)
@@ -203,6 +200,23 @@ func initTaskArtifactAdaptor(task *model.Task) (relaychannel.TaskAdaptor, error)
 		},
 	})
 	return adaptor, nil
+}
+
+// Task-plugin artifact reads use the current channel credential. Unlike legacy
+// task channels, their plugins expose a stable content endpoint after a task
+// has completed, so retaining a historical task key prevents key rotation from
+// repairing or serving existing artifacts.
+func taskArtifactAPIKey(task *model.Task, channelModel *model.Channel) string {
+	if channelModel == nil {
+		return ""
+	}
+	if channelModel.Type == constant.ChannelTypeTaskPlugin {
+		return channelModel.Key
+	}
+	if task != nil && task.PrivateData.Key != "" {
+		return task.PrivateData.Key
+	}
+	return channelModel.Key
 }
 
 func taskHasPluginExecution(task *model.Task) bool {
@@ -417,6 +431,12 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 		}
 		item := relay.TaskModel2Dto(task)
 		item.LegacyVideoAvailable = legacyVideoAvailable(task)
+		// Successful task-plugin results are intentionally served through the
+		// artifact capability endpoint rather than exposing their upstream URL in
+		// task-list JSON. Publish only this availability bit so the UI can offer a
+		// stable artifact entry without leaking a signed provider URL.
+		item.ArtifactAvailable = task.Status == model.TaskStatusSuccess &&
+			taskHasPluginExecution(task)
 		if task.Status == model.TaskStatusSuccess {
 			item.ResultURL = ""
 			if taskFailReasonIsLegacyResultURL(task.FailReason) {
@@ -424,7 +444,13 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 			}
 		}
 		if viewerRole >= common.RoleAdminUser {
-			adminInfo := &dto.TaskAdminInfo{}
+			adminInfo := &dto.TaskAdminInfo{
+				UserID:    item.UserId,
+				Username:  item.Username,
+				Group:     item.Group,
+				ChannelID: item.ChannelId,
+				Quota:     item.Quota,
+			}
 			if execution := task.PrivateData.Execution; execution != nil {
 				adminInfo.RequestID = execution.RequestID
 				adminInfo.RequestPath = execution.RequestPath
@@ -442,9 +468,16 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 					}
 				}
 			}
-			if adminInfo.RequestID != "" || adminInfo.RequestPath != "" || adminInfo.TaskPlugin != nil {
-				item.AdminInfo = adminInfo
-			}
+			item.AdminInfo = adminInfo
+		} else {
+			// The self-service task endpoint may contain these fields in its
+			// storage model, but they are administrator diagnostics. Keep the
+			// browser contract role-projected rather than relying on UI hiding.
+			item.UserId = 0
+			item.Username = ""
+			item.Group = ""
+			item.ChannelId = 0
+			item.Quota = 0
 		}
 		if viewerRole >= common.RoleRootUser {
 			rootInfo := &dto.TaskRootInfo{

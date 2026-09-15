@@ -206,6 +206,15 @@ func proxyTaskMedia(c *gin.Context, task *model.Task, descriptor *relaychannel.T
 			message: "Credentialless artifact request was rejected", err: errTaskMediaRequestRejected,
 		}
 	}
+	if descriptor.DropCredentialsOnRedirect &&
+		(descriptor.Credentialless ||
+			(method != http.MethodGet && method != http.MethodHead) ||
+			descriptor.Body != nil) {
+		return &taskMediaProxyError{
+			status: http.StatusBadGateway, code: "artifact_request_rejected",
+			message: "Credential-dropping artifact request was rejected", err: errTaskMediaRequestRejected,
+		}
+	}
 
 	channel, err := model.CacheGetChannel(task.ChannelId)
 	if err != nil {
@@ -254,7 +263,7 @@ func proxyTaskMedia(c *gin.Context, task *model.Task, descriptor *relaychannel.T
 		req.Header.Set(name, value)
 	}
 
-	client = taskMediaRedirectClient(client, proxy, c, clientHeaders, descriptor.Credentialless)
+	client = taskMediaRedirectClient(client, proxy, c, clientHeaders, descriptor.Credentialless, descriptor.DropCredentialsOnRedirect)
 	clientWithoutBodyTimeout := *client
 	clientWithoutBodyTimeout.Timeout = 0
 	resp, err := doTaskMediaRequest(&clientWithoutBodyTimeout, req, taskMediaResponseHeaderTimeout)
@@ -406,7 +415,7 @@ func applyTaskMediaRequestHeaders(destination http.Header, headers map[string]st
 	return nil
 }
 
-func taskMediaRedirectClient(base *http.Client, proxy string, c *gin.Context, clientHeaders map[string]string, credentialless bool) *http.Client {
+func taskMediaRedirectClient(base *http.Client, proxy string, c *gin.Context, clientHeaders map[string]string, credentialless bool, dropCredentialsOnRedirect bool) *http.Client {
 	cloned := *base
 	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
@@ -423,9 +432,12 @@ func taskMediaRedirectClient(base *http.Client, proxy string, c *gin.Context, cl
 			return fmt.Errorf("%w: proxy loop", errTaskMediaRequestRejected)
 		}
 		if len(via) > 0 && !sameTaskMediaOrigin(via[len(via)-1].URL, req.URL) {
-			if !credentialless {
+			if !credentialless && !dropCredentialsOnRedirect {
 				return fmt.Errorf("%w: credentialed cross-origin redirect", errTaskMediaRequestRejected)
 			}
+			// A plugin may explicitly authorize only this downgrade path: retain
+			// authentication for its trusted gateway request, then remove all
+			// plugin-supplied credentials before following a public CDN redirect.
 			for name := range req.Header {
 				req.Header.Del(name)
 			}

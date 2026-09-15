@@ -114,7 +114,6 @@ func GetStatus(c *gin.Context) {
 		"passkey_user_verification":   passkeySetting.UserVerification,
 		"passkey_attachment":          passkeySetting.AttachmentPreference,
 		"setup":                       constant.Setup,
-		"task_plugin_page_enabled":    constant.TaskPluginPageEnabled,
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,

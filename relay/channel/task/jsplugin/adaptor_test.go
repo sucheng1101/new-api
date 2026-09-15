@@ -16,6 +16,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
@@ -23,7 +24,6 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -445,6 +445,69 @@ export function buildContentRequest(ctx) { return {url:"https://cdn.example/vide
 	require.NotNil(t, descriptor)
 	assert.True(t, descriptor.Credentialless)
 	assert.Equal(t, "https://cdn.example/video.mp4", descriptor.URL)
+}
+
+func TestTaskAdaptorAllowsCredentialedContentRedirectWithCredentialDrop(t *testing.T) {
+	source := strings.Replace(mockPlugin, `export function listArtifacts() { return []; }
+export function buildContentRequest() { throw new Error("artifact_not_found"); }`, `export function listArtifacts() { return [{key:"video",type:"video"}]; }
+export function buildContentRequest(ctx) { return {url:ctx.baseUrl+"/content",method:"GET",headers:{Authorization:"Bearer provider-key"},dropCredentialsOnRedirect:true}; }
+`, 1)
+	plugin, err := pluginruntime.NewRegistry().Register(source, pluginruntime.Options{})
+	require.NoError(t, err)
+	adaptor := New(plugin)
+	adaptor.Init(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://provider.example"}})
+
+	descriptor, err := adaptor.BuildContentRequest(
+		&model.Task{TaskID: "task", Data: []byte(`{}`)},
+		"video",
+		channel.TaskArtifactClientRequest{Method: http.MethodGet},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, descriptor)
+	assert.True(t, descriptor.DropCredentialsOnRedirect)
+}
+
+func TestTaskAdaptorRejectsUnsafeCredentialDroppingContentRequests(t *testing.T) {
+	testCases := []struct {
+		name       string
+		descriptor string
+		want       string
+	}{
+		{
+			name:       "POST is rejected",
+			descriptor: `{url:ctx.baseUrl+"/content",method:"POST",dropCredentialsOnRedirect:true}`,
+			want:       "must use GET or HEAD",
+		},
+		{
+			name:       "body is rejected",
+			descriptor: `{url:ctx.baseUrl+"/content",method:"GET",body:"payload",dropCredentialsOnRedirect:true}`,
+			want:       "cannot contain a body",
+		},
+		{
+			name:       "credentialless combination is rejected",
+			descriptor: `{url:"https://cdn.example/content",method:"GET",credentialless:true,dropCredentialsOnRedirect:true}`,
+			want:       "cannot be credentialless",
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			source := strings.Replace(mockPlugin, `export function listArtifacts() { return []; }
+export function buildContentRequest() { throw new Error("artifact_not_found"); }`, `export function listArtifacts() { return [{key:"video",type:"video"}]; }
+export function buildContentRequest(ctx) { return `+testCase.descriptor+`; }
+`, 1)
+			plugin, err := pluginruntime.NewRegistry().Register(source, pluginruntime.Options{})
+			require.NoError(t, err)
+			adaptor := New(plugin)
+			adaptor.Init(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://provider.example"}})
+
+			_, err = adaptor.BuildContentRequest(
+				&model.Task{TaskID: "task", Data: []byte(`{}`)},
+				"video",
+				channel.TaskArtifactClientRequest{Method: http.MethodGet},
+			)
+			require.ErrorContains(t, err, testCase.want)
+		})
+	}
 }
 
 func TestTaskAdaptorMapsJSContract(t *testing.T) {
@@ -1591,6 +1654,86 @@ export function extractUsageOnComplete(ctx,result,body){return body.usage;}
 		assert.Equal(t, map[string]any{"units": 500000.0, "mode": "video"}, results["video-task"].TaskInfo.UsageFacts)
 		assert.Equal(t, map[string]any{"units": 2.0, "mode": "image"}, results["image-task"].TaskInfo.UsageFacts)
 		assert.Nil(t, results["invalid-image"].TaskInfo.UsageFacts)
+	})
+}
+
+func TestTaskAdaptorMappedExecutionUsesOriginUsageProfileForBilling(t *testing.T) {
+	const source = `
+export const meta = {
+  apiVersion:1, key:"mapped-h3-profile", name:"Mapped H3 Profile", version:"1.0.0", author:{name:"Test"},
+  models:["MiniMax-H3"], fetchMode:"per_task",
+  usageSchema:{seconds:{type:"number",unit:"second"},resolution:{enum:["legacy"]}},
+  usageProfiles:[{models:["MiniMax-H3"],schema:{
+    seconds:{type:"number",unit:"second"},resolution:{enum:["768P","2K"]}
+  },examples:[{label:"H3 768P",facts:{seconds:5,resolution:"768P"}}]}]
+};
+export function buildSubmitRequest(ctx){return {url:ctx.baseUrl+"/submit"};}
+export function parseSubmitResponse(){return {taskId:"task"};}
+export function buildQueryRequest(ctx){return {url:ctx.baseUrl+"/query"};}
+export function parseTaskResult(){return {status:"SUCCESS"};}
+export function extractUsage(ctx){return {seconds:ctx.requestBody.duration,resolution:ctx.requestBody.resolution};}
+export function extractUsageOnSubmit(ctx,body){return body.usage;}
+export function extractUsageOnComplete(ctx,result,body){return body.usage;}
+`
+	plugin, err := pluginruntime.NewRegistry().Register(source, pluginruntime.Options{})
+	require.NoError(t, err)
+
+	newRequest := func(t *testing.T, resolution string) (*TaskAdaptor, *gin.Context, *relaycommon.RelayInfo) {
+		t.Helper()
+		info := &relaycommon.RelayInfo{
+			OriginModelName: "MiniMax-H3",
+			ChannelMeta: &relaycommon.ChannelMeta{
+				UpstreamModelName: "minimax_h3", ChannelBaseUrl: "https://provider.example",
+			},
+			TaskRelayInfo: &relaycommon.TaskRelayInfo{},
+		}
+		adaptor := New(plugin)
+		adaptor.Init(info)
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+		c.Set("task_request", map[string]any{"duration": 5, "resolution": resolution})
+		return adaptor, c, info
+	}
+
+	expression := `u("resolution") == "2K" ? tier("2K", u("seconds") * 30) : tier("768P", u("seconds") * 10)`
+	for _, testCase := range []struct {
+		name       string
+		resolution string
+		wantCost   float64
+	}{
+		{"H3 768P matrix", "768P", 50},
+		{"H3 2K matrix", "2K", 150},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			adaptor, c, info := newRequest(t, testCase.resolution)
+			require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+
+			facts, err := adaptor.ExtractUsageFactsValidated(c, info)
+			require.NoError(t, err)
+			assert.Equal(t, map[string]any{"seconds": float64(5), "resolution": testCase.resolution}, facts)
+			cost, _, err := billingexpr.RunExprWithRequest(expression, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: facts})
+			require.NoError(t, err)
+			assert.Equal(t, testCase.wantCost, cost)
+
+			ratio, err := adaptor.EstimateBillingValidated(c, info)
+			require.NoError(t, err)
+			assert.Equal(t, map[string]float64{"seconds": 5}, ratio)
+
+			submitRatios := adaptor.AdjustBillingOnSubmit(info, []byte(`{"usage":{"seconds":5,"resolution":"`+testCase.resolution+`"}}`))
+			assert.Equal(t, map[string]float64{"seconds": 5}, submitRatios)
+
+			task := &model.Task{Properties: model.Properties{OriginModelName: "MiniMax-H3", UpstreamModelName: "minimax_h3"}}
+			result, err := adaptor.ParseTaskResult(task, &http.Response{StatusCode: http.StatusOK}, []byte(`{"usage":{"seconds":5,"resolution":"`+testCase.resolution+`"}}`))
+			require.NoError(t, err)
+			assert.Equal(t, map[string]any{"seconds": float64(5), "resolution": testCase.resolution}, result.UsageFacts)
+		})
+	}
+
+	t.Run("invalid H3 resolution is rejected before submission", func(t *testing.T) {
+		adaptor, c, info := newRequest(t, "512P")
+		taskErr := adaptor.ValidateRequestAndSetAction(c, info)
+		require.NotNil(t, taskErr)
+		assert.Equal(t, "plugin_usage_invalid", taskErr.Code)
 	})
 }
 

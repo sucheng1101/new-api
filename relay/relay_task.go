@@ -268,7 +268,8 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		}
 		sharedModel := pinnedPlugin.Generation.SharedModel(modelName) || pinnedPlugin.Generation.SharedModel(info.UpstreamModelName)
 		if sharedModel && pinnedPlugin.Plugin != nil {
-			schema, _ := pinnedPlugin.Plugin.Meta.UsageForModel(info.UpstreamModelName)
+			usageModel := pinnedPlugin.Plugin.Meta.UsageModelFor(info.UpstreamModelName, modelName)
+			schema, _ := pinnedPlugin.Plugin.Meta.UsageForModel(usageModel)
 			if !billing_setting.TaskExprCompatible(exprStr, schema) {
 				return nil, service.TaskErrorWrapper(fmt.Errorf("task model %s pricing is not configured for plugin %s", modelName, pluginKey), "model_price_error", http.StatusBadRequest)
 			}

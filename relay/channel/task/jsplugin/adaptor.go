@@ -2,7 +2,6 @@ package jsplugin
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -34,17 +33,18 @@ import (
 )
 
 type requestDescriptor struct {
-	ResponseType   string            `json:"responseType"`
-	URL            string            `json:"url"`
-	Method         string            `json:"method"`
-	Headers        map[string]string `json:"headers"`
-	Body           any               `json:"body"`
-	Credentialless bool              `json:"credentialless"`
-	Action         string            `json:"action"`
-	Model          string            `json:"model"`
-	RewriteModel   string            `json:"rewriteModel"`
-	BodyType       string            `json:"bodyType"`
-	Parts          []requestPart     `json:"parts"`
+	ResponseType              string            `json:"responseType"`
+	URL                       string            `json:"url"`
+	Method                    string            `json:"method"`
+	Headers                   map[string]string `json:"headers"`
+	Body                      any               `json:"body"`
+	Credentialless            bool              `json:"credentialless"`
+	DropCredentialsOnRedirect bool              `json:"dropCredentialsOnRedirect"`
+	Action                    string            `json:"action"`
+	Model                     string            `json:"model"`
+	RewriteModel              string            `json:"rewriteModel"`
+	BodyType                  string            `json:"bodyType"`
+	Parts                     []requestPart     `json:"parts"`
 }
 
 type requestPart struct {
@@ -135,7 +135,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	// The descriptor may rewrite the model. Validate profiled requests against
 	// that final model before any quota calculation or upstream submission.
 	if hasRequest && hasUsageProfiles {
-		usageModel := cmp.Or(info.UpstreamModelName, info.OriginModelName)
+		usageModel := a.usageModel(info.UpstreamModelName, info.OriginModelName)
 		if err := a.validateResolvedUsageRequest(request, usageModel); err != nil {
 			return service.TaskErrorWrapperLocal(err, "plugin_usage_invalid", http.StatusBadRequest)
 		}
@@ -155,7 +155,7 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 func (a *TaskAdaptor) EstimateBillingValidated(c *gin.Context, info *relaycommon.RelayInfo) (map[string]float64, error) {
 	usageContext := a.submitContext(c, info)
 	usageContext["usagePurpose"] = "billing_ratios"
-	return a.usageRatios(c.Request.Context(), cmp.Or(info.UpstreamModelName, info.OriginModelName), "extractUsage", usageContext)
+	return a.usageRatios(c.Request.Context(), a.usageModel(info.UpstreamModelName, info.OriginModelName), "extractUsage", usageContext)
 }
 
 func (a *TaskAdaptor) ExtractUsageFacts(c *gin.Context, info *relaycommon.RelayInfo) map[string]any {
@@ -184,7 +184,7 @@ func (a *TaskAdaptor) ExtractUsageFactsValidated(c *gin.Context, info *relaycomm
 	if !ok {
 		return nil, fmt.Errorf("plugin usage hook must return an object")
 	}
-	if _, err = a.validatedUsageRatios(facts, cmp.Or(info.UpstreamModelName, info.OriginModelName)); err != nil {
+	if _, err = a.validatedUsageRatios(facts, a.usageModel(info.UpstreamModelName, info.OriginModelName)); err != nil {
 		return nil, err
 	}
 	return facts, nil
@@ -195,7 +195,7 @@ func (a *TaskAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskDat
 	if err := common.Unmarshal(taskData, &data); err != nil {
 		data = string(taskData)
 	}
-	ratios, err := a.usageRatios(context.Background(), cmp.Or(info.UpstreamModelName, info.OriginModelName), "extractUsageOnSubmit", a.submitContext(nil, info), data)
+	ratios, err := a.usageRatios(context.Background(), a.usageModel(info.UpstreamModelName, info.OriginModelName), "extractUsageOnSubmit", a.submitContext(nil, info), data)
 	if err != nil {
 		a.logRejectedUsage("extractUsageOnSubmit", err)
 		return nil
@@ -213,7 +213,7 @@ func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, result *relaycom
 	}
 	usageModel := ""
 	if task != nil {
-		usageModel = cmp.Or(task.Properties.UpstreamModelName, task.Properties.OriginModelName)
+		usageModel = a.usageModel(task.Properties.UpstreamModelName, task.Properties.OriginModelName)
 	}
 	a.applyCompletionUsageFacts(result, value, usageModel)
 	return 0
@@ -569,7 +569,7 @@ func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *r
 		logger.LogWarn(c, fmt.Sprintf("task plugin %s completion usage failed; retaining reserved quota: %v", a.plugin.Meta.Key, err))
 		return response, nil
 	}
-	if err := a.applyCompletionUsageFacts(immediate, facts, cmp.Or(info.UpstreamModelName, info.OriginModelName)); err != nil {
+	if err := a.applyCompletionUsageFacts(immediate, facts, a.usageModel(info.UpstreamModelName, info.OriginModelName)); err != nil {
 		logger.LogWarn(c, fmt.Sprintf("task plugin %s completion usage rejected; retaining reserved quota: %v", a.plugin.Meta.Key, err))
 	}
 	return response, nil
@@ -740,7 +740,7 @@ func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response,
 			}
 			facts, hookErr := a.plugin.Engine.Call(context.Background(), "extractUsageOnComplete", itemCtx, jsonValue(&info), usageBody)
 			if hookErr == nil {
-				usageModel, _ := itemCtx["upstreamModel"].(string)
+				usageModel := a.usageModelFromContext(itemCtx)
 				a.applyCompletionUsageFacts(&info, facts, usageModel)
 			}
 		}
@@ -806,7 +806,7 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, resp *http.Response, bod
 	if a.hasHook(context.Background(), "extractUsageOnComplete") {
 		facts, hookErr := a.plugin.Engine.Call(context.Background(), "extractUsageOnComplete", ctx, jsonValue(result), input)
 		if hookErr == nil {
-			usageModel, _ := ctx["upstreamModel"].(string)
+			usageModel := a.usageModelFromContext(ctx)
 			a.applyCompletionUsageFacts(result, facts, usageModel)
 		}
 	}
@@ -965,6 +965,17 @@ func (a *TaskAdaptor) BuildContentRequest(task *model.Task, artifactKey string, 
 	} else if err = pluginruntime.ValidateRequestURL(descriptor.URL, a.info.ChannelBaseUrl, a.plugin.Meta.AllowedHosts); err != nil {
 		return nil, err
 	}
+	if descriptor.DropCredentialsOnRedirect {
+		if descriptor.Credentialless {
+			return nil, fmt.Errorf("credential-dropping artifact requests cannot be credentialless")
+		}
+		if method != http.MethodGet && method != http.MethodHead {
+			return nil, fmt.Errorf("credential-dropping artifact requests must use GET or HEAD")
+		}
+		if descriptor.Body != nil {
+			return nil, fmt.Errorf("credential-dropping artifact requests cannot contain a body")
+		}
+	}
 	var body []byte
 	if descriptor.Body != nil {
 		if text, ok := descriptor.Body.(string); ok {
@@ -977,11 +988,12 @@ func (a *TaskAdaptor) BuildContentRequest(task *model.Task, artifactKey string, 
 		}
 	}
 	return &channel.TaskContentRequest{
-		URL:            descriptor.URL,
-		Method:         method,
-		Headers:        descriptor.Headers,
-		Body:           body,
-		Credentialless: descriptor.Credentialless,
+		URL:                       descriptor.URL,
+		Method:                    method,
+		Headers:                   descriptor.Headers,
+		Body:                      body,
+		Credentialless:            descriptor.Credentialless,
+		DropCredentialsOnRedirect: descriptor.DropCredentialsOnRedirect,
 	}, nil
 }
 
@@ -1065,6 +1077,29 @@ func (a *TaskAdaptor) queryContext(task *model.Task, key, baseURL, proxy string)
 		ctx["apiKey"] = key
 	}
 	return ctx, nil
+}
+
+// usageModel selects the schema identity used by host-side usage validation.
+// The upstream spelling is still preferred when it has an explicit profile;
+// mapped aliases fall back to the public model so a provider-specific alias
+// keeps its pricing semantics.
+func (a *TaskAdaptor) usageModel(upstreamModel, originModel string) string {
+	if a == nil || a.plugin == nil {
+		if upstreamModel != "" {
+			return upstreamModel
+		}
+		return originModel
+	}
+	return a.plugin.Meta.UsageModelFor(upstreamModel, originModel)
+}
+
+func (a *TaskAdaptor) usageModelFromContext(ctx map[string]any) string {
+	if ctx == nil {
+		return ""
+	}
+	upstreamModel, _ := ctx["upstreamModel"].(string)
+	originModel, _ := ctx["model"].(string)
+	return a.usageModel(upstreamModel, originModel)
 }
 
 func (a *TaskAdaptor) batchQueryContext(key, baseURL, proxy string, tasks []map[string]any) (map[string]any, error) {

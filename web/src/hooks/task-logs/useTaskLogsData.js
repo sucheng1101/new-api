@@ -24,31 +24,23 @@ import {
   API,
   copy,
   isAdmin,
+  isRoot,
   showError,
   showSuccess,
   timestamp2string,
 } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
+import {
+  getDefaultTaskLogColumnVisibility,
+  normalizeTaskLogColumnVisibility,
+  TASK_LOG_COLUMN_KEYS,
+} from './taskLogColumnVisibility';
 
 export const useTaskLogsData = () => {
   const { t } = useTranslation();
 
-  // Define column keys for selection
-  const COLUMN_KEYS = {
-    SUBMIT_TIME: 'submit_time',
-    FINISH_TIME: 'finish_time',
-    DURATION: 'duration',
-    CHANNEL: 'channel',
-    USERNAME: 'username',
-    PLATFORM: 'platform',
-    TYPE: 'type',
-    TASK_ID: 'task_id',
-    TASK_STATUS: 'task_status',
-    PROGRESS: 'progress',
-    FAIL_REASON: 'fail_reason',
-    RESULT_URL: 'result_url',
-  };
+  const COLUMN_KEYS = TASK_LOG_COLUMN_KEYS;
 
   // Basic state
   const [logs, setLogs] = useState([]);
@@ -59,6 +51,7 @@ export const useTaskLogsData = () => {
 
   // User and admin
   const isAdminUser = isAdmin();
+  const isRootUser = isRoot();
   // Role-specific storage key to prevent different roles from overwriting each other
   const STORAGE_KEY = isAdminUser
     ? 'task-logs-table-columns-admin'
@@ -68,10 +61,6 @@ export const useTaskLogsData = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalContent, setModalContent] = useState('');
 
-  // 新增：视频预览弹窗状态
-  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
-  const [videoUrl, setVideoUrl] = useState('');
-
   // Audio preview modal state
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [audioClips, setAudioClips] = useState([]);
@@ -79,6 +68,10 @@ export const useTaskLogsData = () => {
   // User info modal state
   const [showUserInfo, setShowUserInfoModal] = useState(false);
   const [userInfoData, setUserInfoData] = useState(null);
+
+  // Task detail and artifact modal state
+  const [selectedDetailTask, setSelectedDetailTask] = useState(null);
+  const [selectedArtifactTask, setSelectedArtifactTask] = useState(null);
 
   // Form state
   const [formApi, setFormApi] = useState(null);
@@ -107,15 +100,9 @@ export const useTaskLogsData = () => {
     if (savedColumns) {
       try {
         const parsed = JSON.parse(savedColumns);
-        const defaults = getDefaultColumnVisibility();
-        const merged = { ...defaults, ...parsed };
-
-        // For non-admin users, force-hide admin-only columns (does not touch admin settings)
-        if (!isAdminUser) {
-          merged[COLUMN_KEYS.CHANNEL] = false;
-          merged[COLUMN_KEYS.USERNAME] = false;
-        }
-        setVisibleColumns(merged);
+        setVisibleColumns(
+          normalizeTaskLogColumnVisibility(parsed, isAdminUser),
+        );
       } catch (e) {
         console.error('Failed to parse saved column preferences', e);
         initDefaultColumns();
@@ -127,20 +114,7 @@ export const useTaskLogsData = () => {
 
   // Get default column visibility based on user role
   const getDefaultColumnVisibility = () => {
-    return {
-      [COLUMN_KEYS.SUBMIT_TIME]: true,
-      [COLUMN_KEYS.FINISH_TIME]: true,
-      [COLUMN_KEYS.DURATION]: true,
-      [COLUMN_KEYS.CHANNEL]: isAdminUser,
-      [COLUMN_KEYS.USERNAME]: isAdminUser,
-      [COLUMN_KEYS.PLATFORM]: true,
-      [COLUMN_KEYS.TYPE]: true,
-      [COLUMN_KEYS.TASK_ID]: true,
-      [COLUMN_KEYS.TASK_STATUS]: true,
-      [COLUMN_KEYS.PROGRESS]: true,
-      [COLUMN_KEYS.FAIL_REASON]: true,
-      [COLUMN_KEYS.RESULT_URL]: true,
-    };
+    return getDefaultTaskLogColumnVisibility(isAdminUser);
   };
 
   // Initialize default column visibility
@@ -275,10 +249,20 @@ export const useTaskLogsData = () => {
     setIsModalOpen(true);
   };
 
-  // 新增：打开视频预览弹窗
-  const openVideoModal = (url) => {
-    setVideoUrl(url);
-    setIsVideoModalOpen(true);
+  const openTaskDetail = (task) => {
+    setSelectedDetailTask(task);
+  };
+
+  const closeTaskDetail = () => {
+    setSelectedDetailTask(null);
+  };
+
+  const openTaskArtifact = (task) => {
+    setSelectedArtifactTask(task);
+  };
+
+  const closeTaskArtifact = () => {
+    setSelectedArtifactTask(null);
   };
 
   const openAudioModal = (clips) => {
@@ -317,16 +301,12 @@ export const useTaskLogsData = () => {
     logCount,
     pageSize,
     isAdminUser,
+    isRootUser,
 
     // Modal state
     isModalOpen,
     setIsModalOpen,
     modalContent,
-
-    // 新增：视频弹窗状态
-    isVideoModalOpen,
-    setIsVideoModalOpen,
-    videoUrl,
 
     // Audio preview modal
     isAudioModalOpen,
@@ -358,6 +338,14 @@ export const useTaskLogsData = () => {
     userInfoData,
     showUserInfoFunc,
 
+    // Task details and artifacts
+    selectedDetailTask,
+    selectedArtifactTask,
+    openTaskDetail,
+    closeTaskDetail,
+    openTaskArtifact,
+    closeTaskArtifact,
+
     // Functions
     loadLogs,
     handlePageChange,
@@ -365,7 +353,6 @@ export const useTaskLogsData = () => {
     refresh,
     copyText,
     openContentModal,
-    openVideoModal,
     openAudioModal,
     enrichLogs,
     syncPageData,

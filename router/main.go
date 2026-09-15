@@ -19,6 +19,7 @@ func SetRouter(router *gin.Engine, buildFS embed.FS, indexPage []byte) {
 	SetRelayRouter(router)
 	SetTaskPluginProtocolRouter(router) // 官方 rc.37：openai_video / openai_responses 共享协议端点（未 pin 的流量回落原生 handler）
 	SetVideoRouter(router)
+	SetTaskRouter(router)
 	pluginDispatcher := SetPluginRouter(router) // 官方 rc.37：插件 meta.routes 动态路由（kling/jimeng 原生端点等）
 	frontendBaseUrl := os.Getenv("FRONTEND_BASE_URL")
 	if common.IsMasterNode && frontendBaseUrl != "" {

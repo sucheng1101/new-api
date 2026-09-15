@@ -274,6 +274,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           title: t('运维监控'),
           description: t('请求和服务器运行指标'),
         },
+        {
+          key: 'taskPlugin',
+          title: t('任务插件'),
+          description: t('异步任务插件的运行和版本管理'),
+        },
       ],
     },
   ];

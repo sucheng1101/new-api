@@ -154,6 +154,7 @@ function hasHailuoImage(req, hasInputReferenceFile) {
 }
 
 const H3_MODEL = "MiniMax-H3";
+const H3_UPSTREAM_MODEL = "minimax_h3";
 const H3_MIN_DURATION = 4;
 const H3_MAX_DURATION = 15;
 const H3_DEFAULT_DURATION = 5;
@@ -168,7 +169,7 @@ const H3_RATIOS = ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 // array instead of flat frame fields, an explicit `ratio`, 768P/2K resolutions,
 // a task id path parameter on query, and a `{task: {...}}` query envelope.
 function isH3(model) {
-  return model === H3_MODEL;
+  return model === H3_MODEL || model === H3_UPSTREAM_MODEL;
 }
 
 function h3Duration(req) {
@@ -186,8 +187,8 @@ function h3Resolution(req) {
   const raw = trimmed(metadata.resolution) || trimmed(req.resolution) || trimmed(req.size);
   if (!raw) return "768P";
   const value = raw.toUpperCase();
-  if (value.includes("2K")) return "2K";
-  if (value.includes("768")) return "768P";
+  if (value === "2K") return "2K";
+  if (value === "768P") return "768P";
   throw new Error(H3_MODEL + " resolution must be 768P or 2K");
 }
 

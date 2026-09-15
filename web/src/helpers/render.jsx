@@ -81,6 +81,7 @@ import {
   RadioTower,
   Gauge,
   ExternalLink,
+  PlugZap,
 } from 'lucide-react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { normalizeLucideIconName } from './lucide';
@@ -159,6 +160,8 @@ export function getLucideIcon(key, selected = false) {
       return <RadioTower {...commonProps} color={iconColor} />;
     case 'ops':
       return <Gauge {...commonProps} color={iconColor} />;
+    case 'taskPlugin':
+      return <PlugZap {...commonProps} color={iconColor} />;
     case 'external':
       return <ExternalLink {...commonProps} color={iconColor} />;
     case 'setting':

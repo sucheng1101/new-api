@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
@@ -20,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 type ModelRequest struct {
@@ -30,13 +33,47 @@ type ModelRequest struct {
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
+		constraints := service.GetChannelConstraints(c)
+		constraints.AddFilter(dto.ChannelFilter{Kind: dto.FilterRequestPath, RequestPath: c.Request.URL.Path})
+		service.AppendTaskPluginIdentityFilter(c, c.GetString("expected_task_plugin_key"))
 		channelId, ok := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId)
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
-		if ok {
+		if pin, found, overridden := constraints.ResolvedPin(); found {
+			for _, lost := range overridden {
+				logger.LogWarn(c, fmt.Sprintf(
+					"channel pin overridden: winning_source=%s winning_channel_id=%d overridden_source=%s overridden_channel_id=%d",
+					pin.Source, pin.ChannelId, lost.Source, lost.ChannelId,
+				))
+			}
+			channel, err = model.CacheGetChannel(pin.ChannelId)
+			if err != nil {
+				if pin.Source == dto.PinSourceOriginTask {
+					abortWithOpenAiMessage(c, http.StatusBadRequest, "origin_task_channel_disabled", types.ErrorCode("origin_task_channel_disabled"))
+				} else {
+					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidChannelId))
+				}
+				return
+			}
+			if channel.Status != common.ChannelStatusEnabled {
+				if pin.Source == dto.PinSourceOriginTask {
+					abortWithOpenAiMessage(c, http.StatusBadRequest, "origin_task_channel_disabled", types.ErrorCode("origin_task_channel_disabled"))
+				} else {
+					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
+				}
+				return
+			}
+			if matches, kind := model.ChannelSatisfiesFilters(channel, modelRequest.Model, constraints.Filters); !matches {
+				if kind == dto.FilterTaskPluginIdentity {
+					logTaskPluginChannelDecision(c, channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
+				}
+				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCode(kind))
+				return
+			}
+		} else if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
 				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidChannelId))
@@ -49,6 +86,10 @@ func Distribute() func(c *gin.Context) {
 			}
 			if channel.Status != common.ChannelStatusEnabled {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
+				return
+			}
+			if matches, kind := model.ChannelSatisfiesFilters(channel, modelRequest.Model, constraints.Filters); !matches {
+				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCode(kind))
 				return
 			}
 		} else {
@@ -101,13 +142,8 @@ func Distribute() func(c *gin.Context) {
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					preferred, err := model.CacheGetChannel(preferredChannelID)
-					if err == nil && preferred != nil {
-						if preferred.Status != common.ChannelStatusEnabled {
-							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-								abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorAffinityChannelDisabled))
-								return
-							}
-						} else if usingGroup == "auto" {
+					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
+						if matches, _ := model.ChannelSatisfiesFilters(preferred, modelRequest.Model, constraints.Filters); matches && usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
 							for _, g := range autoGroups {
@@ -119,7 +155,7 @@ func Distribute() func(c *gin.Context) {
 									break
 								}
 							}
-						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
+						} else if matches && model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
 							channel = preferred
 							selectGroup = usingGroup
 							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
@@ -155,6 +191,12 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 		}
+		if channel != nil {
+			if matches, kind := model.ChannelSatisfiesFilters(channel, modelRequest.Model, constraints.Filters); !matches {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCode(kind))
+				return
+			}
+		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
 		c.Next()
@@ -170,6 +212,19 @@ func Distribute() func(c *gin.Context) {
 // - application/x-www-form-urlencoded
 // - multipart/form-data
 func getModelFromRequest(c *gin.Context) (*ModelRequest, error) {
+	if cached, exists := c.Get(contextKeyTaskPluginEndpointModel); exists {
+		if modelRequest, ok := cached.(ModelRequest); ok {
+			cachedRequest := modelRequest
+			return &cachedRequest, nil
+		}
+	}
+	if strings.HasPrefix(c.Request.Header.Get("Content-Type"), "application/json") {
+		modelRequest, err := getModelFromJSONBody(c)
+		if err != nil {
+			return nil, errors.New(i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
+		}
+		return modelRequest, nil
+	}
 	var modelRequest ModelRequest
 	err := common.UnmarshalBodyReusable(c, &modelRequest)
 	if err != nil {
@@ -178,11 +233,112 @@ func getModelFromRequest(c *gin.Context) (*ModelRequest, error) {
 	return &modelRequest, nil
 }
 
+func getModelFromJSONBody(c *gin.Context) (*ModelRequest, error) {
+	storage, err := common.GetBodyStorage(c)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := storage.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	if !gjson.ValidBytes(requestBody) {
+		return nil, errors.New("invalid JSON request body")
+	}
+	if countTopLevelJSONKey(requestBody, "model") > 1 {
+		return nil, errors.New("model must be provided once")
+	}
+	values := gjson.GetManyBytes(requestBody, "model", "group")
+	model, err := getJSONStringValue(values[0], "model")
+	if err != nil {
+		return nil, err
+	}
+	group, err := getJSONStringValue(values[1], "group")
+	if err != nil {
+		return nil, err
+	}
+	if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {
+		return nil, seekErr
+	}
+	c.Request.Body = io.NopCloser(storage)
+	return &ModelRequest{Model: model, Group: group}, nil
+}
+
+func countTopLevelJSONKey(data []byte, target string) int {
+	depth := 0
+	inString := false
+	escaped := false
+	stringStart := 0
+	expectingKey := false
+	count := 0
+	for index, current := range data {
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if current == '\\' {
+				escaped = true
+				continue
+			}
+			if current != '"' {
+				continue
+			}
+			inString = false
+			if depth == 1 && expectingKey {
+				key := string(data[stringStart:index])
+				var decodedKey string
+				if common.Unmarshal(data[stringStart-1:index+1], &decodedKey) == nil {
+					key = decodedKey
+				}
+				cursor := index + 1
+				for cursor < len(data) && (data[cursor] == ' ' || data[cursor] == '\t' || data[cursor] == '\r' || data[cursor] == '\n') {
+					cursor++
+				}
+				if cursor < len(data) && data[cursor] == ':' && key == target {
+					count++
+				}
+				expectingKey = false
+			}
+			continue
+		}
+		switch current {
+		case '"':
+			inString = true
+			stringStart = index + 1
+		case '{':
+			depth++
+			if depth == 1 {
+				expectingKey = true
+			}
+		case '}':
+			depth--
+		case ',':
+			if depth == 1 {
+				expectingKey = true
+			}
+		}
+	}
+	return count
+}
+
+func getJSONStringValue(result gjson.Result, field string) (string, error) {
+	if !result.Exists() || result.Type == gjson.Null {
+		return "", nil
+	}
+	if result.Type != gjson.String {
+		return "", fmt.Errorf("field %s must be a string", field)
+	}
+	return result.String(), nil
+}
+
 func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	var modelRequest ModelRequest
 	shouldSelectChannel := true
 	var err error
-	if strings.Contains(c.Request.URL.Path, "/mj/") {
+	if modelName := c.GetString("resolved_task_model"); modelName != "" {
+		modelRequest.Model = modelName
+	} else if strings.Contains(c.Request.URL.Path, "/mj/") {
 		relayMode := relayconstant.Path2RelayModeMidjourney(c.Request.URL.Path)
 		if relayMode == relayconstant.RelayModeMidjourneyTaskFetch ||
 			relayMode == relayconstant.RelayModeMidjourneyTaskFetchByCondition ||

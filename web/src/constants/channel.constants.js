@@ -18,6 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 export const CHANNEL_OPTIONS = [
+  {
+    value: 61,
+    color: 'cyan',
+    label: '任务插件渠道',
+  },
   { value: 1, color: 'green', label: 'OpenAI' },
   {
     value: 2,

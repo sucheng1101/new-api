@@ -21,9 +21,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/dto"
 )
 
 const APIVersion1 = 1
@@ -115,9 +115,9 @@ type UsageProfile struct {
 	Examples []UsageExample              `json:"examples,omitempty"`
 }
 
-// UsageForModel returns read-only usage metadata for a declared model. Aliases
-// must be resolved by the host first; an unknown or ambiguous model uses the
-// plugin defaults. Profile examples never inherit the default examples.
+// UsageForModel returns read-only usage metadata for a declared model. An
+// unknown or ambiguous model uses the plugin defaults. Profile examples never
+// inherit the default examples.
 func (m Meta) UsageForModel(model string) (map[string]UsageFieldSchema, []UsageExample) {
 	folded := asciiFold(model)
 	for _, profile := range m.UsageProfiles {
@@ -128,6 +128,40 @@ func (m Meta) UsageForModel(model string) (map[string]UsageFieldSchema, []UsageE
 		}
 	}
 	return m.UsageSchema, m.UsageExamples
+}
+
+// UsageModelFor chooses the model spelling used to validate and bill usage
+// facts when execution has been redirected by a channel mapping. An explicit
+// profile for the upstream spelling wins because it describes the actual
+// execution contract. When an upstream alias has no profile, the public model
+// spelling can still identify the intended profile. The final fallback keeps
+// the historical upstream-first behavior for plugins without profiles.
+func (m Meta) UsageModelFor(upstreamModel, originModel string) string {
+	if m.hasUsageProfile(upstreamModel) {
+		return upstreamModel
+	}
+	if m.hasUsageProfile(originModel) {
+		return originModel
+	}
+	if upstreamModel != "" {
+		return upstreamModel
+	}
+	return originModel
+}
+
+func (m Meta) hasUsageProfile(model string) bool {
+	if model == "" {
+		return false
+	}
+	folded := asciiFold(model)
+	for _, profile := range m.UsageProfiles {
+		for _, declared := range profile.Models {
+			if asciiFold(declared) == folded {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ProtocolSupports reports whether the named protocol claim includes mode.

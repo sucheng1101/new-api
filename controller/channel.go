@@ -15,10 +15,12 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	"github.com/gin-gonic/gin"
 )
@@ -465,6 +467,21 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
 	}
+	if channel.Type == constant.ChannelTypeTaskPlugin {
+		pluginKey := strings.TrimSpace(channel.GetSetting().TaskPluginKey)
+		if pluginKey == "" {
+			return fmt.Errorf("task plugin key is required")
+		}
+		if len(pluginKey) > 30 {
+			return fmt.Errorf("task plugin key must not exceed 30 characters")
+		}
+		if _, ok := jsplugin.DefaultRegistry.Get(pluginKey); !ok {
+			return fmt.Errorf("task plugin %q is not registered", pluginKey)
+		}
+		if channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "" {
+			return fmt.Errorf("base URL is required for task plugin channels")
+		}
+	}
 
 	// 如果是添加操作，检查 channel 和 key 是否为空
 	if isAdd {
@@ -602,6 +619,14 @@ func AddChannel(c *gin.Context) {
 	err := c.ShouldBindJSON(&addChannelRequest)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if addChannelRequest.Channel != nil && addChannelRequest.Channel.Type == constant.ChannelTypeTaskPlugin &&
+		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.TaskPluginBind) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "task plugin channels require the task_plugin.bind permission",
+		})
 		return
 	}
 
@@ -889,6 +914,14 @@ func UpdateChannel(c *gin.Context) {
 	err := c.ShouldBindJSON(&channel)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if channel.Type == constant.ChannelTypeTaskPlugin &&
+		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.TaskPluginBind) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "task plugin channels require the task_plugin.bind permission",
+		})
 		return
 	}
 

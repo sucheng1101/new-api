@@ -101,6 +101,12 @@ func hailuoH3SubmitContext(requestBody map[string]any) map[string]any {
 	}
 }
 
+func hailuoMappedH3SubmitContext(requestBody map[string]any) map[string]any {
+	ctx := hailuoH3SubmitContext(requestBody)
+	ctx["upstreamModel"] = "minimax_h3"
+	return ctx
+}
+
 // MiniMax-H3 submits to /v2/video_generation with a multimodal content array
 // instead of the flat /v1 frame fields.
 func TestHailuoH3BuildSubmitRequest(t *testing.T) {
@@ -200,6 +206,58 @@ func TestHailuoH3BuildSubmitRequest(t *testing.T) {
 	}
 }
 
+func TestHailuoMappedH3BuildSubmitRequest(t *testing.T) {
+	plugin := loadHailuoPlugin(t)
+	descriptor := callHailuoHook(t, plugin, "buildSubmitRequest", hailuoMappedH3SubmitContext(map[string]any{
+		"prompt":   "mapped h3",
+		"duration": 5,
+		"size":     "2K",
+	}))
+	assert.Equal(t, "https://api.minimax.example/v2/video_generation", descriptor["url"])
+	assert.Equal(t, "POST", descriptor["method"])
+	body, err := common.Marshal(descriptor["body"])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"model":"minimax_h3","content":[{"type":"text","text":"mapped h3"}],"resolution":"2K","duration":5,"ratio":"16:9"}`, string(body))
+
+	facts := callHailuoHook(t, plugin, "extractUsage", hailuoMappedH3SubmitContext(map[string]any{
+		"prompt":   "mapped h3",
+		"duration": 5,
+		"size":     "2K",
+	}))
+	assert.Equal(t, map[string]any{
+		"seconds": float64(5), "resolution": "2K", "input_images": float64(0), "input_video_seconds": float64(0),
+	}, facts)
+}
+
+func TestHailuoMappedLegacyModelKeepsV1Protocol(t *testing.T) {
+	plugin := loadHailuoPlugin(t)
+	ctx := hailuoH3SubmitContext(map[string]any{"prompt": "legacy", "duration": 6, "size": "720P"})
+	ctx["model"] = "MiniMax-Hailuo-2.3"
+	ctx["upstreamModel"] = "mapped_hailuo_23"
+	descriptor := callHailuoHook(t, plugin, "buildSubmitRequest", ctx)
+	assert.Equal(t, "https://api.minimax.example/v1/video_generation", descriptor["url"])
+	body, err := common.Marshal(descriptor["body"])
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"model":"mapped_hailuo_23","prompt":"legacy","duration":6,"resolution":"720P"}`, string(body))
+}
+
+func TestHailuoMappedH3RejectsInvalidParametersBeforeSubmit(t *testing.T) {
+	plugin := loadHailuoPlugin(t)
+	for _, testCase := range []struct {
+		name    string
+		request map[string]any
+		wantErr string
+	}{
+		{"duration below minimum", map[string]any{"prompt": "p", "duration": 3}, "duration must be an integer between 4 and 15"},
+		{"unsupported resolution", map[string]any{"prompt": "p", "size": "512P"}, "resolution must be 768P or 2K"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := plugin.Engine.Call(t.Context(), "buildSubmitRequest", hailuoMappedH3SubmitContext(testCase.request))
+			require.ErrorContains(t, err, testCase.wantErr)
+		})
+	}
+}
+
 // Every MiniMax-H3 request bound is rejected before the upstream call, so an
 // out-of-range duration can never reach quota calculation as a billing fact.
 func TestHailuoH3RejectsOutOfContractRequests(t *testing.T) {
@@ -219,6 +277,7 @@ func TestHailuoH3RejectsOutOfContractRequests(t *testing.T) {
 		{"duration above the maximum", map[string]any{"prompt": "p", "duration": 16}, "duration must be an integer between 4 and 15"},
 		{"fractional duration", map[string]any{"prompt": "p", "duration": 5.5}, "duration must be an integer between 4 and 15"},
 		{"unsupported resolution", map[string]any{"prompt": "p", "size": "1080P"}, "resolution must be 768P or 2K"},
+		{"non-canonical resolution", map[string]any{"prompt": "p", "size": "768x768"}, "resolution must be 768P or 2K"},
 		{"unknown ratio", map[string]any{"prompt": "p", "metadata": map[string]any{"ratio": "16:10"}}, "ratio must be one of"},
 		{"adaptive ratio without a visual input", map[string]any{"prompt": "p", "metadata": map[string]any{"ratio": "adaptive"}}, "ratio adaptive requires an image or video input"},
 		{"too many frame images", map[string]any{"prompt": "p", "images": []any{"a.png", "b.png", "c.png"}}, "at most 2 frame images"},
@@ -315,6 +374,11 @@ func TestHailuoQueryRequestEndpointByModel(t *testing.T) {
 		{
 			name: "a channel-mapped alias resolves through the upstream model",
 			ctx:  map[string]any{"taskId": "t1", "model": "h3", "upstreamModel": "MiniMax-H3"},
+			want: "https://api.minimax.example/v2/query/video_generation/t1",
+		},
+		{
+			name: "the mapped H3 upstream spelling keeps the v2 path",
+			ctx:  map[string]any{"taskId": "t1", "model": "MiniMax-H3", "upstreamModel": "minimax_h3"},
 			want: "https://api.minimax.example/v2/query/video_generation/t1",
 		},
 	}

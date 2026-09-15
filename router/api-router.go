@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	// Import oauth package to register providers via init()
 	_ "github.com/QuantumNous/new-api/oauth"
@@ -18,6 +19,7 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
 	{
+		registerAuthzRoutes(apiRouter)
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", controller.PostSetup)
 		apiRouter.GET("/status", controller.GetStatus)
@@ -244,7 +246,7 @@ func SetApiRouter(router *gin.Engine) {
 		taskPluginRoute.POST("/:key/dryrun", controller.DryRunTaskPlugin)
 		taskPluginRoute.DELETE("/:key/versions/:version", controller.DeleteTaskPluginVersion)
 	}
-	apiRouter.GET("/task_plugin_options", middleware.AdminAuth(), controller.GetTaskPluginOptions)
+	apiRouter.GET("/task_plugin_options", middleware.AdminAuth(), middleware.RequirePermission(authz.TaskPluginBind), controller.GetTaskPluginOptions)
 		channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)
 			channelRoute.GET("/test", controller.TestAllChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
@@ -389,6 +391,7 @@ func SetApiRouter(router *gin.Engine) {
 		taskRoute := apiRouter.Group("/task")
 		{
 			taskRoute.GET("/self", middleware.UserAuth(), controller.GetUserTask)
+			taskRoute.GET("/:task_id/artifacts", middleware.TokenOrUserAuth(), controller.GetDashboardTaskArtifacts)
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 		}
 

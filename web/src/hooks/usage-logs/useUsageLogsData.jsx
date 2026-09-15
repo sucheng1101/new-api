@@ -24,6 +24,7 @@ import {
   API,
   getTodayStartTimestamp,
   isAdmin,
+  isRoot,
   showError,
   showSuccess,
   timestamp2string,
@@ -84,6 +85,7 @@ export const useLogsData = () => {
 
   // User and admin
   const isAdminUser = isAdmin();
+  const isRootUser = isRoot();
   // Role-specific storage key to prevent different roles from overwriting each other
   const STORAGE_KEY = isAdminUser
     ? 'logs-table-columns-admin'
@@ -977,6 +979,7 @@ export const useLogsData = () => {
     logType,
     stat,
     isAdminUser,
+    isRootUser,
     autoRefresh,
     setAutoRefresh,
 

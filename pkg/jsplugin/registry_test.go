@@ -1157,6 +1157,27 @@ usageProfiles: [
 	assert.Nil(t, examples)
 }
 
+func TestMetaUsageModelForMappedExecutionPrefersExplicitProfiles(t *testing.T) {
+	meta := Meta{
+		UsageSchema: map[string]UsageFieldSchema{
+			"fallback": {Type: "number", Unit: "count"},
+		},
+		UsageProfiles: []UsageProfile{
+			{Models: []string{"MiniMax-H3"}, Schema: map[string]UsageFieldSchema{
+				"resolution": {Enum: []string{"768P", "2K"}},
+			}},
+			{Models: []string{"declared-upstream"}, Schema: map[string]UsageFieldSchema{
+				"resolution": {Enum: []string{"upstream"}},
+			}},
+		},
+	}
+
+	assert.Equal(t, "declared-upstream", meta.UsageModelFor("declared-upstream", "MiniMax-H3"))
+	assert.Equal(t, "MiniMax-H3", meta.UsageModelFor("minimax_h3", "MiniMax-H3"))
+	assert.Equal(t, "minimax_h3", meta.UsageModelFor("minimax_h3", "unprofiled"))
+	assert.Equal(t, "MiniMax-H3", meta.UsageModelFor("", "MiniMax-H3"))
+}
+
 func TestRegistryRejectsInvalidUsageProfiles(t *testing.T) {
 	for _, tc := range []struct {
 		name, profiles, errorText string

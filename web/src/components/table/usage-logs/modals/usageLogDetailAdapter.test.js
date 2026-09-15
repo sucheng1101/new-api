@@ -377,7 +377,11 @@ describe('usage log detail adapter', () => {
       }),
     };
 
-    const detail = buildUsageLogDetail({ record, expandRows: [], t: identityT });
+    const detail = buildUsageLogDetail({
+      record,
+      expandRows: [],
+      t: identityT,
+    });
 
     expect(detail.kind).toBe('error');
     expect(detail.title).toBe('请求错误详情');
@@ -397,26 +401,178 @@ describe('usage log detail adapter', () => {
     });
   });
 
+  test('projects task diagnostics by role and preserves video pricing facts', () => {
+    const record = {
+      ...baseLog,
+      type: 2,
+      channel: 52,
+      channel_name: 'Prompt Hubs Video',
+      model_name: 'MiniMax-H3',
+      token_name: 'video-test-token',
+      group: 'video',
+      quota: 300,
+      request_id: 'gateway-request-77',
+      upstream_request_id: 'upstream-request-77',
+      content: 'actual settlement',
+      other: JSON.stringify({
+        is_task: true,
+        request_path: '/v1/videos',
+        is_model_mapped: true,
+        upstream_model_name: 'minimax_h3',
+        request_conversion: ['OpenAI Compatible', 'Prompt Hubs Video'],
+        billing_mode: 'tiered_expr',
+        matched_tier: 'h3-2k',
+        model_price: 0.12,
+        model_ratio: 1,
+        group_ratio: 1,
+        usage_facts: {
+          seconds: 5,
+          resolution: '2K',
+        },
+        pre_consumed_quota: 120,
+        actual_quota: 300,
+        admin_info: {
+          task_plugin: {
+            name: 'Prompt Hubs Video',
+            key: 'prompt-hubs',
+            version: '1.0.0',
+            author: { name: 'Skye' },
+          },
+        },
+        root_info: {
+          task_plugin: {
+            key: 'prompt-hubs',
+            version: '1.0.0',
+            api_version: 1,
+            generation: 7,
+          },
+          upstream_task_id: 'upstream-task-77',
+          node_name: 'node-a',
+        },
+      }),
+    };
+
+    const userDetail = buildUsageLogDetail({
+      record,
+      expandRows: [],
+      t: identityT,
+      isAdminUser: false,
+      isRootUser: false,
+    });
+    expect(userDetail.requestDetails).toBeNull();
+    expect(userDetail.requestConversion).toBeNull();
+    expect(userDetail.taskPlugin).toBeNull();
+    expect(userDetail.rootDiagnostics).toBeNull();
+
+    const adminDetail = buildUsageLogDetail({
+      record,
+      expandRows: [],
+      t: identityT,
+      isAdminUser: true,
+      isRootUser: false,
+    });
+    expect(adminDetail.requestDetails.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '请求 ID',
+          value: 'gateway-request-77',
+        }),
+        expect.objectContaining({
+          label: '上游请求 ID',
+          value: 'upstream-request-77',
+        }),
+        expect.objectContaining({ label: '渠道', value: 'Prompt Hubs Video' }),
+        expect.objectContaining({ label: '令牌', value: 'video-test-token' }),
+        expect.objectContaining({ label: '分组', value: 'video' }),
+        expect.objectContaining({ label: '请求路径', value: '/v1/videos' }),
+      ]),
+    );
+    expect(adminDetail.requestConversion.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: '原始模型', value: 'MiniMax-H3' }),
+        expect.objectContaining({ label: '实际模型', value: 'minimax_h3' }),
+        expect.objectContaining({
+          label: '请求转换',
+          value: 'OpenAI Compatible -> Prompt Hubs Video',
+        }),
+      ]),
+    );
+    expect(adminDetail.taskPlugin.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '任务插件',
+          value: 'Prompt Hubs Video',
+        }),
+        expect.objectContaining({ label: '插件键', value: 'prompt-hubs' }),
+        expect.objectContaining({ label: '版本', value: '1.0.0' }),
+        expect.objectContaining({ label: '插件作者', value: 'Skye' }),
+      ]),
+    );
+    expect(adminDetail.rootDiagnostics).toBeNull();
+    expect(adminDetail.billingDiagnostics.usageFacts).toEqual([
+      { key: '视频时长', value: 5 },
+      { key: '分辨率', value: '2K' },
+    ]);
+    expect(adminDetail.billingDiagnostics.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: '预扣额度', value: '120' }),
+        expect.objectContaining({ label: '实际额度', value: '300' }),
+        expect.objectContaining({
+          label: '本次额度变动',
+          value: '$0.000600',
+        }),
+      ]),
+    );
+    expect(adminDetail.taskUsage).toMatchObject({
+      model: 'MiniMax-H3',
+      tier: 'h3-2k',
+      seconds: 5,
+      resolution: '2K',
+      finalQuota: 300,
+      modeLabel: '异步任务',
+    });
+    expect(adminDetail.isTask).toBe(true);
+    expect(buildUsageLogBriefSummary(record, identityT)).toContain(
+      '异步任务 · 时长 5s · 2K · 档位 h3-2k',
+    );
+
+    const rootDetail = buildUsageLogDetail({
+      record,
+      expandRows: [],
+      t: identityT,
+      isAdminUser: true,
+      isRootUser: true,
+    });
+    expect(rootDetail.rootDiagnostics.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'API版本', value: '1' }),
+        expect.objectContaining({ label: '插件运行代次', value: '7' }),
+        expect.objectContaining({
+          label: '上游任务 ID',
+          value: 'upstream-task-77',
+        }),
+        expect.objectContaining({ label: '节点名称', value: 'node-a' }),
+      ]),
+    );
+  });
+
   test.each([
     [1, 'topup', '充值详情'],
     [3, 'management', '管理操作详情'],
     [4, 'system', '系统事件详情'],
     [6, 'refund', '退款详情'],
     [0, 'legacy', '历史记录详情'],
-  ])(
-    'renders type %i as a non-request %s detail',
-    (type, kind, title) => {
-      const detail = buildUsageLogDetail({
-        record: { ...baseLog, type, content: '事件内容' },
-        expandRows: [],
-        t: identityT,
-      });
+  ])('renders type %i as a non-request %s detail', (type, kind, title) => {
+    const detail = buildUsageLogDetail({
+      record: { ...baseLog, type, content: '事件内容' },
+      expandRows: [],
+      t: identityT,
+    });
 
-      expect(detail.kind).toBe(kind);
-      expect(detail.title).toBe(title);
-      expect(detail.showUsage).toBe(false);
-      expect(detail.showBilling).toBe(false);
-      expect(detail.event.content).toBe('事件内容');
-    },
-  );
+    expect(detail.kind).toBe(kind);
+    expect(detail.title).toBe(title);
+    expect(detail.showUsage).toBe(false);
+    expect(detail.showBilling).toBe(false);
+    expect(detail.event.content).toBe('事件内容');
+  });
 });

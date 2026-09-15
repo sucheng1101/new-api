@@ -104,11 +104,12 @@ type TaskArtifactProvider interface {
 }
 
 type TaskContentRequest struct {
-	URL            string
-	Method         string
-	Headers        map[string]string
-	Body           []byte
-	Credentialless bool
+	URL                       string
+	Method                    string
+	Headers                   map[string]string
+	Body                      []byte
+	Credentialless            bool
+	DropCredentialsOnRedirect bool
 }
 
 type TaskContentRequestProvider interface {

@@ -47,6 +47,8 @@ const LogsPage = () => {
         closeLogDetail={logsData.closeLogDetail}
         selectedLog={logsData.selectedLog}
         expandData={logsData.expandData}
+        isAdminUser={logsData.isAdminUser}
+        isRootUser={logsData.isRootUser}
       />
 
       {/* Main Content */}

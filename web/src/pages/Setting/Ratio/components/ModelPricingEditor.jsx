@@ -413,6 +413,39 @@ export default function ModelPricingEditor({
               ) : null
             }
           >
+            {selectedModel?.taskPricing &&
+            selectedModel.pluginVariants?.length > 0 ? (
+              <Banner
+                type='info'
+                bordered
+                fullMode={false}
+                closeIcon={null}
+                title={t('插件计费变体')}
+                description={
+                  <div>
+                    <div>
+                      {t(
+                        '该模型由多个任务插件提供。当前编辑器使用模型通用计费表达式，各插件变体状态如下：',
+                      )}
+                    </div>
+                    <div className='mt-2 flex flex-wrap gap-1'>
+                      {selectedModel.pluginVariants.map((variant) => (
+                        <Tag
+                          key={variant.pluginKey}
+                          color={variant.stale ? 'orange' : 'blue'}
+                        >
+                          {variant.pluginName || variant.pluginKey}
+                          {variant.compatible === false
+                            ? ` · ${t('需检查')}`
+                            : ''}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                }
+                style={{ margin: '16px 16px 0' }}
+              />
+            ) : null}
             {!selectedModel ? (
               <Empty
                 title={emptyTitle || t('暂无模型')}

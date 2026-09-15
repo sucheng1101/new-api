@@ -27,6 +27,17 @@ import (
 
 const maxTaskPluginSourceBytes = 1024 * 1024
 
+func normalizedTaskPluginMarketplaceSourceURL(parsed *url.URL) string {
+	normalized := *parsed
+	normalized.Scheme = strings.ToLower(normalized.Scheme)
+	normalized.Host = strings.ToLower(normalized.Host)
+	normalized.Fragment = ""
+	if normalized.Path == "" {
+		normalized.Path = "/"
+	}
+	return normalized.String()
+}
+
 func taskPluginCompileError(c *gin.Context, err error) {
 	var unknownField *jsplugin.UnknownMetaFieldError
 	if errors.As(err, &unknownField) {
@@ -38,6 +49,7 @@ func taskPluginCompileError(c *gin.Context, err error) {
 
 type taskPluginUploadRequest struct {
 	Source       string `json:"source" binding:"required"`
+	ExpectedKey  string `json:"expected_key"`
 	Enabled      *bool  `json:"enabled"`
 	Remark       string `json:"remark"`
 	Force        bool   `json:"force"`
@@ -72,6 +84,10 @@ func UploadTaskPlugin(c *gin.Context) {
 	}
 	if err = jsplugin.ValidateV1Meta(loaded.Meta); err != nil {
 		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if expectedKey := strings.TrimSpace(request.ExpectedKey); expectedKey != "" && expectedKey != loaded.Meta.Key {
+		common.ApiErrorMsg(c, "plugin key does not match expected_key")
 		return
 	}
 	icon := strings.TrimSpace(request.Icon)
@@ -119,6 +135,7 @@ func GetTaskPluginVersions(c *gin.Context) {
 type taskPluginListItem struct {
 	Meta          jsplugin.Meta  `json:"meta"`
 	Source        string         `json:"source"`
+	Origin        string         `json:"origin,omitempty"`
 	Enabled       bool           `json:"enabled"`
 	Active        bool           `json:"active"`
 	SourceHash    string         `json:"source_hash"`
@@ -188,6 +205,9 @@ func ListTaskPlugins(c *gin.Context) {
 		item := taskPluginListItem{Enabled: true, Active: true, RuntimeStatus: "registered"}
 		if hasOverride {
 			item.Source = "override"
+			if plugins.EmbeddedPluginOrigin(key) == "third_party" {
+				item.Origin = "third_party"
+			}
 			if hasFactory {
 				item.Source = "override_over_factory"
 				factoryCopy := factoryMeta
@@ -219,6 +239,7 @@ func ListTaskPlugins(c *gin.Context) {
 			}
 		} else {
 			item.Source = "factory"
+			item.Origin = plugins.EmbeddedPluginOrigin(key)
 			item.Meta = factoryMeta
 			item.Enabled = !setting.IsTaskPluginFactoryDisabled(key)
 			_, _, item.HasIcon = plugins.Icon(key)
@@ -233,15 +254,13 @@ func ListTaskPlugins(c *gin.Context) {
 				item.RuntimeError = message
 			}
 		}
-		if !hasFactory {
-			channels, inFlight, usageErr := model.GetTaskPluginUsage(key)
-			if usageErr != nil {
-				common.ApiError(c, usageErr)
-				return
-			}
-			item.ChannelCount = len(channels)
-			item.InFlightCount = inFlight
+		channels, inFlight, usageErr := model.GetTaskPluginUsage(key)
+		if usageErr != nil {
+			common.ApiError(c, usageErr)
+			return
 		}
+		item.ChannelCount = len(channels)
+		item.InFlightCount = inFlight
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -303,6 +322,7 @@ type taskPluginDetail struct {
 	Meta    jsplugin.Meta     `json:"meta"`
 	Source  string            `json:"source"`
 	Layer   string            `json:"layer"`
+	Origin  string            `json:"origin,omitempty"`
 	HasIcon bool              `json:"has_icon"`
 }
 
@@ -366,7 +386,7 @@ func GetTaskPlugin(c *gin.Context) {
 		return
 	}
 	_, _, hasIcon := plugins.Icon(key)
-	common.ApiSuccess(c, taskPluginDetail{Meta: loaded.Meta, Source: source, Layer: "factory", HasIcon: hasIcon})
+	common.ApiSuccess(c, taskPluginDetail{Meta: loaded.Meta, Source: source, Layer: "factory", Origin: plugins.EmbeddedPluginOrigin(key), HasIcon: hasIcon})
 }
 
 type taskPluginDryRunRequest struct {
@@ -604,6 +624,8 @@ func UpdateTaskPluginMarketplaceSources(c *gin.Context) {
 	if sources == nil {
 		sources = []setting.TaskPluginMarketplaceSource{}
 	}
+	seenNames := make(map[string]struct{}, len(sources))
+	seenURLs := make(map[string]struct{}, len(sources))
 	for i := range sources {
 		name := strings.TrimSpace(sources[i].Name)
 		indexURL := strings.TrimSpace(sources[i].IndexURL)
@@ -611,11 +633,23 @@ func UpdateTaskPluginMarketplaceSources(c *gin.Context) {
 			common.ApiErrorMsg(c, "marketplace source name is required")
 			return
 		}
+		nameKey := strings.ToLower(name)
+		if _, exists := seenNames[nameKey]; exists {
+			common.ApiErrorMsg(c, "marketplace source name must be unique")
+			return
+		}
+		seenNames[nameKey] = struct{}{}
 		parsed, err := url.Parse(indexURL)
 		if err != nil || !parsed.IsAbs() || parsed.Host == "" || (!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
 			common.ApiErrorMsg(c, "marketplace source index_url must be an absolute http(s) URL")
 			return
 		}
+		urlKey := normalizedTaskPluginMarketplaceSourceURL(parsed)
+		if _, exists := seenURLs[urlKey]; exists {
+			common.ApiErrorMsg(c, "marketplace source index_url must be unique")
+			return
+		}
+		seenURLs[urlKey] = struct{}{}
 		sources[i].Name = name
 		sources[i].IndexURL = indexURL
 	}
@@ -652,8 +686,10 @@ func GetTaskPluginOptions(c *gin.Context) {
 			seen[meta.Key] = true
 			hasIcon := false
 			if layer == 0 {
-				if row, rowErr := model.GetTaskPluginVersion(meta.Key, ""); rowErr == nil {
-					hasIcon = row.HasIcon()
+				if model.DB != nil {
+					if row, rowErr := model.GetTaskPluginVersion(meta.Key, ""); rowErr == nil {
+						hasIcon = row.HasIcon()
+					}
 				}
 			} else {
 				_, _, hasIcon = plugins.Icon(meta.Key)

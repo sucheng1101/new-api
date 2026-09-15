@@ -26,6 +26,8 @@ import TaskLogsFilters from './TaskLogsFilters';
 import ColumnSelectorModal from './modals/ColumnSelectorModal';
 import ContentModal from './modals/ContentModal';
 import AudioPreviewModal from './modals/AudioPreviewModal';
+import TaskArtifactModal from './modals/TaskArtifactModal';
+import TaskDetailModal from './modals/TaskDetailModal';
 import { useTaskLogsData } from '../../../hooks/task-logs/useTaskLogsData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
@@ -39,12 +41,21 @@ const TaskLogsPage = () => {
       {/* Modals */}
       <ColumnSelectorModal {...taskLogsData} />
       <ContentModal {...taskLogsData} isVideo={false} />
-      {/* 新增：视频预览弹窗 */}
-      <ContentModal
-        isModalOpen={taskLogsData.isVideoModalOpen}
-        setIsModalOpen={taskLogsData.setIsVideoModalOpen}
-        modalContent={taskLogsData.videoUrl}
-        isVideo={true}
+      <TaskDetailModal
+        visible={Boolean(taskLogsData.selectedDetailTask)}
+        onCancel={taskLogsData.closeTaskDetail}
+        task={taskLogsData.selectedDetailTask}
+        isAdminUser={taskLogsData.isAdminUser}
+        isRootUser={taskLogsData.isRootUser}
+        onOpenArtifact={(task) => {
+          taskLogsData.closeTaskDetail();
+          taskLogsData.openTaskArtifact(task);
+        }}
+      />
+      <TaskArtifactModal
+        visible={Boolean(taskLogsData.selectedArtifactTask)}
+        onCancel={taskLogsData.closeTaskArtifact}
+        task={taskLogsData.selectedArtifactTask}
       />
       <AudioPreviewModal
         isModalOpen={taskLogsData.isAudioModalOpen}

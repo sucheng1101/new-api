@@ -17,10 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { StatusContext } from '../../context/Status';
 import { getLucideIcon } from '../../helpers/render';
 import { ChevronLeft } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
@@ -61,7 +60,6 @@ const routerMap = {
 
 const SiderBar = ({ onNavigate = () => {} }) => {
   const { t } = useTranslation();
-  const [statusState] = useContext(StatusContext);
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const {
     isModuleVisible,
@@ -215,7 +213,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('任务插件'),
         itemKey: 'taskPlugin',
         to: '/task-plugin',
-        className: isAdmin() ? '' : 'tableHiddle',
+        className: isRoot() ? '' : 'tableHiddle',
       },
       {
         text: t('系统设置'),
@@ -225,18 +223,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
       },
     ];
 
-    // 根据配置过滤项目；任务插件页额外受运营设置 TaskPluginPageEnabled 开关控制
-    const taskPluginPageVisible = statusState?.status?.task_plugin_page_enabled !== false;
-    const filteredItems = items.filter((item) => {
-      const configVisible = isModuleVisible('admin', item.itemKey);
-      if (item.itemKey === 'taskPlugin') {
-        return configVisible && taskPluginPageVisible;
-      }
-      return configVisible;
-    });
+    const filteredItems = items.filter((item) =>
+      isModuleVisible('admin', item.itemKey),
+    );
 
     return filteredItems;
-  }, [isAdmin(), isRoot(), t, isModuleVisible, statusState]);
+  }, [isAdmin(), isRoot(), t, isModuleVisible]);
 
   const customItemsByPlacement = useMemo(
     () => ({

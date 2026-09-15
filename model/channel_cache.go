@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
@@ -93,22 +94,26 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, filterArgs ...[]dto.ChannelFilter) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return GetChannel(group, model, retry, filterArgs...)
 	}
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
-	channels := group2model2channels[group][model]
+	var filters []dto.ChannelFilter
+	if len(filterArgs) > 0 {
+		filters = filterArgs[0]
+	}
+	channels := filterCandidateIDs(group2model2channels[group][model], model, filters)
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = group2model2channels[group][normalizedModel]
+		channels = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
 	}
 
 	if len(channels) == 0 {

@@ -20,11 +20,13 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	opsmetrics "github.com/QuantumNous/new-api/pkg/ops_metrics"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	_ "github.com/QuantumNous/new-api/setting/monitoring_setting"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -51,6 +53,9 @@ func startMonitorGroupWorkers() {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		os.Exit(jsplugin.RunCLI(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	startTime := time.Now()
 
 	err := InitResources()
@@ -107,6 +112,7 @@ func main() {
 
 	// 热更新配置
 	go model.SyncOptions(common.SyncFrequency)
+	go authz.StartPolicySync(common.SyncFrequency)
 
 	// 数据看板
 	go model.UpdateQuotaData()
@@ -287,6 +293,10 @@ func InitResources() error {
 	err = model.InitDB()
 	if err != nil {
 		common.FatalLog("failed to initialize database: " + err.Error())
+		return err
+	}
+	if err = authz.Init(model.DB); err != nil {
+		common.FatalLog("failed to initialize authorization: " + err.Error())
 		return err
 	}
 

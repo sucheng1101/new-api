@@ -1,0 +1,22 @@
+.task-log-duration {
+  display: grid;
+  min-width: 156px;
+  gap: 4px;
+  align-items: start;
+}
+
+.task-log-duration .semi-tag {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.task-log-duration .semi-typography {
+  line-height: 1.4;
+  white-space: normal;
+}
+
+@media (max-width: 767px) {
+  .task-log-duration {
+    min-width: 132px;
+  }
+}

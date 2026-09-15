@@ -613,6 +613,63 @@ body[theme-mode='dark'] .uldm-dialog {
   overflow-wrap: anywhere;
 }
 
+/* 任务插件与计费诊断：每行保持可扫描的标签和值，不把长上下文挤出弹窗。 */
+.uldm-diagnostic-list {
+  display: grid;
+  border-top: 1px solid var(--uldm-line);
+}
+
+.uldm-diagnostic-row {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--uldm-line);
+  font-size: 12px;
+}
+
+.uldm-diagnostic-row:last-child {
+  border-bottom: 0;
+}
+
+.uldm-diagnostic-label {
+  padding-top: 1px;
+  color: var(--uldm-ink-soft);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.uldm-diagnostic-value-wrap,
+.uldm-diagnostic-actions {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.uldm-diagnostic-value-wrap {
+  gap: 8px;
+}
+
+.uldm-diagnostic-value {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.uldm-diagnostic-value--expanded {
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--uldm-paper-deep);
+  border-radius: 4px;
+}
+
+.uldm-diagnostic-actions {
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
 /* 使用日志列表"详情"列的简要摘要按钮（新版 NewAPI 风格） */
 .usage-log-detail-summary {
   display: block;
@@ -704,5 +761,63 @@ body[theme-mode='dark'] .uldm-dialog {
 
   .uldm-extra-row {
     grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .uldm-diagnostic-row {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+}
+.uldm-task-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.uldm-task-usage-cell {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 6px;
+  background: var(--semi-color-fill-0);
+}
+
+.uldm-task-usage-value {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uldm-task-billing {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.uldm-task-billing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+
+.uldm-task-billing-row:last-child {
+  border-bottom: 0;
+}
+
+.uldm-task-billing-total {
+  background: var(--semi-color-primary-light-default);
+  color: var(--semi-color-primary);
+}
+
+@media (max-width: 640px) {
+  .uldm-task-usage-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

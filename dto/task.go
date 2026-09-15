@@ -37,15 +37,16 @@ type TaskDto struct {
 	UpdatedAt            int64           `json:"updated_at"`
 	TaskID               string          `json:"task_id"`
 	Platform             string          `json:"platform"`
-	UserId               int             `json:"user_id"`
-	Group                string          `json:"group"`
-	ChannelId            int             `json:"channel_id"`
-	Quota                int             `json:"quota"`
+	UserId               int             `json:"user_id,omitempty"`
+	Group                string          `json:"group,omitempty"`
+	ChannelId            int             `json:"channel_id,omitempty"`
+	Quota                int             `json:"quota,omitempty"`
 	Action               string          `json:"action"`
 	Status               string          `json:"status"`
 	FailReason           string          `json:"fail_reason"`
 	ResultURL            string          `json:"result_url,omitempty"` // 任务结果 URL（视频地址等）
 	LegacyVideoAvailable bool            `json:"legacy_video_available,omitempty"`
+	ArtifactAvailable    bool            `json:"artifact_available,omitempty"`
 	SubmitTime           int64           `json:"submit_time"`
 	StartTime            int64           `json:"start_time"`
 	FinishTime           int64           `json:"finish_time"`
@@ -77,6 +78,11 @@ type TaskPluginRuntimeInfo struct {
 }
 
 type TaskAdminInfo struct {
+	UserID      int             `json:"user_id"`
+	Username    string          `json:"username,omitempty"`
+	Group       string          `json:"group"`
+	ChannelID   int             `json:"channel_id"`
+	Quota       int             `json:"quota"`
 	RequestID   string          `json:"request_id,omitempty"`
 	RequestPath string          `json:"request_path,omitempty"`
 	TaskPlugin  *TaskPluginInfo `json:"task_plugin,omitempty"`

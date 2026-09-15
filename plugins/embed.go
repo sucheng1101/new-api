@@ -12,6 +12,21 @@ import (
 //go:embed tasks
 var taskPlugins embed.FS
 
+// Some plugins are bundled only to make the local integration runnable. They
+// remain third-party plugins in the administrative UI and pricing workflow.
+var preloadedThirdPartyTaskPlugins = map[string]struct{}{
+	"prompt-hubs": {},
+}
+
+// EmbeddedPluginOrigin identifies the provenance shown to administrators. It
+// is intentionally separate from the factory registry layer used at runtime.
+func EmbeddedPluginOrigin(key string) string {
+	if _, ok := preloadedThirdPartyTaskPlugins[key]; ok {
+		return "third_party"
+	}
+	return "factory"
+}
+
 func init() {
 	entries, err := fs.ReadDir(taskPlugins, "tasks")
 	if err != nil {

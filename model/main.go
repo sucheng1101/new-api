@@ -39,7 +39,6 @@ func jsonScanBytes(value any) []byte {
 	}
 }
 
-
 func initCol() {
 	// init common column names
 	if common.UsingPostgreSQL {
@@ -289,6 +288,8 @@ func migrateDB() error {
 		&QuotaData{},
 		&Task{},
 		&TaskPlugin{},
+		&CasbinRule{},
+		&AuthzRole{},
 		&SystemTask{},
 		&PerfMetric{},
 		&MonitorGroup{},
@@ -368,6 +369,8 @@ func migrateDBFast() error {
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&TaskPlugin{}, "TaskPlugin"},
+		{&CasbinRule{}, "CasbinRule"},
+		{&AuthzRole{}, "AuthzRole"},
 		{&SystemTask{}, "SystemTask"},
 		{&PerfMetric{}, "PerfMetric"},
 		{&MonitorGroup{}, "MonitorGroup"},
@@ -427,6 +430,9 @@ func migrateDBFast() error {
 }
 
 func migrateLOGDB() error {
+	if err := MigrateAuditLogs(); err != nil {
+		return err
+	}
 	var err error
 	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
 		return err

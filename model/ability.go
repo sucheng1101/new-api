@@ -3,10 +3,12 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -132,18 +134,60 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int) (*Channel, error) {
+func GetChannel(group string, model string, retry int, filterArgs ...[]dto.ChannelFilter) (*Channel, error) {
 	var abilities []Ability
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
+	var filters []dto.ChannelFilter
+	if len(filterArgs) > 0 {
+		filters = filterArgs[0]
+	}
+	var err error
+	var channelQuery *gorm.DB
+	if len(filters) == 0 {
+		channelQuery, err = getChannelQuery(group, model, retry)
+	} else {
+		groupColumn := qualifiedAbilityGroupColumn()
+		channelQuery = schedulableAbilityQuery().Where(groupColumn+" = ? and abilities.model = ? and abilities.enabled = ?", group, model, true)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if common.UsingSQLite || common.UsingPostgreSQL {
-		err = channelQuery.Order("abilities.weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("abilities.weight DESC").Find(&abilities).Error
+	err = channelQuery.Order("abilities.weight DESC").Find(&abilities).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(filters) > 0 {
+		abilities = filterAbilitiesByConstraints(abilities, model, filters)
+		if len(abilities) > 0 {
+			priorities := make([]int64, 0)
+			seen := make(map[int64]bool)
+			for _, ability := range abilities {
+				priority := int64(0)
+				if ability.Priority != nil {
+					priority = *ability.Priority
+				}
+				if !seen[priority] {
+					seen[priority] = true
+					priorities = append(priorities, priority)
+				}
+			}
+			sort.Slice(priorities, func(i, j int) bool { return priorities[i] > priorities[j] })
+			if retry >= len(priorities) {
+				retry = len(priorities) - 1
+			}
+			targetPriority := priorities[retry]
+			filtered := abilities[:0]
+			for _, ability := range abilities {
+				priority := int64(0)
+				if ability.Priority != nil {
+					priority = *ability.Priority
+				}
+				if priority == targetPriority {
+					filtered = append(filtered, ability)
+				}
+			}
+			abilities = filtered
+		}
 	}
 	if err != nil {
 		return nil, err

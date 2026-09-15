@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	common2 "github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -47,6 +49,28 @@ func TestNewUpstreamRequestPreservesBody(t *testing.T) {
 	body, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Equal(t, "payload", string(body))
+}
+
+func TestDoRequestCapturesUpstreamRequestID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(common2.RequestIdKey, "upstream-request-id")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader("request"))
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstream.URL, strings.NewReader("request"))
+	require.NoError(t, err)
+
+	resp, err := DoRequest(c, req, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, "upstream-request-id", c.GetString(common2.UpstreamRequestIdKey))
 }
 
 func TestNewUpstreamRequestCancellationCancelsTransport(t *testing.T) {

@@ -92,6 +92,49 @@ const formatFormulaAmount = (usdAmount) => {
 
 const formatCount = (value) => toNum(value).toLocaleString();
 
+const taskUsageFact = (other, ...keys) => {
+  const facts = asRecord(other?.usage_facts);
+  for (const key of keys) {
+    if (hasRecordedValue(facts[key])) return facts[key];
+  }
+  return null;
+};
+
+const getTaskFinalQuota = (record, other) => {
+  const actual = Number(other?.actual_quota);
+  if (Number.isFinite(actual)) return actual;
+  const fee = Number(other?.fee_quota);
+  if (Number.isFinite(fee)) return fee;
+  return toNum(record?.quota);
+};
+
+const buildTaskUsage = (record, other, t) => {
+  const isTask = other?.is_task === true || other?.task_id != null;
+  if (!isTask) return null;
+  const seconds = taskUsageFact(
+    other,
+    'seconds',
+    'duration_seconds',
+    'duration',
+  );
+  const resolution = taskUsageFact(other, 'resolution', 'size');
+  const model = other?.origin_model_name || record?.model_name || '';
+  const finalQuota = getTaskFinalQuota(record, other);
+  const preConsumed = Number(other?.pre_consumed_quota);
+  return {
+    model,
+    tier: other?.matched_tier || null,
+    seconds,
+    resolution,
+    finalQuota,
+    finalText: renderQuota(finalQuota, 6),
+    preConsumedText: Number.isFinite(preConsumed)
+      ? renderQuota(preConsumed, 6)
+      : null,
+    modeLabel: t('异步任务'),
+  };
+};
+
 const isViolationFeeLog = (other) =>
   other?.violation_fee === true ||
   Boolean(other?.violation_fee_code) ||
@@ -120,6 +163,68 @@ const getLogType = (record) => Number(record?.type);
 
 const hasRecordedValue = (value) =>
   value !== undefined && value !== null && value !== '' && value !== '-';
+
+const isRecord = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const asRecord = (value) => (isRecord(value) ? value : {});
+
+const hasDiagnosticValue = (value) => {
+  if (!hasRecordedValue(value)) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return !isRecord(value) || Object.keys(value).length > 0;
+};
+
+const formatDiagnosticValue = (value) => {
+  if (typeof value === 'string') return value;
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => formatDiagnosticValue(item))
+      .filter(Boolean)
+      .join(' -> ');
+  }
+  if (isRecord(value)) {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return value == null ? '' : String(value);
+};
+
+const diagnosticItem = (label, value, options = {}) => {
+  if (!hasDiagnosticValue(value)) return null;
+  const text = formatDiagnosticValue(value);
+  if (!text) return null;
+  return {
+    label,
+    value: text,
+    mono: false,
+    copyable: false,
+    expandable: Array.isArray(value) || isRecord(value) || text.length > 240,
+    ...options,
+  };
+};
+
+const diagnosticSection = (title, rows, extra = {}) => {
+  const items = rows.filter(Boolean);
+  const hasExtra = Object.values(extra).some((value) =>
+    Array.isArray(value)
+      ? value.length > 0
+      : isRecord(value)
+        ? Object.keys(value).length > 0
+        : hasDiagnosticValue(value),
+  );
+  return items.length > 0 || hasExtra ? { title, rows: items, ...extra } : null;
+};
 
 const overviewItem = (label, value, options = {}) =>
   hasRecordedValue(value) ? { label, value: String(value), ...options } : null;
@@ -172,7 +277,11 @@ const getDetailMeta = (kind, t) => {
       title: t('请求错误详情'),
       eventTitle: null,
     },
-    topup: { label: t('充值'), title: t('充值详情'), eventTitle: t('充值信息') },
+    topup: {
+      label: t('充值'),
+      title: t('充值详情'),
+      eventTitle: t('充值信息'),
+    },
     management: {
       label: t('管理'),
       title: t('管理操作详情'),
@@ -184,7 +293,11 @@ const getDetailMeta = (kind, t) => {
       eventTitle: t('系统事件'),
     },
     probe: { label: t('探测'), title: t('探测详情'), eventTitle: null },
-    refund: { label: t('退款'), title: t('退款详情'), eventTitle: t('退款信息') },
+    refund: {
+      label: t('退款'),
+      title: t('退款详情'),
+      eventTitle: t('退款信息'),
+    },
     legacy: {
       label: t('历史记录'),
       title: t('历史记录详情'),
@@ -459,6 +572,7 @@ const buildTieredBillingItems = (record, other, t) => {
 
 // 结构化计费明细。无法可靠还原分项金额的计费类型返回 null，由弹窗退回现有计费过程展示。
 const buildBilling = (record, other, t) => {
+  if (other?.is_task === true || other?.task_id != null) return null;
   // 违规扣费与订阅抵扣的结算语义不同，不套用 Token 计价公式
   if (isViolationFeeLog(other) || other?.billing_source === 'subscription') {
     return null;
@@ -552,7 +666,153 @@ const splitExpandRows = (expandRows, t) => {
   return { extraRows, findRow };
 };
 
-export function buildUsageLogDetail({ record, expandRows, t }) {
+const isRequestLikeLog = (kind) =>
+  kind === 'consume' || kind === 'error' || kind === 'probe';
+
+const buildRequestDetails = ({ record, requestPath, isAdminUser, t }) => {
+  if (!isAdminUser) return null;
+  return diagnosticSection(t('请求信息'), [
+    diagnosticItem(t('请求 ID'), record.request_id, {
+      mono: true,
+      copyable: true,
+    }),
+    diagnosticItem(t('上游请求 ID'), record.upstream_request_id, {
+      mono: true,
+      copyable: true,
+    }),
+    diagnosticItem(t('渠道'), compactChannelName(record), { mono: true }),
+    diagnosticItem(t('令牌'), record.token_name, { mono: true }),
+    diagnosticItem(t('分组'), record.group, { mono: true }),
+    diagnosticItem(t('请求路径'), requestPath, { mono: true, copyable: true }),
+  ]);
+};
+
+const buildRequestConversion = ({
+  record,
+  other,
+  isAdminUser,
+  requestPath,
+  t,
+}) => {
+  if (!isAdminUser) return null;
+  const isModelMapped =
+    other.is_model_mapped === true &&
+    hasDiagnosticValue(other.upstream_model_name);
+  const conversion = other.request_conversion;
+  return diagnosticSection(t('请求转换'), [
+    diagnosticItem(t('原始模型'), record.model_name, { mono: true }),
+    isModelMapped
+      ? diagnosticItem(t('实际模型'), other.upstream_model_name, { mono: true })
+      : null,
+    diagnosticItem(t('请求转换'), conversion, {
+      mono: true,
+      expandable: Array.isArray(conversion) && conversion.length > 4,
+    }),
+    diagnosticItem(t('请求路径'), requestPath, { mono: true, copyable: true }),
+  ]);
+};
+
+const buildTaskPluginDiagnostics = ({ adminInfo, isAdminUser, t }) => {
+  if (!isAdminUser) return null;
+  const plugin = asRecord(adminInfo.task_plugin);
+  if (Object.keys(plugin).length === 0) return null;
+  const author = asRecord(plugin.author);
+  const authorText = [author.name, author.url].filter(Boolean).join(' · ');
+  return diagnosticSection(t('任务插件'), [
+    diagnosticItem(t('任务插件'), plugin.name || plugin.key),
+    diagnosticItem(t('插件键'), plugin.key, { mono: true, copyable: true }),
+    diagnosticItem(t('版本'), plugin.version, { mono: true }),
+    diagnosticItem(t('插件作者'), authorText),
+    diagnosticItem(t('插件上下文'), plugin, { mono: true, expandable: true }),
+  ]);
+};
+
+const buildRootDiagnostics = ({ rootInfo, isRootUser, t }) => {
+  if (!isRootUser) return null;
+  const runtime = asRecord(rootInfo.task_plugin);
+  return diagnosticSection(t('Root诊断'), [
+    diagnosticItem(t('API版本'), runtime.api_version, { mono: true }),
+    diagnosticItem(t('插件运行代次'), runtime.generation, { mono: true }),
+    diagnosticItem(t('上游任务 ID'), rootInfo.upstream_task_id, {
+      mono: true,
+      copyable: true,
+    }),
+    diagnosticItem(t('节点名称'), rootInfo.node_name, { mono: true }),
+  ]);
+};
+
+const billingModeLabel = (other) => {
+  if (other?.is_task === true || other?.task_id != null) {
+    return 'async_task';
+  }
+  if (hasDiagnosticValue(other.billing_mode)) return other.billing_mode;
+  if (other.model_price != null && other.model_price !== -1) {
+    return 'per_request';
+  }
+  if (other.model_ratio != null) return 'per_token';
+  return '';
+};
+
+const buildBillingDiagnostics = ({ record, other, t }) => {
+  const usageFactLabels = {
+    seconds: t('视频时长'),
+    duration_seconds: t('视频时长'),
+    duration: t('视频时长'),
+    resolution: t('分辨率'),
+    size: t('分辨率'),
+  };
+  const usageFacts = Object.entries(asRecord(other.usage_facts)).map(
+    ([key, value]) => ({ key: usageFactLabels[key] || key, value }),
+  );
+  const hasSettlement =
+    hasDiagnosticValue(other.pre_consumed_quota) ||
+    hasDiagnosticValue(other.actual_quota);
+  const settlementReason = hasSettlement
+    ? other.settlement_reason || other.reason || record.content
+    : '';
+  return diagnosticSection(
+    t('计费参数与结算'),
+    [
+      diagnosticItem(t('计费模式'), billingModeLabel(other), { mono: true }),
+      diagnosticItem(t('命中阶梯'), other.matched_tier, { mono: true }),
+      diagnosticItem(
+        t('模型单价'),
+        Number(other.model_price) > 0 ? other.model_price : null,
+        { mono: true },
+      ),
+      diagnosticItem(t('模型倍率'), other.model_ratio, { mono: true }),
+      diagnosticItem(t('完成倍率'), other.completion_ratio, { mono: true }),
+      diagnosticItem(t('分组倍率'), other.group_ratio, { mono: true }),
+      diagnosticItem(t('专属倍率'), other.user_group_ratio, { mono: true }),
+      diagnosticItem(t('预扣额度'), other.pre_consumed_quota, { mono: true }),
+      diagnosticItem(t('实际额度'), other.actual_quota, { mono: true }),
+      diagnosticItem(
+        t('本次额度变动'),
+        other.is_task || other.task_id != null
+          ? renderQuota(getTaskFinalQuota(record, other), 6)
+          : record.quota,
+        { mono: true },
+      ),
+      diagnosticItem(t('结算原因'), settlementReason, { expandable: true }),
+    ],
+    { usageFacts },
+  );
+};
+
+const buildContentDiagnostics = ({ record, error, t }) =>
+  diagnosticSection(t('内容'), [
+    diagnosticItem(error ? t('错误内容') : t('内容'), record.content, {
+      expandable: true,
+    }),
+  ]);
+
+export function buildUsageLogDetail({
+  record,
+  expandRows,
+  t,
+  isAdminUser = false,
+  isRootUser = false,
+}) {
   if (!record) {
     return null;
   }
@@ -621,6 +881,28 @@ export function buildUsageLogDetail({ record, expandRows, t }) {
         rows: buildEventRows(kind, record, other, t),
       }
     : null;
+  const adminInfo = isAdminUser ? asRecord(other.admin_info) : {};
+  const rootInfo = isRootUser ? asRecord(other.root_info) : {};
+  const requestDetails = isRequestLikeLog(kind)
+    ? buildRequestDetails({ record, requestPath, isAdminUser, t })
+    : null;
+  const requestConversion = isRequestLikeLog(kind)
+    ? buildRequestConversion({ record, other, isAdminUser, requestPath, t })
+    : null;
+  const taskPlugin = isRequestLikeLog(kind)
+    ? buildTaskPluginDiagnostics({ adminInfo, isAdminUser, t })
+    : null;
+  const rootDiagnostics = isRequestLikeLog(kind)
+    ? buildRootDiagnostics({ rootInfo, isRootUser, t })
+    : null;
+  const billingDiagnostics =
+    isRequestLikeLog(kind) || other.is_task === true || other.task_id != null
+      ? buildBillingDiagnostics({ record, other, t })
+      : null;
+  const contentDiagnostics = isRequestLikeLog(kind)
+    ? buildContentDiagnostics({ record, error, t })
+    : null;
+  const taskUsage = buildTaskUsage(record, other, t);
 
   return {
     id: record.id,
@@ -638,6 +920,8 @@ export function buildUsageLogDetail({ record, expandRows, t }) {
     useTime,
     frtSeconds: frtMs > 0 ? Number((frtMs / 1000).toFixed(1)) : null,
     isStream: Boolean(record.is_stream),
+    isTask: Boolean(taskUsage),
+    taskUsage,
     speed,
     streamStatus: ss,
     tokens: {
@@ -683,6 +967,12 @@ export function buildUsageLogDetail({ record, expandRows, t }) {
     contentText: isQuotaAdjustment
       ? getAdminQuotaAdjustmentContent(record.content)
       : record.content || null,
+    requestDetails,
+    requestConversion,
+    taskPlugin,
+    rootDiagnostics,
+    billingDiagnostics,
+    contentDiagnostics,
     isAdminQuotaAdjustment: isQuotaAdjustment,
     extraRows,
   };
@@ -718,6 +1008,22 @@ export function buildUsageLogBriefSummary(record, t) {
     return t('查看详情');
   }
   const other = getLogOther(record.other) || {};
+
+  if (other?.is_task === true || other?.task_id != null) {
+    const taskUsage = buildTaskUsage(record, other, t);
+    const parts = [t('异步任务')];
+    if (taskUsage?.seconds != null) {
+      parts.push(`${t('时长')} ${taskUsage.seconds}s`);
+    }
+    if (taskUsage?.resolution) {
+      parts.push(String(taskUsage.resolution));
+    }
+    if (taskUsage?.tier) {
+      parts.push(`${t('档位')} ${taskUsage.tier}`);
+    }
+    parts.push(`${t('扣费')} ${taskUsage?.finalText || renderQuota(0, 6)}`);
+    return parts.join(' · ');
+  }
 
   if (isViolationFeeLog(other)) {
     const feeQuota = other?.fee_quota ?? record?.quota ?? 0;
