@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -250,6 +251,60 @@ func TestDispatchPlatformUpdateUsesFetchMode(t *testing.T) {
 	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return nil }
 	assert.NotPanics(t, func() { DispatchPlatformUpdate(context.Background(), "missing-plugin", taskChannels, tasks) })
 	GetTaskAdaptorFunc = previousFactory
+}
+
+func TestUpdateVideoTasksResolvesAdaptorForEachPluginSnapshot(t *testing.T) {
+	truncate(t)
+
+	const channelID = 110
+	seedTaskPollingChannel(t, channelID, true)
+	first := seedPollingTask(t, channelID, "task_snapshot_first", "upstream_snapshot_first")
+	second := seedPollingTask(t, channelID, "task_snapshot_second", "upstream_snapshot_second")
+	first.PrivateData.Execution = &model.TaskExecutionSnapshot{TaskPlugin: &model.TaskPluginSnapshot{
+		Key: "snapshot-first", Version: "1.0.0", SourceHash: "first-source",
+	}}
+	second.PrivateData.Execution = &model.TaskExecutionSnapshot{TaskPlugin: &model.TaskPluginSnapshot{
+		Key: "snapshot-second", Version: "1.0.0", SourceHash: "second-source",
+	}}
+
+	firstAdaptor := &taskPollingFetchAdaptor{}
+	secondAdaptor := &taskPollingFetchAdaptor{}
+	previousFactory := GetTaskAdaptorFunc
+	previousTaskFactory := GetTaskAdaptorForTaskFunc
+	var platformFallbackCalls atomic.Int32
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor {
+		platformFallbackCalls.Add(1)
+		return nil
+	}
+	GetTaskAdaptorForTaskFunc = func(task *model.Task) TaskPollingAdaptor {
+		switch task.TaskID {
+		case first.TaskID:
+			return firstAdaptor
+		case second.TaskID:
+			return secondAdaptor
+		default:
+			return nil
+		}
+	}
+	t.Cleanup(func() {
+		GetTaskAdaptorFunc = previousFactory
+		GetTaskAdaptorForTaskFunc = previousTaskFactory
+	})
+
+	require.NoError(t, UpdateVideoTasks(context.Background(), "snapshot-plugin", map[int][]string{
+		channelID: {first.GetUpstreamTaskID(), second.GetUpstreamTaskID()},
+	}, map[string]*model.Task{
+		first.GetUpstreamTaskID():  first,
+		second.GetUpstreamTaskID(): second,
+	}))
+
+	assert.Equal(t, []string{first.GetUpstreamTaskID()}, firstAdaptor.fetchedTaskIDs())
+	assert.Equal(t, []string{second.GetUpstreamTaskID()}, secondAdaptor.fetchedTaskIDs())
+	assert.Zero(t, platformFallbackCalls.Load())
+	assert.False(t, taskPollingPluginsAreUniform(map[string]*model.Task{
+		first.GetUpstreamTaskID():  first,
+		second.GetUpstreamTaskID(): second,
+	}))
 }
 
 func TestUpdateBatchTasksSettlesTieredUsageForTerminalStates(t *testing.T) {

@@ -85,3 +85,52 @@ func TestGPT6AstraBuiltinBilling(t *testing.T) {
 	}))
 	require.Equal(t, "tier(\"custom\", p * 7)", GetBillingExprCopy()["gpt-6-astra"])
 }
+
+func TestResolveTaskBillingExprUsesThePublicModelPrice(t *testing.T) {
+	savedBilling := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		if key == "billing_setting.billing_mode" || key == "billing_setting.billing_expr" || key == PluginBillingExprOption || key == PluginBillingAddonExprOption {
+			savedBilling[key] = value
+		}
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(savedBilling))
+	})
+
+	const publicExpr = `tier("public", u("seconds") * 10)`
+	const legacyPluginExpr = `tier("legacy", u("seconds") * 999)`
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"shared-video":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"shared-video":"tier(\"public\", u(\"seconds\") * 10)"}`,
+		PluginBillingExprOption:        `{"prompt-hubs::shared-video":"tier(\"legacy\", u(\"seconds\") * 999)"}`,
+	}))
+
+	expression, ok := ResolveTaskBillingExpr("prompt-hubs", "shared-video", "minimax_h3")
+	require.True(t, ok)
+	require.Equal(t, publicExpr, expression)
+}
+
+func TestResolveTaskBillingAddonExprUsesSelectedPluginOnly(t *testing.T) {
+	savedBilling := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		if key == PluginBillingAddonExprOption {
+			savedBilling[key] = value
+		}
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(savedBilling))
+	})
+
+	const hailuoAddon = `tier("reference_media", u("input_images") * 7 + u("input_video_seconds") * 5)`
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		PluginBillingAddonExprOption: `{"hailuo::MiniMax-H3":"tier(\"reference_media\", u(\"input_images\") * 7 + u(\"input_video_seconds\") * 5)"}`,
+	}))
+
+	expression, ok := ResolveTaskBillingAddonExpr("hailuo", "MiniMax-H3", "minimax_h3")
+	require.True(t, ok)
+	require.Equal(t, hailuoAddon, expression)
+	_, ok = ResolveTaskBillingAddonExpr("prompt-hubs", "MiniMax-H3", "minimax_h3")
+	require.False(t, ok)
+}

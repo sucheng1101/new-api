@@ -79,6 +79,25 @@ type BillingSnapshot struct {
 	ExprVersion               int            `json:"expr_version"`
 	TaskUsageBilling          bool           `json:"task_usage_billing,omitempty"`
 	UsageFacts                map[string]any `json:"usage_facts,omitempty"`
+	// Components captures additive task pricing. ExprString remains the public
+	// base expression for backward-compatible readers; components make the
+	// selected plugin surcharge independently auditable and settleable.
+	Components []BillingComponentSnapshot `json:"components,omitempty"`
+}
+
+// BillingComponentSnapshot is one frozen contribution to a task price. Costs
+// are stored before the group multiplier so components can be summed before a
+// single final quota rounding step.
+type BillingComponentSnapshot struct {
+	Kind                      string  `json:"kind"`
+	PluginKey                 string  `json:"plugin_key,omitempty"`
+	ExprString                string  `json:"expr_string"`
+	ExprHash                  string  `json:"expr_hash"`
+	ExprVersion               int     `json:"expr_version"`
+	EstimatedQuotaBeforeGroup float64 `json:"estimated_quota_before_group"`
+	EstimatedTier             string  `json:"estimated_tier,omitempty"`
+	ActualQuotaBeforeGroup    float64 `json:"actual_quota_before_group,omitempty"`
+	ActualTier                string  `json:"actual_tier,omitempty"`
 }
 
 // TieredResult holds everything needed after running tiered settlement.

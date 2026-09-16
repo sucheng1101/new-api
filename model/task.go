@@ -9,9 +9,10 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/dto"
+	"gorm.io/gorm"
 )
 
 type TaskStatus string
@@ -148,12 +149,29 @@ type TaskExecutionSnapshot struct {
 // TaskPluginSnapshot contains credential-free identity only. Plugin source,
 // request/response payloads, and channel secrets must never be added here.
 type TaskPluginSnapshot struct {
-	Key        string                    `json:"key"`
-	Name       string                    `json:"name"`
-	Version    string                    `json:"version"`
-	Author     *TaskPluginAuthorSnapshot `json:"author,omitempty"`
-	APIVersion int                       `json:"api_version"`
-	Generation uint64                    `json:"generation"`
+	Key           string                    `json:"key"`
+	Name          string                    `json:"name"`
+	Version       string                    `json:"version"`
+	SourceHash    string                    `json:"source_hash,omitempty"`
+	Author        *TaskPluginAuthorSnapshot `json:"author,omitempty"`
+	APIVersion    int                       `json:"api_version"`
+	Generation    uint64                    `json:"generation"`
+	archiveSource string
+}
+
+// SetArchiveSource records source only until a new Task is inserted. The field
+// stays unexported so it cannot be serialized into private_data or task APIs.
+func (p *TaskPluginSnapshot) SetArchiveSource(source string) {
+	if p != nil {
+		p.archiveSource = source
+	}
+}
+
+func (p *TaskPluginSnapshot) archiveSourceForInsert() string {
+	if p == nil {
+		return ""
+	}
+	return p.archiveSource
 }
 
 type TaskPluginAuthorSnapshot struct {
@@ -482,7 +500,12 @@ func (Task *Task) Insert() error {
 }
 
 func (Task *Task) InsertWithContext(ctx context.Context) error {
-	return DB.WithContext(ctx).Create(Task).Error
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ArchiveTaskPluginSourceForTask(tx, Task); err != nil {
+			return err
+		}
+		return tx.Create(Task).Error
+	})
 }
 
 type taskSnapshot struct {

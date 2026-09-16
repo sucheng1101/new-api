@@ -91,10 +91,24 @@ func GetDashboardTaskArtifacts(c *gin.Context) {
 
 func writeTaskArtifacts(c *gin.Context, task *model.Task, dashboard bool) {
 	c.Header("Cache-Control", "private, no-store")
-	artifacts, err := projectTaskArtifacts(task)
-	if err != nil {
-		writeTaskArtifactProjectionError(c, err)
-		return
+	artifactStore := service.GetTaskArtifactStore()
+	stored, storeErr := artifactStore.List(task)
+	artifacts := make([]relaychannel.TaskArtifact, 0, len(stored))
+	if storeErr == nil && len(stored) > 0 {
+		for _, ref := range stored {
+			artifacts = append(artifacts, relaychannel.TaskArtifact{
+				Key:      ref.Key,
+				Type:     ref.Type,
+				MimeType: ref.MimeType,
+			})
+		}
+	} else {
+		projected, err := projectTaskArtifacts(task)
+		if err != nil {
+			writeTaskArtifactProjectionError(c, err)
+			return
+		}
+		artifacts = projected
 	}
 	items := make([]taskArtifactResponse, 0, len(artifacts))
 	for _, artifact := range artifacts {
@@ -130,9 +144,9 @@ func projectTaskArtifacts(task *model.Task) ([]relaychannel.TaskArtifact, error)
 	if task == nil || task.Status != model.TaskStatusSuccess || !taskHasPluginExecution(task) {
 		return []relaychannel.TaskArtifact{}, nil
 	}
-	adaptor := relay.GetTaskAdaptor(task.Platform)
-	if adaptor == nil {
-		return nil, errTaskArtifactPluginUnavailable
+	adaptor, adaptorErr := relay.ResolveTaskAdaptorForTask(task)
+	if adaptorErr != nil || adaptor == nil {
+		return nil, fmt.Errorf("%w: %v", errTaskArtifactPluginUnavailable, adaptorErr)
 	}
 	provider, ok := adaptor.(relaychannel.TaskArtifactProvider)
 	if !ok {
@@ -182,9 +196,9 @@ func initTaskArtifactAdaptor(task *model.Task) (relaychannel.TaskAdaptor, error)
 	if err != nil {
 		return nil, fmt.Errorf("%w: channel unavailable", errTaskArtifactPluginUnavailable)
 	}
-	adaptor := relay.GetTaskAdaptor(task.Platform)
-	if adaptor == nil {
-		return nil, errTaskArtifactPluginUnavailable
+	adaptor, adaptorErr := relay.ResolveTaskAdaptorForTask(task)
+	if adaptorErr != nil || adaptor == nil {
+		return nil, fmt.Errorf("%w: %v", errTaskArtifactPluginUnavailable, adaptorErr)
 	}
 	pluginKey := taskArtifactAPIKey(task, channelModel)
 	baseURL := channelModel.GetBaseURL()
@@ -309,6 +323,12 @@ func TaskArtifactContent(c *gin.Context) {
 		writeTaskArtifactError(c, http.StatusConflict, "artifact_not_ready", "Task artifacts are not ready")
 		return
 	}
+	artifactStore := service.GetTaskArtifactStore()
+	if ref, resolveErr := artifactStore.Resolve(task, artifactKey); resolveErr == nil && ref != nil {
+		if serveErr := artifactStore.Serve(c, task, ref); serveErr == nil || c.Writer.Written() {
+			return
+		}
+	}
 	if !taskHasPluginExecution(task) {
 		if artifactKey != "video" || !legacyVideoAvailable(task) {
 			writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
@@ -340,12 +360,6 @@ func TaskArtifactContent(c *gin.Context) {
 		writeTaskArtifactError(c, http.StatusNotFound, "artifact_not_found", "Task or artifact not found")
 		return
 	}
-	artifactStore := service.GetTaskArtifactStore()
-	if ref, resolveErr := artifactStore.Resolve(task, artifactKey); resolveErr == nil && ref != nil {
-		_ = artifactStore.Serve(c, task, ref)
-		return
-	}
-
 	adaptor, err := initTaskArtifactAdaptor(task)
 	if err != nil {
 		writeTaskArtifactProjectionError(c, err)
@@ -430,6 +444,7 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 			}
 		}
 		item := relay.TaskModel2Dto(task)
+		item.Billing = taskBillingSummary(task)
 		item.LegacyVideoAvailable = legacyVideoAvailable(task)
 		// Successful task-plugin results are intentionally served through the
 		// artifact capability endpoint rather than exposing their upstream URL in
@@ -501,6 +516,41 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 		result[i] = item
 	}
 	return result
+}
+
+func taskBillingSummary(task *model.Task) *dto.TaskBillingInfo {
+	if task == nil || task.PrivateData.BillingContext == nil || task.PrivateData.BillingContext.TieredSnapshot == nil {
+		return nil
+	}
+	snapshot := task.PrivateData.BillingContext.TieredSnapshot
+	info := &dto.TaskBillingInfo{
+		Mode:           snapshot.BillingMode,
+		GroupRatio:     snapshot.GroupRatio,
+		EstimatedQuota: snapshot.EstimatedQuotaAfterGroup,
+		ActualQuota:    task.Quota,
+		Settled:        task.Status == model.TaskStatusSuccess,
+	}
+	if len(snapshot.UsageFacts) > 0 {
+		info.UsageFacts = make(map[string]any, len(snapshot.UsageFacts))
+		for key, value := range snapshot.UsageFacts {
+			info.UsageFacts[key] = value
+		}
+	}
+	if len(snapshot.Components) == 0 {
+		return info
+	}
+	info.Components = make([]dto.TaskBillingComponentInfo, 0, len(snapshot.Components))
+	for _, component := range snapshot.Components {
+		info.Components = append(info.Components, dto.TaskBillingComponentInfo{
+			Kind:                      component.Kind,
+			PluginKey:                 component.PluginKey,
+			EstimatedQuotaBeforeGroup: component.EstimatedQuotaBeforeGroup,
+			ActualQuotaBeforeGroup:    component.ActualQuotaBeforeGroup,
+			EstimatedTier:             component.EstimatedTier,
+			ActualTier:                component.ActualTier,
+		})
+	}
+	return info
 }
 
 func taskFailReasonIsLegacyResultURL(value string) bool {

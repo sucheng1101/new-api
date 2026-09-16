@@ -68,9 +68,10 @@ func promptHubsURLs(count int, prefix string) []any {
 
 func TestPromptHubsMetadataAndUsageProfiles(t *testing.T) {
 	plugin := loadPromptHubsPlugin(t)
-	assert.Equal(t, "1.0.2", plugin.Meta.Version)
+	assert.Equal(t, "1.0.5", plugin.Meta.Version)
 	assert.Equal(t, []string{
 		"minimax_h3",
+		"MiniMax-H3",
 		"MiniMax-H3-漫剧优化",
 		"MiniMax-H3-量化版",
 		"MiniMax-H3-四步采样版",
@@ -78,6 +79,7 @@ func TestPromptHubsMetadataAndUsageProfiles(t *testing.T) {
 
 	expectedResolutions := map[string][]string{
 		"minimax_h3":       {"768", "1080p", "2K", "4K"},
+		"MiniMax-H3":       {"768", "1080p", "2K", "4K"},
 		"MiniMax-H3-漫剧优化":  {"768", "2K", "4K"},
 		"MiniMax-H3-量化版":   {"768"},
 		"MiniMax-H3-四步采样版": {"768", "1080p"},
@@ -116,6 +118,7 @@ func TestPromptHubsBuildSubmitRequest(t *testing.T) {
 		wantSize      string
 		wantAction    string
 		wantImages    bool
+		wantWireModel string
 	}{
 		{
 			name:        "base H3 uses a high-resolution reference image",
@@ -124,6 +127,11 @@ func TestPromptHubsBuildSubmitRequest(t *testing.T) {
 				"aspect_ratio": "16:9", "reference_images": []any{"https://cdn.example/frame.jpg"},
 			}},
 			wantSeconds: 5, wantSize: "2K", wantAction: "image_to_video", wantImages: true,
+		},
+		{
+			name: "public H3 keeps its pricing identity and forces the Prompt Hubs wire model", publicModel: "MiniMax-H3", upstreamModel: "channel-specific-alias",
+			request:     map[string]any{"model": "MiniMax-H3", "prompt": "public H3", "duration_seconds": 5, "resolution": "768P", "prompt_enhance": true},
+			wantSeconds: 5, wantSize: "768", wantAction: "text_to_video", wantWireModel: "minimax_h3",
 		},
 		{
 			name: "comic model", publicModel: "MiniMax-H3-漫剧优化", upstreamModel: "MiniMax-H3-漫剧优化",
@@ -148,7 +156,11 @@ func TestPromptHubsBuildSubmitRequest(t *testing.T) {
 			assert.Equal(t, "POST", descriptor["method"])
 			assert.Equal(t, testCase.wantAction, descriptor["action"])
 			body := promptHubsObject(t, descriptor["body"])
-			assert.Equal(t, testCase.upstreamModel, body["model"])
+			wantWireModel := testCase.wantWireModel
+			if wantWireModel == "" {
+				wantWireModel = testCase.upstreamModel
+			}
+			assert.Equal(t, wantWireModel, body["model"])
 			assert.Equal(t, testCase.wantSeconds, body["duration_seconds"])
 			assert.Equal(t, testCase.wantSize, body["resolution"])
 			assert.NotContains(t, body, "duration")
@@ -156,6 +168,9 @@ func TestPromptHubsBuildSubmitRequest(t *testing.T) {
 			assert.NotContains(t, body, "ratio")
 			assert.NotContains(t, body, "metadata")
 			assert.Equal(t, testCase.wantImages, body["reference_images"] != nil)
+			if testCase.publicModel == "MiniMax-H3" {
+				assert.Equal(t, true, body["prompt_enhance"])
+			}
 		})
 	}
 
@@ -299,7 +314,7 @@ func TestPromptHubsSubmitAndPollResponses(t *testing.T) {
 		wantURL    string
 		wantReason string
 	}{
-		{"queued preserves progress", map[string]any{"status": "queued", "progress": 25}, "IN_PROGRESS", "", ""},
+		{"queued preserves progress", map[string]any{"status": "queued", "progress": 25}, "QUEUED", "", ""},
 		{"processing", map[string]any{"status": "processing"}, "IN_PROGRESS", "", ""},
 		{"running", map[string]any{"status": "running"}, "IN_PROGRESS", "", ""},
 		{"in progress", map[string]any{"status": "in_progress"}, "IN_PROGRESS", "", ""},
@@ -340,10 +355,26 @@ func TestPromptHubsArtifactsAndUsage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, descriptor)
 	assert.Equal(t, "https://console.prompt-hubs.example/v1/videos/provider-task-1/content", descriptor.URL)
-	assert.Equal(t, http.MethodGet, descriptor.Method)
+	assert.Equal(t, http.MethodHead, descriptor.Method)
 	assert.False(t, descriptor.Credentialless)
 	assert.True(t, descriptor.DropCredentialsOnRedirect)
 	assert.Equal(t, map[string]string{"Authorization": "Bearer test-provider-key"}, descriptor.Headers)
+
+	fallbackTask := &model.Task{
+		TaskID: "task-fallback",
+		Status: model.TaskStatusSuccess,
+		Data:   []byte(`{"status":"succeeded"}`),
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "provider-task-fallback",
+		},
+	}
+	fallback, err := adaptor.BuildContentRequest(fallbackTask, "video", relaychannel.TaskArtifactClientRequest{Method: http.MethodGet})
+	require.NoError(t, err)
+	require.NotNil(t, fallback)
+	assert.Equal(t, "https://console.prompt-hubs.example/v1/videos/provider-task-fallback/content", fallback.URL)
+	assert.Equal(t, http.MethodGet, fallback.Method)
+	assert.False(t, fallback.Credentialless)
+	assert.Equal(t, map[string]string{"Authorization": "Bearer test-provider-key"}, fallback.Headers)
 
 	request := map[string]any{
 		"model": "minimax_h3", "prompt": "river", "seconds": 5, "size": "2K",
@@ -403,7 +434,7 @@ func TestPromptHubsHostAdaptorRunsSubmitPollAndArtifact(t *testing.T) {
 				_, _ = io.WriteString(w, `{"status":"processing","progress":45}`)
 				return
 			}
-			_, _ = io.WriteString(w, `{"status":"completed","outputs":[{"content_url":"`+server.URL+`/media.mp4"}]}`)
+			_, _ = io.WriteString(w, `{"status":"completed","outputs":[{"content_url":"https://cdn.example/media.mp4"}]}`)
 		case "/v1/videos/provider-task-1/content":
 			assert.Equal(t, http.MethodGet, r.Method)
 			assert.Equal(t, "Bearer provider-key", r.Header.Get("Authorization"))
@@ -495,7 +526,9 @@ func TestPromptHubsHostAdaptorRunsSubmitPollAndArtifact(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, content)
 	assert.False(t, content.Credentialless)
+	assert.True(t, content.DropCredentialsOnRedirect)
 	assert.Equal(t, map[string]string{"Authorization": "Bearer provider-key"}, content.Headers)
+	assert.Equal(t, server.URL+"/v1/videos/provider-task-1/content", content.URL)
 	contentRequest, err := http.NewRequest(http.MethodGet, content.URL, nil)
 	require.NoError(t, err)
 	for name, value := range content.Headers {

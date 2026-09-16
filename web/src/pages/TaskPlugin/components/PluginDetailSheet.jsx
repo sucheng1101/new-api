@@ -20,7 +20,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
-  Descriptions,
   Empty,
   Select,
   SideSheet,
@@ -31,7 +30,18 @@ import {
   TextArea,
   Typography,
 } from '@douyinfe/semi-ui';
-import { FlaskConical, RefreshCw, RotateCcw } from 'lucide-react';
+import {
+  Code2,
+  FlaskConical,
+  History,
+  Info,
+  Layers3,
+  Network,
+  Package,
+  RefreshCw,
+  RotateCcw,
+  Settings2,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { API, showError, showSuccess } from '../../../helpers';
@@ -68,94 +78,155 @@ function ModelTags({ models = [] }) {
   );
 }
 
-function UsageSchemaTable({ schema, t }) {
-  if (!schema || Object.keys(schema).length === 0) {
+function DetailSection({
+  icon: Icon = Info,
+  title,
+  description,
+  children,
+  className = '',
+}) {
+  return (
+    <section className={`task-plugin-detail-block ${className}`.trim()}>
+      <header className='task-plugin-detail-block-heading'>
+        <span className='task-plugin-detail-block-icon'>
+          <Icon size={16} strokeWidth={1.8} />
+        </span>
+        <div className='task-plugin-detail-block-heading-copy'>
+          <Typography.Text strong>{title}</Typography.Text>
+          {description ? (
+            <Typography.Text type='tertiary' size='small'>
+              {description}
+            </Typography.Text>
+          ) : null}
+        </div>
+      </header>
+      <div className='task-plugin-detail-block-content'>{children}</div>
+    </section>
+  );
+}
+
+function UsageSchemaFacts({ schema, t }) {
+  const entries = Object.entries(schema ?? {});
+  if (!entries.length) {
     return (
       <Typography.Text type='tertiary'>{t('未声明用量字段')}</Typography.Text>
     );
   }
-
   return (
-    <Table
-      columns={[
-        { title: t('字段'), dataIndex: 'field', width: 132 },
-        {
-          title: t('类型'),
-          width: 132,
-          render: (_, record) => (
-            <Tag>
-              {record.definition.type}
-              {record.definition.unit
-                ? ` (${UNIT_LABELS[record.definition.unit] ?? record.definition.unit})`
-                : ''}
-            </Tag>
-          ),
-        },
-        {
-          title: t('枚举/约束'),
-          render: (_, record) =>
-            record.definition.enum?.length ? (
-              <div className='task-plugin-models'>
-                {record.definition.enum.map((value) => (
-                  <Tag key={value}>{value}</Tag>
-                ))}
-              </div>
-            ) : (
-              '-'
-            ),
-        },
-        {
-          title: t('说明'),
-          render: (_, record) =>
-            localizedText(record.definition.description) || '-',
-        },
-      ]}
-      dataSource={Object.entries(schema).map(([field, definition]) => ({
-        key: field,
-        field,
-        definition,
-      }))}
-      pagination={false}
-      size='small'
-      scroll={{ x: 640 }}
-    />
+    <div className='task-plugin-usage-schema-grid'>
+      {entries.map(([field, definition]) => (
+        <div className='task-plugin-usage-schema-item' key={field}>
+          <div className='task-plugin-usage-schema-title'>
+            <Typography.Text strong>
+              {localizedText(definition.description) || field}
+            </Typography.Text>
+            <Typography.Text type='tertiary' size='small' code>
+              {field}
+            </Typography.Text>
+          </div>
+          <div className='task-plugin-usage-schema-tags'>
+            {definition.type ? <Tag>{definition.type}</Tag> : null}
+            {definition.unit ? (
+              <Tag color='grey'>
+                {UNIT_LABELS[definition.unit] ?? definition.unit}
+              </Tag>
+            ) : null}
+            {(definition.enum ?? []).map((value) => (
+              <Tag key={value} color='blue'>
+                {localizedText(definition.enumLabels?.[value]) || value}
+              </Tag>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
-function displayValue(value) {
-  if (value === undefined || value === null || value === '') return '-';
-  if (typeof value === 'string' || typeof value === 'number')
-    return String(value);
-  if (Array.isArray(value)) return value.join(', ') || '-';
-  return JSON.stringify(value, null, 2);
+function UsageExamples({ examples, schema, t }) {
+  if (!examples?.length) return null;
+  return (
+    <div className='task-plugin-usage-example-list'>
+      {examples.map((example, index) => (
+        <div
+          className='task-plugin-usage-example'
+          key={`${example.label}-${index}`}
+        >
+          <Typography.Text strong>
+            {example.label || t('规格示例')}
+          </Typography.Text>
+          <div className='task-plugin-usage-example-facts'>
+            {Object.entries(example.facts ?? {}).map(([field, value]) => (
+              <Tag key={field} color='grey'>
+                {localizedText(schema?.[field]?.description) || field}:{' '}
+                {String(value)}
+              </Tag>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function EndpointSummary({ meta, t }) {
-  const endpoints = meta.endpoints ?? meta.routes ?? [];
+  const endpoints = meta.routes ?? meta.endpoints ?? [];
   const protocols = meta.protocols ?? [];
   if (!endpoints.length && !protocols.length) {
     return <Typography.Text type='tertiary'>-</Typography.Text>;
   }
   return (
-    <div className='task-plugin-overview-jsons'>
+    <div className='task-plugin-contract-list'>
       {endpoints.length ? (
-        <div>
+        <div className='task-plugin-contract-row'>
           <Typography.Text type='tertiary' size='small'>
-            {t('端点')}
+            {t('自定义端点')}
           </Typography.Text>
-          <pre className='task-plugin-code-block'>
-            {JSON.stringify(endpoints, null, 2)}
-          </pre>
+          <div className='task-plugin-contract-tags'>
+            {endpoints.map((endpoint, index) => {
+              if (typeof endpoint === 'string')
+                return <Tag key={endpoint}>{endpoint}</Tag>;
+              const method = endpoint.method ? `${endpoint.method} ` : '';
+              const path =
+                endpoint.path ||
+                endpoint.name ||
+                endpoint.type ||
+                t('未命名端点');
+              return (
+                <Tag key={`${method}-${path}-${index}`} color='blue'>
+                  {method}
+                  {path}
+                </Tag>
+              );
+            })}
+          </div>
         </div>
       ) : null}
       {protocols.length ? (
-        <div>
+        <div className='task-plugin-contract-row'>
           <Typography.Text type='tertiary' size='small'>
-            {t('协议声明')}
+            {t('协议')}
           </Typography.Text>
-          <pre className='task-plugin-code-block'>
-            {JSON.stringify(protocols, null, 2)}
-          </pre>
+          <div className='task-plugin-contract-tags'>
+            {protocols.map((protocol, index) => {
+              if (typeof protocol === 'string')
+                return (
+                  <Tag key={protocol} color='green'>
+                    {protocol}
+                  </Tag>
+                );
+              const supports =
+                Array.isArray(protocol.supports) && protocol.supports.length
+                  ? ` (${protocol.supports.join(', ')})`
+                  : '';
+              return (
+                <Tag key={`${protocol.name}-${index}`} color='green'>
+                  {protocol.name || t('未命名协议')}
+                  {supports}
+                </Tag>
+              );
+            })}
+          </div>
         </div>
       ) : null}
     </div>
@@ -173,11 +244,10 @@ function PluginOverview({ detail, listRecord, t }) {
   const runtimeStatus = listRecord?.runtime_status || '-';
 
   const info = [
-    [t('插件 Key'), meta.key ?? '-'],
     [t('版本'), meta.version ?? '-'],
     [t('API 版本'), meta.apiVersion ?? '-'],
     [t('作者'), author],
-    [t('官网'), meta.website ?? '-'],
+    [t('来源'), <Tag color={ownership.color}>{t(ownership.label)}</Tag>],
     [t('渠道类型'), meta.channelTypes?.join(', ') || '-'],
     [t('获取模式'), meta.fetchMode ?? '-'],
     [
@@ -192,30 +262,46 @@ function PluginOverview({ detail, listRecord, t }) {
 
   return (
     <div className='task-plugin-detail-section'>
-      <div className='task-plugin-detail-info-grid'>
-        {info.map(([label, value]) => (
-          <div className='task-plugin-detail-info-cell' key={label}>
-            <Typography.Text type='tertiary' size='small'>
-              {label}
-            </Typography.Text>
-            <div className='task-plugin-detail-info-value'>{value}</div>
-          </div>
-        ))}
-      </div>
-      <div className='task-plugin-detail-overview-block'>
-        <Typography.Text strong>{t('支持模型')}</Typography.Text>
+      <DetailSection
+        icon={Info}
+        title={t('运行概览')}
+        description={t('插件版本、运行状态和已绑定任务概况')}
+      >
+        <div className='task-plugin-detail-info-grid'>
+          {info.map(([label, value]) => (
+            <div className='task-plugin-detail-info-cell' key={label}>
+              <Typography.Text type='tertiary' size='small'>
+                {label}
+              </Typography.Text>
+              <div className='task-plugin-detail-info-value'>{value}</div>
+            </div>
+          ))}
+        </div>
+      </DetailSection>
+      <DetailSection
+        icon={Package}
+        title={t('支持模型')}
+        description={t('这些模型会由此插件声明协议能力与参数约束')}
+      >
         <ModelTags models={meta.models ?? []} />
-      </div>
-      <div className='task-plugin-detail-overview-block'>
-        <Typography.Text strong>{t('描述')}</Typography.Text>
+      </DetailSection>
+      <DetailSection
+        icon={Network}
+        title={t('接口能力')}
+        description={t('插件对外声明的请求入口与协议')}
+      >
+        <EndpointSummary meta={meta} t={t} />
+      </DetailSection>
+      <DetailSection icon={Layers3} title={t('插件说明')}>
         <Typography.Paragraph type='tertiary'>
           {localizedText(meta.description) || t('未提供插件描述')}
         </Typography.Paragraph>
-      </div>
-      <div className='task-plugin-detail-overview-block'>
-        <Typography.Text strong>{t('端点与协议')}</Typography.Text>
-        <EndpointSummary meta={meta} t={t} />
-      </div>
+        {meta.website ? (
+          <Typography.Text link={{ href: meta.website, target: '_blank' }}>
+            {meta.website}
+          </Typography.Text>
+        ) : null}
+      </DetailSection>
     </div>
   );
 }
@@ -238,38 +324,36 @@ function PluginBillingParameters({ detail, t }) {
   return (
     <div className='task-plugin-detail-section task-plugin-billing-parameters'>
       {hasDefaultSchema ? (
-        <section>
-          {usageProfiles.length ? (
-            <div className='task-plugin-detail-overview-block'>
-              <Typography.Text strong>{t('默认模型')}</Typography.Text>
-              <ModelTags models={defaultModels} />
-            </div>
-          ) : null}
-          <UsageSchemaTable schema={meta.usageSchema} t={t} />
-        </section>
+        <DetailSection
+          icon={Settings2}
+          title={usageProfiles.length ? t('默认计费参数') : t('计费参数')}
+          description={t('参数和计费事实由插件声明，用户价格在模型价格页配置')}
+        >
+          {usageProfiles.length ? <ModelTags models={defaultModels} /> : null}
+          <UsageSchemaFacts schema={meta.usageSchema} t={t} />
+          <UsageExamples
+            examples={meta.usageExamples}
+            schema={meta.usageSchema}
+            t={t}
+          />
+        </DetailSection>
       ) : null}
       {usageProfiles.map((profile, index) => (
-        <section key={`${profile.models?.join('|')}-${index}`}>
-          <div className='task-plugin-detail-overview-block'>
-            <Typography.Text strong>{t('适用模型')}</Typography.Text>
-            <ModelTags models={profile.models ?? []} />
-          </div>
-          <UsageSchemaTable schema={profile.schema} t={t} />
-          {profile.examples?.length ? (
-            <pre className='task-plugin-code-block'>
-              {JSON.stringify(profile.examples, null, 2)}
-            </pre>
-          ) : null}
-        </section>
+        <DetailSection
+          icon={Settings2}
+          key={`${profile.models?.join('|')}-${index}`}
+          title={t('模型专属计费参数')}
+          description={t('该 profile 会覆盖默认参数约束')}
+        >
+          <ModelTags models={profile.models ?? []} />
+          <UsageSchemaFacts schema={profile.schema} t={t} />
+          <UsageExamples
+            examples={profile.examples}
+            schema={profile.schema}
+            t={t}
+          />
+        </DetailSection>
       ))}
-      {meta.usageExamples?.length ? (
-        <section>
-          <Typography.Text strong>{t('用量示例')}</Typography.Text>
-          <pre className='task-plugin-code-block'>
-            {JSON.stringify(meta.usageExamples, null, 2)}
-          </pre>
-        </section>
-      ) : null}
     </div>
   );
 }
@@ -496,12 +580,22 @@ export default function PluginDetailSheet({
                   <PluginBillingParameters detail={currentDetail} t={t} />
                 ) : null}
                 {tab.key === 'source' && activeTab === 'source' ? (
-                  <pre className='task-plugin-code-block task-plugin-source-code'>
-                    {currentDetail.source || t('源码不可用')}
-                  </pre>
+                  <DetailSection
+                    icon={Code2}
+                    title={t('插件源码')}
+                    description={t('上传前应审查来源、权限和版本差异')}
+                  >
+                    <pre className='task-plugin-code-block task-plugin-source-code'>
+                      {currentDetail.source || t('源码不可用')}
+                    </pre>
+                  </DetailSection>
                 ) : null}
                 {tab.key === 'versions' && activeTab === 'versions' ? (
-                  <div className='task-plugin-detail-section'>
+                  <DetailSection
+                    icon={History}
+                    title={t('版本历史')}
+                    description={t('选择历史版本回滚或进入源码差异比较')}
+                  >
                     <div className='task-plugin-detail-actions'>
                       <Button
                         size='small'
@@ -579,10 +673,14 @@ export default function PluginDetailSheet({
                         scroll={{ x: 620 }}
                       />
                     ) : null}
-                  </div>
+                  </DetailSection>
                 ) : null}
                 {tab.key === 'diff' && activeTab === 'diff' ? (
-                  <div className='task-plugin-detail-section'>
+                  <DetailSection
+                    icon={Code2}
+                    title={t('源码差异')}
+                    description={t('对比当前激活版本和一个历史版本的源码')}
+                  >
                     {versionsError ? (
                       <Banner
                         type='error'
@@ -624,10 +722,16 @@ export default function PluginDetailSheet({
                     ) : (
                       <Empty title={t('请选择一个历史版本')} />
                     )}
-                  </div>
+                  </DetailSection>
                 ) : null}
                 {tab.key === 'sandbox' && activeTab === 'sandbox' ? (
-                  <PluginSandbox pluginKey={key} t={t} />
+                  <DetailSection
+                    icon={FlaskConical}
+                    title={t('插件沙盒')}
+                    description={t('使用脱敏样例验证 hook 输入和输出')}
+                  >
+                    <PluginSandbox pluginKey={key} t={t} />
+                  </DetailSection>
                 ) : null}
               </Tabs.TabPane>
             ))}

@@ -855,6 +855,12 @@ func executeTaskSubmissionWith(
 	if updateErr := task.UpdatePrivateDataColumn(); updateErr != nil {
 		logger.LogError(c, fmt.Sprintf("更新任务渠道账本字段失败 task %s: %s", task.TaskID, updateErr.Error()))
 	}
+	if task.Status == model.TaskStatusSuccess {
+		// The task and its billing outcome are already durable. Artifact storage
+		// is best-effort and therefore must never turn a successful immediate
+		// task into a client-visible submission failure.
+		service.PersistCompletedTaskArtifacts(nil, task)
+	}
 	diagnostics.complete(task, result.Quota)
 
 	return &taskSubmissionOutcome{Result: result, Task: task, RelayInfo: relayInfo}, nil

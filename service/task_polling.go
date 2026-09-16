@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
-	"math"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -63,6 +63,23 @@ type BatchTaskResult struct {
 // GetTaskAdaptorFunc 由 main 包注入，用于获取指定平台的任务适配器。
 // 打破 service -> relay -> relay/channel -> service 的循环依赖。
 var GetTaskAdaptorFunc func(platform constant.TaskPlatform) TaskPollingAdaptor
+
+// GetTaskAdaptorForTaskFunc resolves a durable task through its execution
+// snapshot. It is optional so older callers and focused unit tests can keep
+// using the platform factory above.
+var GetTaskAdaptorForTaskFunc func(task *model.Task) TaskPollingAdaptor
+
+func taskPollingAdaptor(task *model.Task) TaskPollingAdaptor {
+	if task != nil && GetTaskAdaptorForTaskFunc != nil {
+		if adaptor := GetTaskAdaptorForTaskFunc(task); adaptor != nil {
+			return adaptor
+		}
+	}
+	if task == nil || GetTaskAdaptorFunc == nil {
+		return nil
+	}
+	return GetTaskAdaptorFunc(task.Platform)
+}
 
 // sweepTimedOutTasks 在主轮询之前独立清理超时任务。
 // 每次最多处理 100 条，剩余的下个周期继续处理。
@@ -133,7 +150,7 @@ type TaskPollSummary struct {
 // adaptor factory has not been wired yet, to avoid a nil call during startup.
 func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) TaskPollSummary {
 	summary := TaskPollSummary{}
-	if GetTaskAdaptorFunc == nil {
+	if GetTaskAdaptorFunc == nil && GetTaskAdaptorForTaskFunc == nil {
 		return summary
 	}
 	if ctx == nil {
@@ -210,8 +227,9 @@ func DispatchPlatformUpdate(ctx context.Context, platform constant.TaskPlatform,
 		// MJ 轮询由其自身处理，这里预留入口
 		return
 	}
-	adaptor := GetTaskAdaptorFunc(platform)
-	if batchAdaptor, ok := adaptor.(BatchTaskPollingAdaptor); ok && batchAdaptor.FetchMode() == "batch" {
+	adaptor := firstTaskPollingAdaptor(taskM)
+	if batchAdaptor, ok := adaptor.(BatchTaskPollingAdaptor); ok &&
+		batchAdaptor.FetchMode() == "batch" && taskPollingPluginsAreUniform(taskM) {
 		if err := UpdateBatchTasks(ctx, batchAdaptor, taskChannelM, taskM); err != nil {
 			common.SysLog(fmt.Sprintf("UpdateBatchTasks fail: %s", err))
 		}
@@ -220,6 +238,43 @@ func DispatchPlatformUpdate(ctx context.Context, platform constant.TaskPlatform,
 	if err := UpdateVideoTasks(ctx, platform, taskChannelM, taskM); err != nil {
 		common.SysLog(fmt.Sprintf("UpdateVideoTasks fail: %s", err))
 	}
+}
+
+func firstTaskPollingAdaptor(tasks map[string]*model.Task) TaskPollingAdaptor {
+	var first *model.Task
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		if first == nil || task.ID < first.ID || (task.ID == first.ID && task.TaskID < first.TaskID) {
+			first = task
+		}
+	}
+	return taskPollingAdaptor(first)
+}
+
+func taskPollingPluginsAreUniform(tasks map[string]*model.Task) bool {
+	identity := ""
+	initialized := false
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		current := "legacy"
+		if execution := task.PrivateData.Execution; execution != nil && execution.TaskPlugin != nil {
+			plugin := execution.TaskPlugin
+			current = plugin.Key + "\x00" + plugin.Version + "\x00" + plugin.SourceHash
+		}
+		if !initialized {
+			identity = current
+			initialized = true
+			continue
+		}
+		if identity != current {
+			return false
+		}
+	}
+	return true
 }
 
 func UpdateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, taskChannelM map[int][]string, taskM map[string]*model.Task) error {
@@ -376,6 +431,9 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 			if task.Status == model.TaskStatusFailure && !billingSettled && task.Quota != 0 {
 				RefundTaskQuota(ctx, task, task.FailReason)
 			}
+			if task.Status == model.TaskStatusSuccess {
+				PersistCompletedTaskArtifactsWithAdaptor(ctx, task, adaptor)
+			}
 		}
 	}
 	return nil
@@ -439,21 +497,28 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 		}
 		return fmt.Errorf("CacheGetChannel failed: %w", err)
 	}
-	adaptor := GetTaskAdaptorFunc(platform)
-	if adaptor == nil {
-		return fmt.Errorf("video adaptor not found")
+	baseURL := cacheGetChannel.GetBaseURL()
+	if baseURL == "" {
+		baseURL = constant.GetChannelBaseURL(cacheGetChannel.Type)
 	}
-	info := &relaycommon.RelayInfo{}
-	info.ChannelMeta = &relaycommon.ChannelMeta{
-		ChannelBaseUrl: cacheGetChannel.GetBaseURL(),
-	}
-	info.ApiKey = cacheGetChannel.Key
-	adaptor.Init(info)
 	disablePollingSleep := cacheGetChannel.GetOtherSettings().DisableTaskPollingSleep
 	for i, taskId := range taskIds {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		task := taskM[taskId]
+		adaptor := taskPollingAdaptor(task)
+		if adaptor == nil {
+			return fmt.Errorf("video adaptor not found for task %s", taskId)
+		}
+		adaptor.Init(&relaycommon.RelayInfo{
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType:    cacheGetChannel.Type,
+				ChannelBaseUrl: baseURL,
+				ApiKey:         cacheGetChannel.Key,
+				ChannelSetting: cacheGetChannel.GetSetting(),
+			},
+		})
 		if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, taskId, taskM); err != nil {
 			logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, err.Error()))
 		}
@@ -619,6 +684,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		if task.Status == model.TaskStatusFailure && !billingSettled && task.Quota != 0 {
 			RefundTaskQuota(ctx, task, task.FailReason)
 		}
+		if task.Status == model.TaskStatusSuccess {
+			PersistCompletedTaskArtifactsWithAdaptor(ctx, task, adaptor)
+		}
 	}
 
 	return nil
@@ -678,7 +746,7 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 		if task.Status == model.TaskStatusFailure {
 			return false
 		}
-		result, usageFacts, err := EvaluateTaskCompletionUsage(bc.TieredSnapshot, taskResult.UsageFacts)
+		result, usageFacts, components, err := EvaluateTaskCompletionUsageWithComponents(bc.TieredSnapshot, taskResult.UsageFacts)
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("任务 %s 表达式结算失败，保留预扣额度: %v", task.TaskID, err))
 			return true
@@ -688,6 +756,9 @@ func settleTaskBillingOnComplete(ctx context.Context, adaptor TaskPollingAdaptor
 		}
 		bc.TieredSnapshot.UsageFacts = usageFacts
 		bc.TieredSnapshot.EstimatedTier = result.MatchedTier
+		if components != nil {
+			bc.TieredSnapshot.Components = components
+		}
 		// Skye：标准口径（不含分组倍率）按快照冻结的分组倍率反推
 		standardActualQuota := result.ActualQuotaAfterGroup
 		if bc.TieredSnapshot.GroupRatio > 0 {

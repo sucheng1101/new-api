@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'bun:test';
 
 import {
+  canRenderTaskPricingMatrix,
   createDefaultTaskMatrixConfig,
   evaluateTaskUsageExamples,
   generateTaskExprFromConfig,
@@ -102,5 +103,23 @@ describe('task pricing expression matrix', () => {
     );
 
     expect(tryParseTaskMatrixConfig(expression, schema)).toEqual(matrix);
+  });
+
+  test('keeps the Hailuo H3 resolution as an addon pricing selector', () => {
+    const addonSchema = {
+      resolution: { enum: ['768', '2K'] },
+      input_images: { type: 'number', unit: 'count' },
+      input_video_seconds: { type: 'number', unit: 'second' },
+    };
+    const matrix = createDefaultTaskMatrixConfig(addonSchema);
+
+    expect(canRenderTaskPricingMatrix(matrix, addonSchema)).toBe(true);
+    expect(matrix.rows.map((row) => row.combination.resolution)).toEqual([
+      '768',
+      '2K',
+    ]);
+    expect(
+      canRenderTaskPricingMatrix(matrix, { reference_mode: { enum: ['a'] } }),
+    ).toBe(false);
   });
 });

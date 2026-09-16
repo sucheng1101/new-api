@@ -8,37 +8,46 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/samber/lo"
 )
 
 const (
-	BillingModeRatio        = "ratio"
-	BillingModeTieredExpr   = "tiered_expr"
-	BillingModeField        = "billing_mode"
-	BillingExprField        = "billing_expr"
-	PluginBillingExprOption = "billing_setting.plugin_billing_expr"
-	maxTaskExprSmokeTests   = 64
+	BillingModeRatio      = "ratio"
+	BillingModeTieredExpr = "tiered_expr"
+	BillingModeField      = "billing_mode"
+	BillingExprField      = "billing_expr"
+	// PluginBillingAddonExprOption stores additive task billing expressions by
+	// "pluginKey::publicModel". It is intentionally distinct from the retired
+	// plugin_billing_expr override key: old full-price overrides must never be
+	// silently added to a public model price.
+	PluginBillingAddonExprOption = "billing_setting.plugin_billing_addon_expr"
+	PluginBillingExprOption      = "billing_setting.plugin_billing_expr"
+	maxTaskExprSmokeTests        = 64
 )
 
 // BillingSetting is managed by config.GlobalConfig.Register.
 // DB keys: billing_setting.billing_mode, billing_setting.billing_expr,
-// billing_setting.plugin_billing_expr
+// billing_setting.plugin_billing_addon_expr, billing_setting.plugin_billing_expr
 type BillingSetting struct {
-	BillingMode       map[string]string `json:"billing_mode"`
-	BillingExpr       map[string]string `json:"billing_expr"`
+	BillingMode            map[string]string `json:"billing_mode"`
+	BillingExpr            map[string]string `json:"billing_expr"`
+	PluginBillingAddonExpr map[string]string `json:"plugin_billing_addon_expr"`
+	// PluginBillingExpr remains registered so older option data can still load,
+	// but it is no longer used by the task relay.
 	PluginBillingExpr map[string]string `json:"plugin_billing_expr"`
 }
 
 var billingSetting = BillingSetting{
-	BillingMode:       make(map[string]string),
-	BillingExpr:       make(map[string]string),
-	PluginBillingExpr: make(map[string]string),
+	BillingMode:            make(map[string]string),
+	BillingExpr:            make(map[string]string),
+	PluginBillingAddonExpr: make(map[string]string),
+	PluginBillingExpr:      make(map[string]string),
 }
 
 func init() {
@@ -104,19 +113,35 @@ func GetPluginBillingExpr(pluginKey, model string) (string, bool) {
 	return expression, ok
 }
 
-// ResolveTaskBillingExpr selects the executing plugin's override before the
-// model expression, retaining the model alias fallback and explicit modes.
-func ResolveTaskBillingExpr(pluginKey, model, mappedModel string) (string, bool) {
-	if pluginKey != "" {
-		if expr, ok := GetPluginBillingExpr(pluginKey, model); ok {
-			return expr, true
+func GetPluginBillingAddonExprCopy() map[string]string {
+	return maps.Clone(billingSetting.PluginBillingAddonExpr)
+}
+
+func GetPluginBillingAddonExpr(pluginKey, model string) (string, bool) {
+	expression, ok := billingSetting.PluginBillingAddonExpr[PluginBillingExprKey(pluginKey, model)]
+	return expression, ok
+}
+
+// ResolveTaskBillingAddonExpr resolves a plugin-only surcharge. The public
+// model spelling wins; mapped-model lookup keeps an existing mapped catalog
+// entry usable without changing the channel mapping.
+func ResolveTaskBillingAddonExpr(pluginKey, model, mappedModel string) (string, bool) {
+	for _, candidate := range []string{model, mappedModel} {
+		if candidate == "" {
+			continue
 		}
-		if mappedModel != "" && mappedModel != model {
-			if expr, ok := GetPluginBillingExpr(pluginKey, mappedModel); ok {
-				return expr, true
-			}
+		if expression, ok := GetPluginBillingAddonExpr(pluginKey, candidate); ok && strings.TrimSpace(expression) != "" {
+			return expression, true
 		}
 	}
+	return "", false
+}
+
+// ResolveTaskBillingExpr resolves the public model's administrator-configured
+// expression. Plugin-specific expressions are retained in configuration for
+// backward compatibility only; the executing provider must not change what a
+// user pays for one public model.
+func ResolveTaskBillingExpr(pluginKey, model, mappedModel string) (string, bool) {
 	if GetBillingMode(model) == BillingModeTieredExpr {
 		return GetBillingExpr(model)
 	}

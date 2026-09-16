@@ -62,14 +62,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		other.SetPublic("is_model_mapped", true)
 		other.SetPublic("upstream_model_name", info.UpstreamModelName)
 	}
-	if snap := info.TieredBillingSnapshot; snap != nil {
-		other.SetPublic("billing_mode", "tiered_expr")
-		other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
-		other.SetPublic("matched_tier", snap.EstimatedTier)
-		if len(snap.UsageFacts) > 0 {
-			other.SetPublic("usage_facts", snap.UsageFacts)
-		}
-	}
+	appendTieredTaskBillingOther(other, info.TieredBillingSnapshot)
 	appendTaskLogInfo(task, other)
 	attachQuotaSaturation(c, info, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
@@ -173,14 +166,7 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 				}
 			}
 		}
-		if snap := bc.TieredSnapshot; snap != nil {
-			other.SetPublic("billing_mode", "tiered_expr")
-			other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
-			other.SetPublic("matched_tier", snap.EstimatedTier)
-			if len(snap.UsageFacts) > 0 {
-				other.SetPublic("usage_facts", snap.UsageFacts)
-			}
-		}
+		appendTieredTaskBillingOther(other, bc.TieredSnapshot)
 	}
 	props := task.Properties
 	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
@@ -189,6 +175,40 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 	}
 	appendTaskLogInfo(task, other)
 	return other
+}
+
+func appendTieredTaskBillingOther(other *model.LogOther, snap *billingexpr.BillingSnapshot) {
+	if other == nil || snap == nil {
+		return
+	}
+	other.SetPublic("billing_mode", "tiered_expr")
+	other.SetPublic("expr_b64", base64.StdEncoding.EncodeToString([]byte(snap.ExprString)))
+	other.SetPublic("matched_tier", snap.EstimatedTier)
+	if len(snap.UsageFacts) > 0 {
+		other.SetPublic("usage_facts", snap.UsageFacts)
+	}
+	if len(snap.Components) == 0 {
+		return
+	}
+	components := make([]map[string]any, 0, len(snap.Components))
+	for _, component := range snap.Components {
+		entry := map[string]any{
+			"kind":                         component.Kind,
+			"estimated_quota_before_group": component.EstimatedQuotaBeforeGroup,
+		}
+		if component.PluginKey != "" {
+			entry["plugin_key"] = component.PluginKey
+		}
+		if component.EstimatedTier != "" {
+			entry["estimated_tier"] = component.EstimatedTier
+		}
+		if component.ActualTier != "" {
+			entry["actual_tier"] = component.ActualTier
+			entry["actual_quota_before_group"] = component.ActualQuotaBeforeGroup
+		}
+		components = append(components, entry)
+	}
+	other.SetPublic("billing_components", components)
 }
 
 func appendTaskLogInfo(task *model.Task, other *model.LogOther) {
@@ -446,19 +466,133 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	return true
 }
 
-// EvaluateTaskCompletionUsage evaluates actual facts against the frozen task
-// expression. It neither mutates the snapshot nor moves funds: synchronous
-// submission and polling have different persistence and settlement barriers.
+// TaskUsageBillingQuote is the frozen result of evaluating public task pricing
+// plus an optional selected-plugin surcharge at submission time.
+type TaskUsageBillingQuote struct {
+	Snapshot *billingexpr.BillingSnapshot
+	Quota    int
+	Clamp    *common.QuotaClamp
+}
+
+// QuoteTaskUsageBilling evaluates the public model expression and the selected
+// plugin's additive expression independently, then applies the group ratio and
+// rounding once to their sum. The expressions are retained as separate frozen
+// components for completion settlement and audit logs.
+func QuoteTaskUsageBilling(modelName, pluginKey, baseExpr, addonExpr string, facts map[string]any, groupRatio float64) (TaskUsageBillingQuote, error) {
+	if billingexpr.UsesFixedPricing(baseExpr) {
+		return TaskUsageBillingQuote{}, fmt.Errorf("fixed pricing is not supported for task usage expressions")
+	}
+	components := make([]billingexpr.BillingComponentSnapshot, 0, 2)
+	base, err := quoteTaskUsageBillingComponent("base", "", baseExpr, facts)
+	if err != nil {
+		return TaskUsageBillingQuote{}, err
+	}
+	components = append(components, base)
+	totalBeforeGroup := base.EstimatedQuotaBeforeGroup
+	if addonExpr != "" {
+		if billingexpr.UsesFixedPricing(addonExpr) {
+			return TaskUsageBillingQuote{}, fmt.Errorf("fixed pricing is not supported for task usage expressions")
+		}
+		addon, err := quoteTaskUsageBillingComponent("plugin_addon", pluginKey, addonExpr, facts)
+		if err != nil {
+			return TaskUsageBillingQuote{}, err
+		}
+		components = append(components, addon)
+		totalBeforeGroup += addon.EstimatedQuotaBeforeGroup
+	}
+	quota, clamp := common.QuotaRoundChecked(totalBeforeGroup * groupRatio)
+	snapshot := &billingexpr.BillingSnapshot{
+		BillingMode:               "tiered_expr",
+		ModelName:                 modelName,
+		ExprString:                base.ExprString,
+		ExprHash:                  base.ExprHash,
+		GroupRatio:                groupRatio,
+		EstimatedQuotaBeforeGroup: totalBeforeGroup,
+		EstimatedQuotaAfterGroup:  quota,
+		EstimatedTier:             base.EstimatedTier,
+		QuotaPerUnit:              common.QuotaPerUnit,
+		ExprVersion:               base.ExprVersion,
+		TaskUsageBilling:          true,
+		UsageFacts:                maps.Clone(facts),
+		Components:                components,
+	}
+	return TaskUsageBillingQuote{Snapshot: snapshot, Quota: quota, Clamp: clamp}, nil
+}
+
+func quoteTaskUsageBillingComponent(kind, pluginKey, expression string, facts map[string]any) (billingexpr.BillingComponentSnapshot, error) {
+	cost, trace, err := billingexpr.RunExprWithRequest(expression, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: facts})
+	if err != nil {
+		return billingexpr.BillingComponentSnapshot{}, err
+	}
+	if cost < 0 || math.IsNaN(cost) || math.IsInf(cost, 0) {
+		return billingexpr.BillingComponentSnapshot{}, fmt.Errorf("task usage expression produced an invalid cost")
+	}
+	return billingexpr.BillingComponentSnapshot{
+		Kind:                      kind,
+		PluginKey:                 pluginKey,
+		ExprString:                expression,
+		ExprHash:                  billingexpr.ExprHashString(expression),
+		ExprVersion:               billingexpr.ExprVersion(expression),
+		EstimatedQuotaBeforeGroup: cost * common.QuotaPerUnit,
+		EstimatedTier:             trace.MatchedTier,
+	}, nil
+}
+
+// EvaluateTaskCompletionUsage evaluates actual facts against frozen task
+// expressions. It keeps the historical return shape for existing callers that
+// only need the total result.
 func EvaluateTaskCompletionUsage(snap *billingexpr.BillingSnapshot, facts map[string]any) (billingexpr.TieredResult, map[string]any, error) {
+	result, usage, _, err := EvaluateTaskCompletionUsageWithComponents(snap, facts)
+	return result, usage, err
+}
+
+// EvaluateTaskCompletionUsageWithComponents returns each settled contribution
+// in addition to the total. A snapshot without components is evaluated through
+// the legacy single-expression path so existing in-flight tasks stay stable.
+func EvaluateTaskCompletionUsageWithComponents(snap *billingexpr.BillingSnapshot, facts map[string]any) (billingexpr.TieredResult, map[string]any, []billingexpr.BillingComponentSnapshot, error) {
 	if snap == nil {
-		return billingexpr.TieredResult{}, nil, fmt.Errorf("task billing snapshot is missing")
+		return billingexpr.TieredResult{}, nil, nil, fmt.Errorf("task billing snapshot is missing")
 	}
 	usage := make(map[string]any, len(snap.UsageFacts)+len(facts))
 	maps.Copy(usage, snap.UsageFacts)
 	maps.Copy(usage, facts)
-	result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usage})
-	if err == nil && (result.ActualQuotaBeforeGroup < 0 || math.IsNaN(result.ActualQuotaBeforeGroup)) {
-		err = fmt.Errorf("task completion expression produced an invalid cost")
+	if len(snap.Components) == 0 {
+		result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usage})
+		if err == nil && (result.ActualQuotaBeforeGroup < 0 || math.IsNaN(result.ActualQuotaBeforeGroup)) {
+			err = fmt.Errorf("task completion expression produced an invalid cost")
+		}
+		return result, usage, nil, err
 	}
-	return result, usage, err
+
+	components := make([]billingexpr.BillingComponentSnapshot, len(snap.Components))
+	copy(components, snap.Components)
+	totalBeforeGroup := 0.0
+	baseTier := ""
+	for index := range components {
+		component := &components[index]
+		if component.ExprString == "" || billingexpr.UsesFixedPricing(component.ExprString) {
+			return billingexpr.TieredResult{}, usage, nil, fmt.Errorf("task billing component %q is invalid", component.Kind)
+		}
+		cost, trace, err := billingexpr.RunExprByHashWithRequest(component.ExprString, component.ExprHash, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usage})
+		if err != nil {
+			return billingexpr.TieredResult{}, usage, nil, err
+		}
+		if cost < 0 || math.IsNaN(cost) || math.IsInf(cost, 0) {
+			return billingexpr.TieredResult{}, usage, nil, fmt.Errorf("task completion expression produced an invalid cost")
+		}
+		component.ActualQuotaBeforeGroup = cost * snap.QuotaPerUnit
+		component.ActualTier = trace.MatchedTier
+		totalBeforeGroup += component.ActualQuotaBeforeGroup
+		if component.Kind == "base" {
+			baseTier = trace.MatchedTier
+		}
+	}
+	quota, clamp := common.QuotaRoundChecked(totalBeforeGroup * snap.GroupRatio)
+	return billingexpr.TieredResult{
+		ActualQuotaBeforeGroup: totalBeforeGroup,
+		ActualQuotaAfterGroup:  quota,
+		MatchedTier:            baseTier,
+		CrossedTier:            baseTier != snap.EstimatedTier,
+		Clamp:                  clamp,
+	}, usage, components, nil
 }

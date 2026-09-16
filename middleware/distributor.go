@@ -196,6 +196,10 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCode(kind))
 				return
 			}
+			if bindErr := bindTaskPluginEndpointToSelectedChannel(c, channel); bindErr != nil {
+				abortWithOpenAiMessage(c, http.StatusBadRequest, bindErr.Error(), types.ErrorCode("plugin_request_invalid"))
+				return
+			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)

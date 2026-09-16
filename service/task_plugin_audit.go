@@ -8,7 +8,8 @@ import (
 )
 
 // TaskExecutionSnapshotFromContext captures immutable request and plugin
-// provenance at submission time. It never copies plugin source or payloads.
+// provenance at submission time. Source stays in an unexported field only
+// until Task.InsertWithContext archives it alongside the task row.
 func TaskExecutionSnapshotFromContext(ctx *gin.Context) *model.TaskExecutionSnapshot {
 	if ctx == nil {
 		return nil
@@ -20,33 +21,53 @@ func TaskExecutionSnapshotFromContext(ctx *gin.Context) *model.TaskExecutionSnap
 		snapshot.RequestPath = ctx.Request.URL.Path
 	}
 
-	pinnedValue, exists := ctx.Get(pluginruntime.ContextKeyPinnedPlugin)
-	if exists {
-		pinned, ok := pinnedValue.(pluginruntime.PinnedPlugin)
-		if ok && pinned.Plugin != nil {
-			generation := uint64(0)
-			if pinned.Generation != nil {
-				generation = pinned.Generation.Number
-			}
-			meta := pinned.Plugin.Meta
-			snapshot.TaskPlugin = &model.TaskPluginSnapshot{
-				Key:     meta.Key,
-				Name:    meta.Name,
-				Version: meta.Version,
-				Author: &model.TaskPluginAuthorSnapshot{
-					Name: meta.Author.Name,
-					URL:  meta.Author.URL,
-				},
-				APIVersion: meta.APIVersion,
-				Generation: generation,
-			}
+	if plugin, generation := pinnedTaskPlugin(ctx); plugin != nil {
+		generationNumber := uint64(0)
+		if generation != nil {
+			generationNumber = generation.Number
 		}
+		meta := plugin.Meta
+		snapshot.TaskPlugin = &model.TaskPluginSnapshot{
+			Key:        meta.Key,
+			Name:       meta.Name,
+			Version:    meta.Version,
+			SourceHash: plugin.SourceHash,
+			Author: &model.TaskPluginAuthorSnapshot{
+				Name: meta.Author.Name,
+				URL:  meta.Author.URL,
+			},
+			APIVersion: meta.APIVersion,
+			Generation: generationNumber,
+		}
+		snapshot.TaskPlugin.SetArchiveSource(plugin.Source)
 	}
 
 	if snapshot.RequestID == "" && snapshot.RequestPath == "" && snapshot.TaskPlugin == nil {
 		return nil
 	}
 	return snapshot
+}
+
+func pinnedTaskPlugin(ctx *gin.Context) (*pluginruntime.LoadedPlugin, *pluginruntime.RoutingGeneration) {
+	if ctx == nil {
+		return nil, nil
+	}
+	if value, exists := ctx.Get(pluginruntime.ContextKeyPinnedPlugin); exists {
+		if pinned, ok := value.(pluginruntime.PinnedPlugin); ok && pinned.Plugin != nil {
+			return pinned.Plugin, pinned.Generation
+		}
+	}
+	if value, exists := ctx.Get(pluginruntime.ContextKeyPinnedEndpoint); exists {
+		if pinned, ok := value.(pluginruntime.PinnedEndpoint); ok && pinned.Plugin != nil {
+			return pinned.Plugin, pinned.Generation
+		}
+	}
+	if value, exists := ctx.Get(pluginruntime.ContextKeyPinnedRoute); exists {
+		if pinned, ok := value.(pluginruntime.PinnedRoute); ok && pinned.Plugin != nil {
+			return pinned.Plugin, pinned.Generation
+		}
+	}
+	return nil, nil
 }
 
 // AppendTaskPluginAuditInfo writes role-separated, credential-free plugin

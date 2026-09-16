@@ -24,6 +24,7 @@ import {
   buildPluginIconPlan,
   getTaskPluginUsageBlocker,
   getPluginOwnership,
+  normalizeTaskPluginSourceUrl,
   PLUGIN_DETAIL_TABS,
   selectMarketplaceSourceKey,
   validateMarketplaceSources,
@@ -220,6 +221,22 @@ describe('task plugin view model', () => {
         { name: 'required', index_url: 'required' },
       ],
     });
+  });
+
+  test('normalizes GitHub and gist source pages before browser import', () => {
+    expect(
+      normalizeTaskPluginSourceUrl(
+        'https://github.com/acme/plugins/blob/main/video/plugin.js#L12',
+      ),
+    ).toBe(
+      'https://raw.githubusercontent.com/acme/plugins/main/video/plugin.js',
+    );
+    expect(
+      normalizeTaskPluginSourceUrl('https://gist.github.com/acme/abc123'),
+    ).toBe('https://gist.githubusercontent.com/acme/abc123/raw');
+    expect(
+      normalizeTaskPluginSourceUrl('ftp://plugins.example/plugin.js'),
+    ).toBe('');
   });
 
   test('adds an expected key only for an explicit version update', () => {

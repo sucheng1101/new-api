@@ -33,9 +33,19 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 		return true
 	case dto.FilterTaskPluginIdentity:
 		if ch.Type == constant.ChannelTypeTaskPlugin {
-			return filter.TaskPluginKey != "" && ch.GetSetting().TaskPluginKey == filter.TaskPluginKey
+			channelPluginKey := ch.GetSetting().TaskPluginKey
+			if len(filter.TaskPluginKeys) > 0 {
+				return slices.Contains(filter.TaskPluginKeys, channelPluginKey)
+			}
+			return filter.TaskPluginKey != "" && channelPluginKey == filter.TaskPluginKey
 		}
-		return filter.TaskPluginKey == "" || slices.Contains(filter.TaskPluginChannelTypes, ch.Type)
+		if len(filter.TaskPluginChannelTypes) > 0 {
+			return slices.Contains(filter.TaskPluginChannelTypes, ch.Type)
+		}
+		// An empty identity filter is a no-op for ordinary requests. A task
+		// endpoint with multiple plugin candidates always supplies either plugin
+		// keys or legacy channel types above, so it cannot leak into this branch.
+		return filter.TaskPluginKey == ""
 	default:
 		return true
 	}

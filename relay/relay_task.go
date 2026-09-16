@@ -14,7 +14,6 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
@@ -256,13 +255,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if pinnedPlugin.Plugin != nil {
 		pluginKey = pinnedPlugin.Plugin.Meta.Key
 	}
-	exprStr, exists := billing_setting.ResolveTaskBillingExpr(pluginKey, modelName, info.UpstreamModelName)
-	useTiered := exists || billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr
+	baseExpr, exists := billing_setting.ResolveTaskBillingExpr(pluginKey, modelName, info.UpstreamModelName)
+	addonExpr, hasAddon := billing_setting.ResolveTaskBillingAddonExpr(pluginKey, modelName, info.UpstreamModelName)
+	useTiered := exists || hasAddon || billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr
 	if useTiered {
 		provider, supported := adaptor.(channel.TaskUsageFactsProvider)
-		if billingexpr.UsesFixedPricing(exprStr) {
-			return nil, service.TaskErrorWrapper(fmt.Errorf("fixed pricing is not supported for task usage expressions"), "model_price_error", http.StatusBadRequest)
-		}
 		if !exists || !supported {
 			return nil, service.TaskErrorWrapper(fmt.Errorf("task model %s has no usage expression or meter", modelName), "model_price_error", http.StatusBadRequest)
 		}
@@ -270,8 +267,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		if sharedModel && pinnedPlugin.Plugin != nil {
 			usageModel := pinnedPlugin.Plugin.Meta.UsageModelFor(info.UpstreamModelName, modelName)
 			schema, _ := pinnedPlugin.Plugin.Meta.UsageForModel(usageModel)
-			if !billing_setting.TaskExprCompatible(exprStr, schema) {
+			if !billing_setting.TaskExprCompatible(baseExpr, schema) {
 				return nil, service.TaskErrorWrapper(fmt.Errorf("task model %s pricing is not configured for plugin %s", modelName, pluginKey), "model_price_error", http.StatusBadRequest)
+			}
+			if hasAddon && !billing_setting.TaskExprCompatible(addonExpr, schema) {
+				return nil, service.TaskErrorWrapper(fmt.Errorf("task model %s addon pricing is not configured for plugin %s", modelName, pluginKey), "model_price_error", http.StatusBadRequest)
 			}
 		}
 		var facts map[string]any
@@ -283,18 +283,14 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		} else {
 			facts = provider.ExtractUsageFacts(c, info)
 		}
-		cost, trace, runErr := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: facts})
-		if runErr != nil || cost < 0 {
-			if runErr == nil {
-				runErr = fmt.Errorf("negative task expression result")
-			}
-			return nil, service.TaskErrorWrapper(runErr, "model_price_error", http.StatusBadRequest)
-		}
 		groupRatioInfo := helper.HandleGroupRatio(c, info)
-		quota, clamp := common.QuotaRoundChecked(cost * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
-		noteTaskQuotaClamp(info, clamp)
-		priceData = types.PriceData{Quota: quota, QuotaToPreConsume: quota, GroupRatioInfo: groupRatioInfo}
-		info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: billing_setting.BillingModeTieredExpr, ModelName: modelName, ExprString: exprStr, ExprHash: billingexpr.ExprHashString(exprStr), GroupRatio: groupRatioInfo.GroupRatio, EstimatedQuotaBeforeGroup: cost * common.QuotaPerUnit, EstimatedQuotaAfterGroup: quota, EstimatedTier: trace.MatchedTier, QuotaPerUnit: common.QuotaPerUnit, ExprVersion: billingexpr.ExprVersion(exprStr), TaskUsageBilling: true, UsageFacts: facts}
+		quote, quoteErr := service.QuoteTaskUsageBilling(modelName, pluginKey, baseExpr, addonExpr, facts, groupRatioInfo.GroupRatio)
+		if quoteErr != nil {
+			return nil, service.TaskErrorWrapper(quoteErr, "model_price_error", http.StatusBadRequest)
+		}
+		noteTaskQuotaClamp(info, quote.Clamp)
+		priceData = types.PriceData{Quota: quote.Quota, QuotaToPreConsume: quote.Quota, GroupRatioInfo: groupRatioInfo}
+		info.TieredBillingSnapshot = quote.Snapshot
 	} else {
 		priceData, err = helper.ModelPriceHelperPerCall(c, info)
 		if err != nil {
@@ -375,13 +371,16 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		finalQuota = 0
 	} else if snap := info.TieredBillingSnapshot; snap != nil {
 		if parsed.Immediate != nil && parsed.Immediate.Status == model.TaskStatusSuccess && len(parsed.Immediate.UsageFacts) > 0 {
-			settlement, facts, err := service.EvaluateTaskCompletionUsage(snap, parsed.Immediate.UsageFacts)
+			settlement, facts, components, err := service.EvaluateTaskCompletionUsageWithComponents(snap, parsed.Immediate.UsageFacts)
 			if err != nil {
 				logger.LogWarn(c, fmt.Sprintf("task immediate usage settlement failed; retaining reserved quota: %v", err))
 			} else {
 				finalQuota = settlement.ActualQuotaAfterGroup
 				snap.UsageFacts = facts
 				snap.EstimatedTier = settlement.MatchedTier
+				if components != nil {
+					snap.Components = components
+				}
 				noteTaskQuotaClamp(info, settlement.Clamp)
 			}
 		}

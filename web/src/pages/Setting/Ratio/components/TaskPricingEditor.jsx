@@ -37,6 +37,7 @@ import {
   splitBillingExprAndRequestRules,
 } from './requestRuleExpr';
 import {
+  canRenderTaskPricingMatrix,
   createDefaultTaskMatrixConfig,
   evaluateTaskUsageExamples,
   generateTaskExprFromConfig,
@@ -107,7 +108,11 @@ export default function TaskPricingEditor({
   billingExpr,
   requestRuleExpr = '',
   onBillingExprChange,
-  onRequestRuleExprChange,
+  onRequestRuleExprChange = () => {},
+  title = '',
+  description = '',
+  previewDescription = '',
+  allowRequestRules = true,
 }) {
   const { t } = useTranslation();
   const [mode, setMode] = useState('visual');
@@ -117,16 +122,19 @@ export default function TaskPricingEditor({
     createPreviewFacts(schema, examples),
   );
   const [confirmVisualSwitch, setConfirmVisualSwitch] = useState(false);
-  const combinedExpression = combineBillingExpr(billingExpr, requestRuleExpr);
+  const effectiveRequestRuleExpr = allowRequestRules ? requestRuleExpr : '';
+  const combinedExpression = allowRequestRules
+    ? combineBillingExpr(billingExpr, effectiveRequestRuleExpr)
+    : (billingExpr ?? '');
   const sourceKey = useMemo(
     () =>
       taskPricingSourceKey({
         modelName,
         schema,
         billingExpr,
-        requestRuleExpr,
+        requestRuleExpr: effectiveRequestRuleExpr,
       }),
-    [billingExpr, modelName, requestRuleExpr, schema],
+    [billingExpr, effectiveRequestRuleExpr, modelName, schema],
   );
   const localSourceKeyRef = useRef(null);
 
@@ -135,7 +143,7 @@ export default function TaskPricingEditor({
       modelName,
       schema,
       billingExpr: nextBillingExpr,
-      requestRuleExpr: nextRequestRuleExpr,
+      requestRuleExpr: allowRequestRules ? nextRequestRuleExpr : '',
     });
   };
 
@@ -163,6 +171,7 @@ export default function TaskPricingEditor({
 
   const numberFields = useMemo(() => getTaskNumberFields(schema), [schema]);
   const enumFields = useMemo(() => getTaskEnumFields(schema), [schema]);
+  const canRenderVisualMatrix = canRenderTaskPricingMatrix(matrix, schema);
 
   const buildMatrixExpression = (nextMatrix) =>
     generateTaskExprFromConfig(
@@ -188,6 +197,11 @@ export default function TaskPricingEditor({
 
   const handleRawChange = (value) => {
     setRawExpr(value);
+    if (!allowRequestRules) {
+      markLocalUpdate(value, '');
+      onBillingExprChange(value);
+      return;
+    }
     const split = splitBillingExprAndRequestRules(value);
     markLocalUpdate(split.billingExpr, split.requestRuleExpr);
     onBillingExprChange(split.billingExpr);
@@ -221,7 +235,7 @@ export default function TaskPricingEditor({
       const nextBillingExpr = buildMatrixExpression(nextMatrix);
       markLocalUpdate(nextBillingExpr, '');
       onBillingExprChange(nextBillingExpr);
-      onRequestRuleExprChange('');
+      if (allowRequestRules) onRequestRuleExprChange('');
     }
     setConfirmVisualSwitch(false);
     setMode('visual');
@@ -230,18 +244,22 @@ export default function TaskPricingEditor({
   const handleClear = () => {
     markLocalUpdate('', '');
     onBillingExprChange('');
-    onRequestRuleExprChange('');
+    if (allowRequestRules) onRequestRuleExprChange('');
   };
 
-  const rawSplit = splitBillingExprAndRequestRules(rawExpr);
+  const rawSplit = allowRequestRules
+    ? splitBillingExprAndRequestRules(rawExpr)
+    : { billingExpr: rawExpr, requestRuleExpr: '' };
   const previewBillingExpr =
     mode === 'visual' && matrix
       ? buildMatrixExpression(matrix)
       : rawSplit.billingExpr;
-  const previewExpression = combineBillingExpr(
-    previewBillingExpr,
-    mode === 'visual' ? requestRuleExpr : rawSplit.requestRuleExpr,
-  );
+  const previewExpression = allowRequestRules
+    ? combineBillingExpr(
+        previewBillingExpr,
+        mode === 'visual' ? effectiveRequestRuleExpr : rawSplit.requestRuleExpr,
+      )
+    : previewBillingExpr;
   const previewConfig = useMemo(
     () => tryParseTaskVisualConfig(previewBillingExpr, schema),
     [previewBillingExpr, schema],
@@ -335,7 +353,7 @@ export default function TaskPricingEditor({
       >
         <Typography.Paragraph>
           {t(
-            '当前表达式不能完整映射到价格矩阵。确认后会用空白规格矩阵替换表达式和请求规则，变更仅在点击“应用更改”后保存。',
+            '当前表达式不能完整映射到价格矩阵。确认后会用空白规格矩阵替换表达式，变更仅在点击“应用更改”后保存。',
           )}
         </Typography.Paragraph>
       </Modal>
@@ -343,19 +361,24 @@ export default function TaskPricingEditor({
         type='info'
         closeIcon={null}
         style={{ marginBottom: 12 }}
-        description={t(
-          '规格价格会随模型配置版本保存；已提交任务使用提交时冻结的价格快照。',
-        )}
+        description={
+          description ||
+          t(
+            '规格价格会随模型配置版本保存；已提交任务使用提交时冻结的价格快照。',
+          )
+        }
       />
       <div style={{ padding: 16, background: 'var(--semi-color-fill-0)' }}>
         <div className='mb-3 flex items-center justify-between gap-3'>
           <div>
-            <Typography.Text strong>{t('任务规格定价')}</Typography.Text>
+            <Typography.Text strong>
+              {title || t('任务规格定价')}
+            </Typography.Text>
             <Typography.Text type='tertiary' className='ml-2'>
               {modelName}
             </Typography.Text>
           </div>
-          {billingExpr || requestRuleExpr ? (
+          {billingExpr || effectiveRequestRuleExpr ? (
             <Button
               icon={<IconDelete />}
               size='small'
@@ -383,7 +406,7 @@ export default function TaskPricingEditor({
         </div>
         <Tabs type='button' activeKey={mode} onChange={handleModeChange}>
           <Tabs.TabPane tab={t('可视化矩阵')} itemKey='visual'>
-            {matrix?.rows?.length ? (
+            {canRenderVisualMatrix ? (
               <Table
                 columns={matrixColumns}
                 dataSource={matrix.rows.map((row) => ({
@@ -404,17 +427,19 @@ export default function TaskPricingEditor({
                 )}
               />
             )}
-            <Typography.Text
-              type='tertiary'
-              style={{ display: 'block', marginTop: 10 }}
-            >
-              {t('每一行对应一个规格组合；保存时会生成可审计的计费表达式。')}
-            </Typography.Text>
-            {matrix?.rows?.length ? (
+            {canRenderVisualMatrix ? (
+              <Typography.Text
+                type='tertiary'
+                style={{ display: 'block', marginTop: 10 }}
+              >
+                {t('每一行对应一个规格组合；保存时会生成可审计的计费表达式。')}
+              </Typography.Text>
+            ) : null}
+            {allowRequestRules && canRenderVisualMatrix ? (
               <div style={{ marginTop: 14 }}>
                 <Typography.Text strong>{t('请求规则')}</Typography.Text>
                 <TextArea
-                  value={requestRuleExpr}
+                  value={effectiveRequestRuleExpr}
                   onChange={handleRequestRuleChange}
                   autosize={{ minRows: 2, maxRows: 5 }}
                   placeholder='when(header("x-priority") == "high") * 2'
@@ -461,9 +486,8 @@ export default function TaskPricingEditor({
             type='tertiary'
             style={{ display: 'block', marginTop: 4 }}
           >
-            {t(
-              '按当前规格预览基础价格；分组倍率和请求规则会在结算时额外应用。',
-            )}
+            {previewDescription ||
+              t('按当前规格预览价格；分组倍率和请求规则会在结算时额外应用。')}
           </Typography.Text>
           {examples.length > 0 ? (
             <Select

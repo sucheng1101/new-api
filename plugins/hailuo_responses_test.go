@@ -448,18 +448,18 @@ func TestHailuoExtractUsageFacts(t *testing.T) {
 		want    map[string]any
 	}{
 		{"H3 defaults", "MiniMax-H3", map[string]any{"prompt": "p"}, map[string]any{
-			"seconds": float64(5), "resolution": "768P", "input_images": float64(0), "input_video_seconds": float64(0),
+			"seconds": float64(5), "resolution": "768", "input_images": float64(0), "input_video_seconds": float64(0),
 		}},
 		{"H3 2K", "MiniMax-H3", map[string]any{"prompt": "p", "duration": 12, "size": "2K"}, map[string]any{
 			"seconds": float64(12), "resolution": "2K", "input_images": float64(0), "input_video_seconds": float64(0),
 		}},
 		{"H3 reference images", "MiniMax-H3", map[string]any{"prompt": "p", "metadata": map[string]any{"content": nineReferenceImages}}, map[string]any{
-			"seconds": float64(5), "resolution": "768P", "input_images": float64(9), "input_video_seconds": float64(0),
+			"seconds": float64(5), "resolution": "768", "input_images": float64(9), "input_video_seconds": float64(0),
 		}},
 		{"H3 reference video reserves total duration limit", "MiniMax-H3", map[string]any{"prompt": "p", "metadata": map[string]any{
 			"reference_video": []any{"one.mp4", "two.mp4", "three.mp4"},
 		}}, map[string]any{
-			"seconds": float64(5), "resolution": "768P", "input_images": float64(0), "input_video_seconds": float64(15),
+			"seconds": float64(5), "resolution": "768", "input_images": float64(0), "input_video_seconds": float64(15),
 		}},
 		{"legacy model", "MiniMax-Hailuo-2.3", map[string]any{"prompt": "p", "duration": 10}, map[string]any{
 			"seconds": float64(10), "resolution": "768P", "input_images": float64(0), "input_video_seconds": float64(0),
@@ -481,12 +481,12 @@ func TestHailuoH3UsageProfile(t *testing.T) {
 	schema, examples := plugin.Meta.UsageForModel("MiniMax-H3")
 	resolution, exists := schema["resolution"]
 	require.True(t, exists)
-	assert.Equal(t, []string{"768P", "2K"}, resolution.Enum)
+	assert.Equal(t, []string{"768", "2K"}, resolution.Enum)
 	for _, name := range []string{"seconds", "input_images", "input_video_seconds"} {
 		assert.Contains(t, schema, name)
 	}
 	require.Len(t, examples, 3)
-	assert.Equal(t, "768P", examples[0].Facts["resolution"])
+	assert.Equal(t, "768", examples[0].Facts["resolution"])
 	assert.Equal(t, "2K", examples[1].Facts["resolution"])
 	assert.Equal(t, "2K", examples[2].Facts["resolution"])
 
@@ -509,17 +509,17 @@ func TestHailuoH3CompletionUsageFacts(t *testing.T) {
 		{
 			name: "zero actual usage is retained for settlement",
 			body: `{"task":{"id":"1","status":"succeeded","resolution":"768P","usage":{"output_seconds":4,"input_seconds":0,"input_image_count":0}}}`,
-			want: map[string]any{"seconds": float64(4), "resolution": "768P", "input_images": float64(0), "input_video_seconds": float64(0)},
+			want: map[string]any{"seconds": float64(4), "resolution": "768", "input_images": float64(0), "input_video_seconds": float64(0)},
 		},
 		{
 			name: "zero output cannot erase the submission reservation",
 			body: `{"task":{"id":"1","status":"succeeded","resolution":"768P","usage":{"output_seconds":0,"input_seconds":0,"input_image_count":0}}}`,
-			want: map[string]any{"resolution": "768P", "input_images": float64(0), "input_video_seconds": float64(0)},
+			want: map[string]any{"resolution": "768", "input_images": float64(0), "input_video_seconds": float64(0)},
 		},
 		{
 			name: "missing usage leaves submission estimates untouched",
 			body: `{"task":{"id":"1","status":"succeeded","resolution":"768P"}}`,
-			want: map[string]any{"resolution": "768P"},
+			want: map[string]any{"resolution": "768"},
 		},
 		{
 			name: "out of contract usage cannot become a billing multiplier",

@@ -61,6 +61,7 @@ const modelDraftSignature = (model) =>
     audioOutputPrice: model.audioOutputPrice,
     billingExpr: model.billingExpr,
     requestRuleExpr: model.requestRuleExpr,
+    pluginAddonExpressions: model.pluginAddonExpressions,
     rawRatios: model.rawRatios,
   });
 
@@ -79,6 +80,8 @@ const EMPTY_MODEL = {
   audioOutputPrice: '',
   billingExpr: '',
   requestRuleExpr: '',
+  pluginAddons: [],
+  pluginAddonExpressions: {},
   rawRatios: {
     modelRatio: '',
     completionRatio: '',
@@ -158,6 +161,24 @@ const normalizeCompletionRatioMeta = (rawMeta) => {
   };
 };
 
+const normalizePluginAddonExpressions = (pricingEntry) => {
+  const configured =
+    pricingEntry?.configured?.['billing_setting.plugin_billing_addon_expr'];
+  if (
+    !configured ||
+    typeof configured !== 'object' ||
+    Array.isArray(configured)
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(configured).filter(
+      ([pluginKey, expression]) =>
+        Boolean(pluginKey) && typeof expression === 'string',
+    ),
+  );
+};
+
 const buildModelState = (name, sourceMaps, pricingEntry = null) => {
   const usageSchema = pricingEntry?.usage_schema ?? null;
   const taskPricing = Boolean(Object.keys(usageSchema ?? {}).length);
@@ -166,7 +187,8 @@ const buildModelState = (name, sourceMaps, pricingEntry = null) => {
     taskPricing,
     usageSchema,
     usageExamples: pricingEntry?.usage_examples ?? [],
-    pluginVariants: pricingEntry?.plugin_variants ?? [],
+    pluginAddons: pricingEntry?.plugin_addons ?? [],
+    pluginAddonExpressions: normalizePluginAddonExpressions(pricingEntry),
   };
 
   if (taskPricing) {
@@ -1019,6 +1041,17 @@ export function useModelPricingEditorState({
     }));
   };
 
+  const handlePluginAddonExprChange = (pluginKey, newExpr) => {
+    if (!selectedModel || !pluginKey) return;
+    upsertModel(selectedModel.name, (model) => ({
+      ...model,
+      pluginAddonExpressions: {
+        ...(model.pluginAddonExpressions ?? {}),
+        [pluginKey]: newExpr,
+      },
+    }));
+  };
+
   const addModel = (modelName) => {
     const trimmedName = modelName.trim();
     if (!trimmedName) {
@@ -1038,7 +1071,8 @@ export function useModelPricingEditorState({
       taskPricing: false,
       usageSchema: null,
       usageExamples: [],
-      pluginVariants: [],
+      pluginAddons: [],
+      pluginAddonExpressions: {},
     };
 
     setModels((previous) => [nextModel, ...previous]);
@@ -1172,6 +1206,20 @@ export function useModelPricingEditorState({
         model.billingExpr,
         model.requestRuleExpr,
       );
+      const pluginAddonExpressions = Object.fromEntries(
+        Object.entries(model.pluginAddonExpressions ?? {}).filter(
+          ([pluginKey, expression]) =>
+            Boolean(pluginKey) &&
+            typeof expression === 'string' &&
+            expression.trim() !== '',
+        ),
+      );
+      if (Object.keys(pluginAddonExpressions).length > 0) {
+        pricing['billing_setting.plugin_billing_addon_expr'] =
+          pluginAddonExpressions;
+      } else {
+        delete pricing['billing_setting.plugin_billing_addon_expr'];
+      }
 
       if (hasTaskUsageSchema(model) || model.billingMode === 'tiered_expr') {
         if (finalBillingExpr) {
@@ -1272,6 +1320,7 @@ export function useModelPricingEditorState({
     handleBillingModeChange,
     handleBillingExprChange,
     handleRequestRuleExprChange,
+    handlePluginAddonExprChange,
     handleSubmit,
     addModel,
     deleteModel,

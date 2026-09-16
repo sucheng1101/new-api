@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 const HTTP_URL = /^https?:\/\//i;
+export const MAX_TASK_PLUGIN_SOURCE_BYTES = 1024 * 1024;
 
 export const PLUGIN_DETAIL_TABS = [
   { key: 'overview', label: '概览' },
@@ -114,6 +115,41 @@ function normalizedHttpUrl(value) {
       !parsed.hostname
     ) {
       return '';
+    }
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+// Turn the browser-facing code-host URLs administrators commonly paste into
+// fetchable source URLs. The source still lands in the editor for review; this
+// helper never uploads it or asks the gateway to fetch a remote URL.
+export function normalizeTaskPluginSourceUrl(value) {
+  const raw = text(value);
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (
+      (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+      !parsed.hostname
+    ) {
+      return '';
+    }
+    parsed.hash = '';
+    const host = parsed.hostname.toLowerCase();
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (
+      (host === 'github.com' || host === 'www.github.com') &&
+      (segments[2] === 'blob' || segments[2] === 'raw') &&
+      segments.length > 4
+    ) {
+      return `https://raw.githubusercontent.com/${segments[0]}/${segments[1]}/${segments.slice(3).join('/')}`;
+    }
+    if (host === 'gist.github.com' && segments.length > 0) {
+      const path = segments.join('/');
+      const suffix = segments.includes('raw') ? path : `${path}/raw`;
+      return `https://gist.githubusercontent.com/${suffix}${parsed.search}`;
     }
     return parsed.toString();
   } catch {

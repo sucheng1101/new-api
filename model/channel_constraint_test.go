@@ -35,6 +35,23 @@ func TestTaskPluginIdentityFilterSeparatesSameModelChannels(t *testing.T) {
 	}())
 }
 
+func TestTaskPluginIdentityFilterAcceptsAnySharedCandidate(t *testing.T) {
+	alphaSetting := `{"task_plugin_key":"alpha"}`
+	betaSetting := `{"task_plugin_key":"beta"}`
+	gammaSetting := `{"task_plugin_key":"gamma"}`
+	filter := dto.ChannelFilter{
+		Kind:                   dto.FilterTaskPluginIdentity,
+		TaskPluginKeys:         []string{"alpha", "beta"},
+		TaskPluginChannelTypes: []int{constant.ChannelTypeMiniMax},
+	}
+
+	assert.True(t, channelMatchesFilter(&Channel{Type: constant.ChannelTypeTaskPlugin, Setting: &alphaSetting}, "shared", filter))
+	assert.True(t, channelMatchesFilter(&Channel{Type: constant.ChannelTypeTaskPlugin, Setting: &betaSetting}, "shared", filter))
+	assert.False(t, channelMatchesFilter(&Channel{Type: constant.ChannelTypeTaskPlugin, Setting: &gammaSetting}, "shared", filter))
+	assert.True(t, channelMatchesFilter(&Channel{Type: constant.ChannelTypeMiniMax}, "shared", filter))
+	assert.False(t, channelMatchesFilter(&Channel{Type: constant.ChannelTypeKling}, "shared", filter))
+}
+
 func TestTaskPluginIdentityFilterFiltersMemoryCacheCandidates(t *testing.T) {
 	previous := channelsIDM
 	channelsIDM = map[int]*Channel{}

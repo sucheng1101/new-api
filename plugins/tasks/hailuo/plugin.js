@@ -7,7 +7,7 @@ export const meta = {
     en: "MiniMax Hailuo video generation (text-to-video, image-to-video, and MiniMax-H3 multimodal reference)",
     zh: "MiniMax 海螺视频生成（文生视频、图生视频、MiniMax-H3 多模态参考生视频）",
   },
-  version: "1.1.3",
+  version: "1.1.4",
   author: { name: "QuantumNous" },
   channelTypes: [35],
   models: [
@@ -76,9 +76,9 @@ export const meta = {
           description: { en: "Video generation unit price", zh: "视频生成单价" },
         },
         resolution: {
-          enum: ["768P", "2K"],
+          enum: ["768", "2K"],
           enumLabels: {
-            "768P": { en: "768P", zh: "768P" },
+            "768": { en: "768P", zh: "768P" },
             "2K": { en: "2K", zh: "2K" },
           },
           description: { en: "H3 output video resolution", zh: "H3 输出视频分辨率" },
@@ -95,7 +95,7 @@ export const meta = {
         },
       },
       examples: [
-        { label: "H3 768P 5s", facts: { seconds: 5, resolution: "768P", input_images: 0, input_video_seconds: 0 } },
+        { label: "H3 768P 5s", facts: { seconds: 5, resolution: "768", input_images: 0, input_video_seconds: 0 } },
         { label: "H3 2K 5s · 9 images", facts: { seconds: 5, resolution: "2K", input_images: 9, input_video_seconds: 0 } },
         { label: "H3 2K 5s · input video", facts: { seconds: 5, resolution: "2K", input_images: 0, input_video_seconds: 15 } },
       ],
@@ -190,6 +190,14 @@ function h3Resolution(req) {
   if (value === "2K") return "2K";
   if (value === "768P") return "768P";
   throw new Error(H3_MODEL + " resolution must be 768P or 2K");
+}
+
+// Billing facts are public-model semantics, not provider wire values. Hailuo
+// requires 768P on its /v2 request, while Prompt Hubs calls the same tier 768.
+// Keep one canonical fact so a shared MiniMax-H3 price expression applies to
+// either selected channel.
+function h3BillingResolution(resolution) {
+  return resolution === "768P" ? "768" : resolution;
 }
 
 function h3MediaItem(type, url, role) {
@@ -473,7 +481,7 @@ export function extractUsage(ctx) {
     const content = h3Content(req);
     return {
       seconds: h3Duration(req),
-      resolution: h3Resolution(req),
+      resolution: h3BillingResolution(h3Resolution(req)),
       input_images: content.filter(function (item) {
         return item && item.type === "image_url";
       }).length,
@@ -580,7 +588,7 @@ export function extractUsageOnComplete(_task, _taskResult, body) {
   if (h3Task) {
     const resolution = trimmed(h3Task.resolution).toUpperCase();
     const facts = {};
-    if (resolution === "2K" || resolution === "768P") facts.resolution = resolution;
+    if (resolution === "2K" || resolution === "768P") facts.resolution = h3BillingResolution(resolution);
     const usage = h3Task.usage && typeof h3Task.usage === "object" && !Array.isArray(h3Task.usage) ? h3Task.usage : {};
     const fields = [
       { key: "seconds", value: usage.output_seconds, minimum: H3_MIN_DURATION, maximum: H3_MAX_DURATION, integer: false },

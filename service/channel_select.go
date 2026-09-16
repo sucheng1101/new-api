@@ -200,13 +200,13 @@ func AppendTaskPluginIdentityFilter(c *gin.Context, pluginKey string) {
 }
 
 func pinnedTaskPluginIdentities(c *gin.Context, expected string) ([]int, []string) {
-	if c == nil || expected == "" {
+	if c == nil {
 		return nil, nil
 	}
 	if value, exists := c.Get(jsplugin.ContextKeyPinnedEndpoint); exists {
 		pinned, ok := value.(jsplugin.PinnedEndpoint)
-		if ok && pinned.Generation != nil && len(pinned.Candidates) > 1 {
-			expectedFound := false
+		if ok && pinned.Generation != nil && len(pinned.Candidates) > 0 {
+			expectedFound := expected == ""
 			channelTypes := make([]int, 0, len(pinned.Candidates))
 			pluginKeys := make([]string, 0, len(pinned.Candidates))
 			seen := make(map[int]struct{}, len(pinned.Candidates))
@@ -231,10 +231,13 @@ func pinnedTaskPluginIdentities(c *gin.Context, expected string) ([]int, []strin
 					}
 				}
 			}
-			if expectedFound {
+			if expectedFound && (len(channelTypes) > 0 || len(pluginKeys) > 0) {
 				return channelTypes, pluginKeys
 			}
 		}
+	}
+	if expected == "" {
+		return nil, nil
 	}
 	value, exists := c.Get(jsplugin.ContextKeyPinnedPlugin)
 	pinned, ok := value.(jsplugin.PinnedPlugin)

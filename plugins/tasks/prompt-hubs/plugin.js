@@ -1,30 +1,64 @@
 const ASPECT_RATIOS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 
-const MODEL_RULES = {
-  minimax_h3: {
+// Prompt Hubs documents use 768, while a few existing clients send 768P.
+// Keep the billing fact and provider wire value canonical at 768.
+const RESOLUTION_ALIASES = {
+  "768": "768",
+  "768p": "768",
+  "1080p": "1080p",
+  "2k": "2K",
+  "4k": "4K",
+};
+
+// The host lifecycle deliberately follows the same submit -> poll -> artifact
+// -> settlement shape as the Hailuo task plugin. Only this profile table and
+// the Prompt Hubs wire adapter below are provider-specific.
+const MODEL_PROFILES = [
+  {
+    model: "minimax_h3",
+    wireModel: "minimax_h3",
     minSeconds: 4,
     maxSeconds: 15,
     resolutions: ["768", "1080p", "2K", "4K"],
     referenceRequiredFor: ["2K", "4K"],
   },
-  "MiniMax-H3-漫剧优化": {
+  {
+    // Keep the catalog/price identity separate from the Prompt Hubs wire name.
+    model: "MiniMax-H3",
+    wireModel: "minimax_h3",
+    forceWireModel: true,
+    minSeconds: 4,
+    maxSeconds: 15,
+    resolutions: ["768", "1080p", "2K", "4K"],
+    referenceRequiredFor: ["2K", "4K"],
+  },
+  {
+    model: "MiniMax-H3-漫剧优化",
+    wireModel: "MiniMax-H3-漫剧优化",
     minSeconds: 4,
     maxSeconds: 15,
     resolutions: ["768", "2K", "4K"],
   },
-  "MiniMax-H3-量化版": {
+  {
+    model: "MiniMax-H3-量化版",
+    wireModel: "MiniMax-H3-量化版",
     minSeconds: 4,
     maxSeconds: 10,
     resolutions: ["768"],
   },
-  "MiniMax-H3-四步采样版": {
+  {
+    model: "MiniMax-H3-四步采样版",
+    wireModel: "MiniMax-H3-四步采样版",
     minSeconds: 4,
     maxSeconds: 15,
     resolutions: ["768", "1080p"],
   },
-};
+];
 
-const MODEL_IDS = Object.keys(MODEL_RULES);
+// Each catalog model owns an independent usage profile and Model Pricing entry.
+const MODEL_IDS = MODEL_PROFILES.map(function (profile) {
+  return profile.model;
+});
 
 function resolutionSchema(resolutions) {
   const enumLabels = {};
@@ -64,18 +98,18 @@ export const meta = {
     en: "Prompt Hubs asynchronous MiniMax video generation",
     zh: "Prompt Hubs 异步 MiniMax 视频生成",
   },
-  version: "1.0.2",
+  version: "1.0.5",
   author: { name: "Skye" },
   baseUrl: "https://console.prompt-hubs.com",
   models: MODEL_IDS,
   fetchMode: "per_task",
-  usageSchema: usageSchemaFor(MODEL_RULES.minimax_h3.resolutions),
-  usageExamples: examplesFor("minimax_h3", MODEL_RULES.minimax_h3),
-  usageProfiles: MODEL_IDS.map(function (model) {
+  usageSchema: usageSchemaFor(profileFor("minimax_h3").resolutions),
+  usageExamples: examplesFor("MiniMax-H3", profileFor("MiniMax-H3")),
+  usageProfiles: MODEL_PROFILES.map(function (profile) {
     return {
-      models: [model],
-      schema: usageSchemaFor(MODEL_RULES[model].resolutions),
-      examples: examplesFor(model, MODEL_RULES[model]),
+      models: [profile.model],
+      schema: usageSchemaFor(profile.resolutions),
+      examples: examplesFor(profile.model, profile),
     };
   }),
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
@@ -98,10 +132,25 @@ function providerURL(ctx, path) {
   return baseURL.replace(/\/+$/, "") + path;
 }
 
-function ruleFor(model) {
-  const rule = MODEL_RULES[trimmed(model)];
-  if (!rule) throw new Error("Prompt Hubs does not support model " + trimmed(model));
-  return rule;
+function profileFor(publicModel, upstreamModel) {
+  const publicName = trimmed(publicModel);
+  const publicProfile = MODEL_PROFILES.find(function (profile) {
+    return profile.model === publicName;
+  });
+  if (publicProfile) return publicProfile;
+  const upstreamName = trimmed(upstreamModel);
+  const upstreamProfile = MODEL_PROFILES.find(function (profile) {
+    return profile.model === upstreamName;
+  });
+  if (upstreamProfile) return upstreamProfile;
+  throw new Error("Prompt Hubs does not support model " + (publicName || upstreamName));
+}
+
+function outboundModelFor(profile, channelUpstreamModel) {
+  // A public MiniMax-H3 request is always sent to Prompt Hubs as minimax_h3.
+  // The other catalog models retain an explicit channel mapping when present.
+  if (profile.forceWireModel) return profile.wireModel;
+  return trimmed(channelUpstreamModel) || profile.wireModel;
 }
 
 function metadataFor(req) {
@@ -119,10 +168,18 @@ function rejectUnsupportedFields(req, metadata) {
   }
 }
 
+function promptEnhanceFor(req, metadata) {
+  const value = hasOwn(req, "prompt_enhance") ? req.prompt_enhance : metadata.prompt_enhance;
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "boolean") throw new Error("prompt_enhance must be a boolean");
+  return value;
+}
+
 function durationFor(req, rule, model) {
   let raw;
   if (hasOwn(req, "seconds")) raw = req.seconds;
   else if (hasOwn(req, "duration")) raw = req.duration;
+  else if (hasOwn(req, "duration_seconds")) raw = req.duration_seconds;
   if (raw === undefined || raw === null || raw === "") return rule.minSeconds;
   const seconds = Number(raw);
   if (!Number.isInteger(seconds) || seconds < rule.minSeconds || seconds > rule.maxSeconds) {
@@ -137,7 +194,7 @@ function resolutionFor(req, metadata, rule, model) {
   else if (hasOwn(req, "resolution")) raw = req.resolution;
   else raw = metadata.resolution;
   if (raw === undefined || raw === null || trimmed(raw) === "") return "768";
-  const normalized = { "768": "768", "1080p": "1080p", "2k": "2K", "4k": "4K" }[trimmed(raw).toLowerCase()];
+  const normalized = RESOLUTION_ALIASES[trimmed(raw).toLowerCase()];
   if (!normalized || rule.resolutions.indexOf(normalized) < 0) {
     throw new Error(model + " resolution must be one of " + rule.resolutions.join(", "));
   }
@@ -259,25 +316,28 @@ function normalizeRequest(req, publicModel, upstreamModel, input) {
   if (!isObject(req)) throw new Error("request body must be an object");
   const model = trimmed(publicModel) || trimmed(req.model);
   if (!model) throw new Error("model is required");
-  const executingModel = trimmed(upstreamModel) || model;
-  const rule = ruleFor(executingModel);
+  const profile = profileFor(model, upstreamModel);
+  const executingModel = outboundModelFor(profile, upstreamModel);
   const metadata = metadataFor(req);
   rejectUnsupportedFields(req, metadata);
   const prompt = trimmed((input && input.prompt) || req.prompt);
   if (!prompt) throw new Error("prompt is required");
   const references = referencesFor(req, metadata, input && input.references);
-  const duration = durationFor(req, rule, executingModel);
-  const resolution = resolutionFor(req, metadata, rule, executingModel);
-  if (rule.referenceRequiredFor && rule.referenceRequiredFor.indexOf(resolution) >= 0) {
+  const duration = durationFor(req, profile, model);
+  const resolution = resolutionFor(req, metadata, profile, model);
+  if (profile.referenceRequiredFor && profile.referenceRequiredFor.indexOf(resolution) >= 0) {
     const count = references.images.length + references.videos.length + references.audios.length;
-    if (count === 0) throw new Error(executingModel + " " + resolution + " requires at least one reference media URL");
+    if (count === 0) throw new Error(model + " " + resolution + " requires at least one reference media URL");
   }
   const normalizedMetadata = { aspect_ratio: aspectRatioFor(req, metadata) };
+  const promptEnhance = promptEnhanceFor(req, metadata);
+  if (promptEnhance !== undefined) normalizedMetadata.prompt_enhance = promptEnhance;
   if (references.images.length) normalizedMetadata.reference_images = references.images;
   if (references.videos.length) normalizedMetadata.reference_videos = references.videos;
   if (references.audios.length) normalizedMetadata.reference_audios = references.audios;
   return {
     model: model,
+    upstreamModel: executingModel,
     prompt: prompt,
     duration: duration,
     size: resolution,
@@ -285,69 +345,96 @@ function normalizeRequest(req, publicModel, upstreamModel, input) {
   };
 }
 
-function submitModel(ctx, req) {
-  return trimmed(ctx && ctx.upstreamModel) || trimmed(req && req.model);
-}
-
 function actionFor(req) {
   const metadata = (req && req.metadata) || {};
   return (metadata.reference_images && metadata.reference_images.length) || (metadata.reference_videos && metadata.reference_videos.length)
+    || (metadata.reference_audios && metadata.reference_audios.length)
     ? "image_to_video"
     : "text_to_video";
 }
 
-export function buildSubmitRequest(ctx) {
-  const request = normalizeRequest((ctx && ctx.requestBody) || {}, ctx && ctx.model, ctx && ctx.upstreamModel);
-  const upstreamModel = submitModel(ctx, request);
+function usageFactsFor(request) {
+  return { seconds: request.duration, resolution: request.size };
+}
+
+function promptHubsSubmitBody(request) {
   const metadata = request.metadata;
   const body = {
-    model: upstreamModel,
+    model: request.upstreamModel,
     prompt: request.prompt,
     duration_seconds: request.duration,
     resolution: request.size,
     aspect_ratio: metadata.aspect_ratio,
   };
+  if (metadata.prompt_enhance !== undefined) body.prompt_enhance = metadata.prompt_enhance;
   if (metadata.reference_images && metadata.reference_images.length) body.reference_images = metadata.reference_images;
   if (metadata.reference_videos && metadata.reference_videos.length) body.reference_videos = metadata.reference_videos;
   if (metadata.reference_audios && metadata.reference_audios.length) body.reference_audios = metadata.reference_audios;
+  return body;
+}
+
+export function buildSubmitRequest(ctx) {
+  const request = normalizeRequest((ctx && ctx.requestBody) || {}, ctx && ctx.model, ctx && ctx.upstreamModel);
   return {
     url: providerURL(ctx, "/v1/videos"),
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + trimmed(ctx && ctx.apiKey) },
-    body: body,
+    body: promptHubsSubmitBody(request),
     action: actionFor(request),
   };
 }
 
-function errorMessage(body) {
+function promptHubsError(body) {
   if (!isObject(body)) return "";
   if (isObject(body.error)) return trimmed(body.error.message) || trimmed(body.error.reason) || trimmed(body.error.code);
-  return trimmed(body.error) || trimmed(body.message) || trimmed(body.reason);
-}
-
-function taskID(body) {
-  for (const key of ["id", "task_id"]) {
-    if (typeof body[key] === "string" && trimmed(body[key])) return trimmed(body[key]);
+  const direct = trimmed(body.error) || trimmed(body.message) || trimmed(body.reason);
+  if (direct) return direct;
+  for (const key of ["data", "result", "output"]) {
+    if (isObject(body[key])) {
+      const nested = promptHubsError(body[key]);
+      if (nested) return nested;
+    }
   }
   return "";
 }
 
-export function parseSubmitResponse(_ctx, resp) {
+function promptHubsTaskID(body) {
+  if (!isObject(body)) return "";
+  for (const key of ["id", "task_id"]) {
+    if (typeof body[key] === "string" && trimmed(body[key])) return trimmed(body[key]);
+  }
+  for (const key of ["data", "result", "output"]) {
+    if (isObject(body[key])) {
+      const nested = promptHubsTaskID(body[key]);
+      if (nested) return nested;
+    }
+  }
+  return "";
+}
+
+export function parseSubmitResponse(ctx, resp) {
   const body = resp && resp.body;
   if (!isObject(body)) throw new Error("Prompt Hubs submit response must be a JSON object");
-  const id = taskID(body);
+  const id = promptHubsTaskID(body);
   if (!id) {
-    const message = errorMessage(body);
+    const message = promptHubsError(body);
     if (message) throw new Error("Prompt Hubs submit failed: " + message);
     throw new Error("Prompt Hubs submit response is missing id/task_id");
   }
-  return { taskId: id, taskData: body };
+  const parsed = { taskId: id, taskData: body };
+  if (ctx && isObject(ctx.requestBody) && (trimmed(ctx.model) || trimmed(ctx.requestBody.model))) {
+    const request = normalizeRequest(ctx.requestBody, ctx.model, ctx.upstreamModel);
+    // Prompt Hubs completion payloads may omit dimensions. Persist the
+    // prevalidated values so completion settlement has a bounded fallback.
+    parsed.state = { usageFacts: usageFactsFor(request) };
+  }
+  return parsed;
 }
 
 export function extractUsage(ctx) {
   if (ctx && ctx.usagePurpose === "billing_ratios") return null;
   const request = normalizeRequest((ctx && ctx.requestBody) || {}, ctx && ctx.model, ctx && ctx.upstreamModel);
-  return { seconds: request.duration, resolution: request.size };
+  return usageFactsFor(request);
 }
 
 export function buildQueryRequest(ctx) {
@@ -358,18 +445,18 @@ export function buildQueryRequest(ctx) {
   };
 }
 
-function resultObject(body) {
+function promptHubsTask(body) {
   if (!isObject(body)) return null;
   if (!trimmed(body.status) && isObject(body.data)) return body.data;
   return body;
 }
 
-function videoURL(body) {
-  const result = resultObject(body);
+function promptHubsArtifactURL(body) {
+  const result = promptHubsTask(body);
   if (!result) return "";
   const outputs = Array.isArray(result.outputs) ? result.outputs : [];
   const first = outputs.length && isObject(outputs[0]) ? outputs[0] : {};
-  for (const value of [result.video_url, result.result_url, first.content_url, first.download_url]) {
+  for (const value of [result.download_url, result.content_url, result.video_url, result.result_url, result.url, first.download_url, first.content_url, first.url]) {
     const url = trimmed(value);
     if (url) return url;
   }
@@ -386,60 +473,94 @@ function progressFor(value, status) {
 }
 
 export function parseTaskResult(_ctx, body) {
-  const resultBody = resultObject(body);
+  const resultBody = promptHubsTask(body);
   if (!resultBody) throw new Error("Prompt Hubs task response must be a JSON object");
   const rawStatus = trimmed(resultBody.status).toLowerCase();
   const statuses = {
-    queued: "IN_PROGRESS",
+    pending: "QUEUED",
+    queued: "QUEUED",
     processing: "IN_PROGRESS",
     running: "IN_PROGRESS",
     in_progress: "IN_PROGRESS",
     completed: "SUCCESS",
     succeeded: "SUCCESS",
+    success: "SUCCESS",
     failed: "FAILURE",
+    failure: "FAILURE",
     cancelled: "FAILURE",
     canceled: "FAILURE",
   };
   const status = statuses[rawStatus];
   if (!status) {
-    const message = errorMessage(resultBody);
+    const message = promptHubsError(resultBody);
     if (message) return { status: "FAILURE", progress: "100%", reason: message };
     return { status: "UNKNOWN", reason: "unrecognized status: " + rawStatus };
   }
   const task = { status: status, progress: progressFor(resultBody.progress, status) };
   if (status === "SUCCESS") {
-    const url = videoURL(resultBody);
+    const url = promptHubsArtifactURL(resultBody);
     if (url) task.url = url;
   }
-  if (status === "FAILURE") task.reason = errorMessage(resultBody) || "task " + rawStatus;
+  if (status === "FAILURE") task.reason = promptHubsError(resultBody) || "task " + rawStatus;
   return task;
 }
 
-function artifactResult(ctx) {
-  return resultObject(ctx && ctx.data);
-}
-
 export function listArtifacts(task) {
-  return task && task.status === "SUCCESS" && videoURL(task.data) ? [{ key: "video", type: "video", mimeType: "video/mp4" }] : [];
+  return task && task.status === "SUCCESS" && promptHubsArtifactURL(task.data) ? [{ key: "video", type: "video", mimeType: "video/mp4" }] : [];
 }
 
 export function buildContentRequest(ctx) {
   if (!ctx || ctx.artifactKey !== "video") throw new Error("artifact_not_found");
-  const upstreamTaskId = trimmed(ctx && ctx.upstreamTaskId);
-  if (!upstreamTaskId) throw new Error("artifact_not_found");
   const method = trimmed(ctx.clientRequest && ctx.clientRequest.method).toUpperCase();
-  return {
-    // Status responses contain expiring signed media URLs. The task content
-    // endpoint resolves a fresh artifact for the persisted upstream task ID.
-    url: providerURL(ctx, "/v1/videos/" + encodeURIComponent(upstreamTaskId) + "/content"),
-    method: method === "HEAD" ? "GET" : method || "GET",
-    headers: { Authorization: "Bearer " + trimmed(ctx && ctx.apiKey) },
-    dropCredentialsOnRedirect: true,
-  };
+  const taskId = trimmed(ctx.upstreamTaskId);
+  if (taskId) {
+    // Status payload URLs are often signed CDN links with a short lifetime.
+    // Re-resolve through the authenticated provider endpoint and deliberately
+    // remove the provider credential if it redirects to a media host.
+    return {
+      url: providerURL(ctx, "/v1/videos/" + encodeURIComponent(taskId) + "/content"),
+      method: method || "GET",
+      headers: { Authorization: "Bearer " + trimmed(ctx.apiKey) },
+      dropCredentialsOnRedirect: true,
+    };
+  }
+  const persistedURL = promptHubsArtifactURL(ctx.data);
+  if (persistedURL) {
+    return { url: persistedURL, method: method || "GET", credentialless: true };
+  }
+  throw new Error("artifact_not_found");
 }
 
 export function extractUsageOnComplete(_task, _taskResult, _body) {
-  return null;
+  const task = _task || {};
+  const body = promptHubsTask(_body);
+  let profile;
+  try {
+    profile = profileFor(task.model, task.upstreamModel);
+  } catch (_error) {
+    return null;
+  }
+  const facts = {};
+  const rawSeconds = body && (hasOwn(body, "seconds") ? body.seconds : hasOwn(body, "duration_seconds") ? body.duration_seconds : body.duration);
+  if (rawSeconds !== undefined && rawSeconds !== null && rawSeconds !== "") {
+    const seconds = Number(rawSeconds);
+    if (Number.isInteger(seconds) && seconds >= profile.minSeconds && seconds <= profile.maxSeconds) facts.seconds = seconds;
+  }
+  const rawResolution = body && (hasOwn(body, "resolution") ? body.resolution : body.size);
+  if (rawResolution !== undefined && rawResolution !== null && trimmed(rawResolution) !== "") {
+    const resolution = RESOLUTION_ALIASES[trimmed(rawResolution).toLowerCase()];
+    if (resolution && profile.resolutions.indexOf(resolution) >= 0) facts.resolution = resolution;
+  }
+  const stored = isObject(task.state) && isObject(task.state.usageFacts) ? task.state.usageFacts : {};
+  if (facts.seconds === undefined) {
+    const seconds = Number(stored.seconds);
+    if (Number.isInteger(seconds) && seconds >= profile.minSeconds && seconds <= profile.maxSeconds) facts.seconds = seconds;
+  }
+  if (facts.resolution === undefined) {
+    const resolution = RESOLUTION_ALIASES[trimmed(stored.resolution).toLowerCase()];
+    if (resolution && profile.resolutions.indexOf(resolution) >= 0) facts.resolution = resolution;
+  }
+  return Object.keys(facts).length ? facts : null;
 }
 
 function responseInput(input) {
@@ -535,6 +656,12 @@ function parseMultipartRequest(ctx) {
     }
     if (!isObject(req.metadata)) throw new Error("metadata must be a JSON object string");
   }
+  if (req.prompt_enhance !== undefined) {
+    const promptEnhance = trimmed(req.prompt_enhance).toLowerCase();
+    if (promptEnhance === "true") req.prompt_enhance = true;
+    else if (promptEnhance === "false") req.prompt_enhance = false;
+    else throw new Error("prompt_enhance must be true or false");
+  }
   return req;
 }
 
@@ -565,7 +692,8 @@ export const protocols = {
     decodeRequest: decodeResponsesRequest,
     renderEvents: function (ctx, task, previousState) {
       const status = trimmed(task && task.status).toUpperCase() || "UNKNOWN";
-      const numeric = Number(trimmed(task && task.progress).replace(/%$/, ""));
+      const rawProgress = trimmed(task && task.progress).replace(/%$/, "");
+      const numeric = rawProgress === "" ? NaN : Number(rawProgress);
       const progress = Number.isFinite(numeric) && numeric >= 0 && numeric <= 100 ? numeric : null;
       const state = { status: status, progress: progress };
       if (status === "SUCCESS") {

@@ -836,6 +836,12 @@ func syncTaskPluginsOnceContext(ctx context.Context) error {
 		)
 		return syncErr
 	}
+	if jsplugin.DefaultRegistry.Generation().Number != generationBefore {
+		// The public pricing response includes task usage metadata. Publish a
+		// fresh response as soon as a plugin generation changes instead of
+		// leaving an uploaded schema invisible for the cache TTL.
+		model.InvalidatePricingCache()
+	}
 	taskPluginSyncState.hashes = nextHashes
 	for key := range taskPluginSyncState.errors {
 		if !seen[key] {

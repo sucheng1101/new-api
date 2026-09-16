@@ -1562,11 +1562,18 @@ func TestPinTaskPluginEndpointMovesParserToSurvivingSharedCandidate(t *testing.T
 		assert.Equal(t, "full-parser", action)
 	})
 
-	t.Run("stream keeps first candidate", func(t *testing.T) {
+	t.Run("stream binds the plugin selected by the channel", func(t *testing.T) {
 		var pinned jsplugin.PinnedEndpoint
 		var action string
 		router := gin.New()
 		router.POST("/v1/responses", PinTaskPluginEndpoint(), PrepareTaskPluginEndpoint(), func(c *gin.Context) {
+			initial := c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint)
+			require.Len(t, initial.Candidates, 2)
+			assert.Same(t, streamOnly, initial.Candidates[0].Plugin)
+			require.NoError(t, bindTaskPluginEndpointToSelectedChannel(c, &model.Channel{
+				Id:   97,
+				Type: constant.ChannelTypeCodex,
+			}))
 			pinned = c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint)
 			action = c.GetString("task_action")
 			c.Status(http.StatusNoContent)
@@ -1577,11 +1584,163 @@ func TestPinTaskPluginEndpointMovesParserToSurvivingSharedCandidate(t *testing.T
 		router.ServeHTTP(recorder, request)
 
 		assert.Equal(t, http.StatusNoContent, recorder.Code)
-		assert.Same(t, streamOnly, pinned.Plugin)
-		require.Len(t, pinned.Candidates, 2)
-		assert.Same(t, streamOnly, pinned.Candidates[0].Plugin)
-		assert.Equal(t, "stream-parser", action)
+		assert.Same(t, full, pinned.Plugin)
+		require.Len(t, pinned.Candidates, 1)
+		assert.Same(t, full, pinned.Candidates[0].Plugin)
+		assert.Equal(t, "full-parser", action)
 	})
+
+	t.Run("task-plugin channel binds by its setting instead of registry order", func(t *testing.T) {
+		selectedSetting := `{"task_plugin_key":"bravo-full"}`
+		var pinned jsplugin.PinnedEndpoint
+		var action string
+		router := gin.New()
+		router.POST("/v1/responses", PinTaskPluginEndpoint(), PrepareTaskPluginEndpoint(), func(c *gin.Context) {
+			initial := c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint)
+			require.Len(t, initial.Candidates, 2)
+			assert.Same(t, streamOnly, initial.Candidates[0].Plugin)
+			require.NoError(t, bindTaskPluginEndpointToSelectedChannel(c, &model.Channel{
+				Id:      98,
+				Type:    constant.ChannelTypeTaskPlugin,
+				Setting: &selectedSetting,
+			}))
+			pinned = c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint)
+			action = c.GetString("task_action")
+			c.Status(http.StatusNoContent)
+		})
+		request := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"shared-form-model","stream":true}`))
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+
+		assert.Equal(t, http.StatusNoContent, recorder.Code)
+		assert.Same(t, full, pinned.Plugin)
+		require.Len(t, pinned.Candidates, 1)
+		assert.Same(t, full, pinned.Candidates[0].Plugin)
+		assert.Equal(t, "full-parser", action)
+	})
+}
+
+func TestSharedMiniMaxH3BindsPluginSelectedByChannel(t *testing.T) {
+	require.NoError(t, appI18n.Init())
+	setupTaskPluginRouteDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}, &model.Ability{}))
+
+	previousMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() { common.MemoryCacheEnabled = previousMemoryCacheEnabled })
+
+	generation := jsplugin.DefaultRegistry.Generation()
+	require.NotNil(t, generation)
+	_, hailuoLoaded := generation.Get("hailuo")
+	_, promptHubsLoaded := generation.Get("prompt-hubs")
+	require.True(t, hailuoLoaded)
+	require.True(t, promptHubsLoaded)
+
+	for _, testCase := range []struct {
+		name               string
+		selectedChannel    int
+		selectedPlugin     string
+		selectedChannelTyp int
+	}{
+		{
+			name:               "native MiniMax channel binds Hailuo",
+			selectedChannel:    constant.ChannelTypeMiniMax,
+			selectedPlugin:     "hailuo",
+			selectedChannelTyp: constant.ChannelTypeMiniMax,
+		},
+		{
+			name:               "task plugin channel binds Prompt Hubs",
+			selectedChannel:    constant.ChannelTypeTaskPlugin,
+			selectedPlugin:     "prompt-hubs",
+			selectedChannelTyp: constant.ChannelTypeTaskPlugin,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			group := "shared-h3-" + strings.ReplaceAll(testCase.selectedPlugin, "-", "_")
+			higherPriority := int64(2)
+			lowerPriority := int64(1)
+			weight := uint(1)
+			baseURL := "https://provider.example"
+			hailuoMapping := `{"MiniMax-H3":"minimax_h3"}`
+			promptHubsSetting := `{"task_plugin_key":"prompt-hubs"}`
+
+			channels := []*model.Channel{
+				{
+					Type:         constant.ChannelTypeMiniMax,
+					Status:       common.ChannelStatusEnabled,
+					Name:         "shared-h3-hailuo-" + testCase.selectedPlugin,
+					Key:          "hailuo-test-key",
+					Models:       "MiniMax-H3",
+					Group:        group,
+					Priority:     &lowerPriority,
+					Weight:       &weight,
+					BaseURL:      &baseURL,
+					ModelMapping: &hailuoMapping,
+				},
+				{
+					Type:     constant.ChannelTypeTaskPlugin,
+					Status:   common.ChannelStatusEnabled,
+					Name:     "shared-h3-prompt-hubs-" + testCase.selectedPlugin,
+					Key:      "prompt-hubs-test-key",
+					Models:   "MiniMax-H3",
+					Group:    group,
+					Priority: &lowerPriority,
+					Weight:   &weight,
+					BaseURL:  &baseURL,
+					Setting:  &promptHubsSetting,
+				},
+			}
+			for _, channel := range channels {
+				if channel.Type == testCase.selectedChannel {
+					channel.Priority = &higherPriority
+				}
+				require.NoError(t, model.DB.Create(channel).Error)
+				require.NoError(t, model.DB.Create(&model.Ability{
+					Group:     group,
+					Model:     "MiniMax-H3",
+					ChannelId: channel.Id,
+					Enabled:   true,
+					Priority:  channel.Priority,
+					Weight:    uint(channel.GetWeight()),
+				}).Error)
+			}
+
+			var boundPlugin string
+			var selectedChannelID int
+			router := gin.New()
+			router.POST(
+				"/v1/videos",
+				func(c *gin.Context) {
+					common.SetContextKey(c, constant.ContextKeyUsingGroup, group)
+					c.Next()
+				},
+				PinTaskPluginEndpoint(),
+				PrepareTaskPluginEndpoint(),
+				Distribute(),
+				func(c *gin.Context) {
+					boundPlugin = c.GetString("expected_task_plugin_key")
+					selectedChannelID = common.GetContextKeyInt(c, constant.ContextKeyChannelId)
+					c.Status(http.StatusNoContent)
+				},
+			)
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/v1/videos",
+				strings.NewReader(`{"model":"MiniMax-H3","prompt":"shared routing probe","seconds":5,"size":"768P"}`),
+			)
+			request.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+
+			router.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusNoContent, recorder.Code, recorder.Body.String())
+			assert.Equal(t, testCase.selectedPlugin, boundPlugin)
+			selected, err := model.GetChannelById(selectedChannelID, true)
+			require.NoError(t, err)
+			assert.Equal(t, testCase.selectedChannelTyp, selected.Type)
+		})
+	}
 }
 
 func compileTaskRoutePlugin(t *testing.T, source string) *jsplugin.LoadedPlugin {

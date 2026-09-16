@@ -324,6 +324,49 @@ export function buildSubmitRequest(ctx){return {url:ctx.baseUrl+"/submit"}} expo
 	assert.Contains(t, taskErr.Message, "pinned model")
 }
 
+func TestTaskAdaptorFinalDecoderUsesChannelMappedUpstreamModel(t *testing.T) {
+	source := `
+export const meta = {apiVersion:1,key:"mapped-final-decoder",name:"Mapped Final Decoder",version:"1.0.0",author:{name:"Test"},models:["MiniMax-H3"],fetchMode:"per_task",protocols:[{name:"openai_responses",supports:["sync","background"]}]};
+export const protocols = {openai_responses:{decodeRequest:function(ctx){
+  if(ctx.upstreamModel !== "minimax_h3") throw new Error("missing mapped upstream model");
+  return {kind:"submit",model:ctx.model,requestBody:ctx.body.value};
+},renderFinal:function(){return {};}}};
+export function buildSubmitRequest(ctx){return {url:ctx.baseUrl+"/submit",method:"POST"}}
+export function parseSubmitResponse(){return {taskId:"one"}}
+export function buildQueryRequest(){return {}}
+export function parseTaskResult(){return {status:"SUCCESS"}}
+`
+	plugin, err := pluginruntime.NewRegistry().Register(source, pluginruntime.Options{})
+	require.NoError(t, err)
+	protocolContext := pluginruntime.ProtocolRequestContext{
+		RouteRequestContext: pluginruntime.RouteRequestContext{
+			Body:        map[string]any{"kind": "json", "value": map[string]any{"model": "MiniMax-H3"}},
+			RequestBody: map[string]any{"model": "MiniMax-H3"},
+		},
+		Protocol:      "openai_responses",
+		Model:         "MiniMax-H3",
+		UpstreamModel: "MiniMax-H3",
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set(pluginruntime.ContextKeyPinnedEndpoint, pluginruntime.PinnedEndpoint{Plugin: plugin, Protocol: "openai_responses", Model: "MiniMax-H3"})
+	c.Set(pluginruntime.ContextKeyProtocolRequest, protocolContext)
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl:    "https://provider.example",
+			UpstreamModelName: "minimax_h3",
+		},
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{},
+		OriginModelName: "MiniMax-H3",
+	}
+	adaptor := New(plugin)
+	adaptor.Init(info)
+
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+	updated := c.MustGet(pluginruntime.ContextKeyProtocolRequest).(pluginruntime.ProtocolRequestContext)
+	assert.Equal(t, "minimax_h3", updated.UpstreamModel)
+}
+
 func TestTaskAdaptorRejectsRendererFromFinalProtocolDecoder(t *testing.T) {
 	source := `
 export const meta = {apiVersion:1,key:"renderer-reject",name:"Renderer Reject",version:"1.0.0",author:{name:"Test"},models:["claimed-model"],fetchMode:"per_task",protocols:[{name:"openai_responses",supports:["sync","background"]}]};

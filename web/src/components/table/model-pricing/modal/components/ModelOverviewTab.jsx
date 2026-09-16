@@ -22,6 +22,7 @@ import { Divider } from '@douyinfe/semi-ui';
 import ModelBasicInfo from './ModelBasicInfo';
 import ModelPricingTable from './ModelPricingTable';
 import DynamicPricingBreakdown from './DynamicPricingBreakdown';
+import TaskPricingBreakdown from './TaskPricingBreakdown';
 
 const ModelOverviewTab = ({
   modelData,
@@ -36,28 +37,56 @@ const ModelOverviewTab = ({
   vendorsMap,
   t,
 }) => {
+  const hasTaskPricing = Boolean(
+    Object.keys(modelData?.billing_usage_schema ?? {}).length,
+  );
+
   return (
     <div>
       <ModelBasicInfo modelData={modelData} vendorsMap={vendorsMap} t={t} />
       {modelData.billing_mode === 'tiered_expr' && modelData.billing_expr && (
         <>
           <Divider margin={16} />
-          <DynamicPricingBreakdown billingExpr={modelData.billing_expr} t={t} />
+          {hasTaskPricing ? (
+            <TaskPricingBreakdown
+              modelData={modelData}
+              groupRatio={groupRatio}
+              usableGroup={usableGroup}
+              displayPrice={displayPrice}
+              t={t}
+            />
+          ) : (
+            <DynamicPricingBreakdown billingExpr={modelData.billing_expr} t={t} />
+          )}
+        </>
+      )}
+      {hasTaskPricing && !modelData.billing_expr && (
+        <>
+          <Divider margin={16} />
+          <TaskPricingBreakdown
+            modelData={modelData}
+            groupRatio={groupRatio}
+            usableGroup={usableGroup}
+            displayPrice={displayPrice}
+            t={t}
+          />
         </>
       )}
       <Divider margin={16} />
-      <ModelPricingTable
-        modelData={modelData}
-        groupRatio={groupRatio}
-        currency={currency}
-        siteDisplayType={siteDisplayType}
-        tokenUnit={tokenUnit}
-        displayPrice={displayPrice}
-        showRatio={showRatio}
-        usableGroup={usableGroup}
-        autoGroups={autoGroups}
-        t={t}
-      />
+      {!hasTaskPricing ? (
+        <ModelPricingTable
+          modelData={modelData}
+          groupRatio={groupRatio}
+          currency={currency}
+          siteDisplayType={siteDisplayType}
+          tokenUnit={tokenUnit}
+          displayPrice={displayPrice}
+          showRatio={showRatio}
+          usableGroup={usableGroup}
+          autoGroups={autoGroups}
+          t={t}
+        />
+      ) : null}
     </div>
   );
 };

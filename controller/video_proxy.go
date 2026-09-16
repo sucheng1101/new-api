@@ -81,6 +81,21 @@ func VideoProxy(c *gin.Context) {
 			fmt.Sprintf("Task is not completed yet, current status: %s", task.Status))
 		return
 	}
+	// Prefer the durable object reference. It remains usable when the plugin
+	// release was removed, a source archive is unavailable, or the provider's
+	// original result URL has expired.
+	artifactStore := service.GetTaskArtifactStore()
+	if stored, storeErr := artifactStore.List(task); storeErr == nil {
+		for i := range stored {
+			if stored[i].Type != "video" {
+				continue
+			}
+			if serveErr := artifactStore.Serve(c, task, &stored[i]); serveErr == nil || c.Writer.Written() {
+				return
+			}
+			break
+		}
+	}
 
 	var descriptor *relaychannel.TaskContentRequest
 	if taskHasPluginExecution(task) {

@@ -64,6 +64,36 @@ const task = {
     upstream_task_id: 'provider-123',
     node_name: 'node-a',
   },
+  billing: {
+    mode: 'tiered_expr',
+    group_ratio: 1.2,
+    estimated_quota: 600000,
+    actual_quota: 720000,
+    settled: true,
+    usage_facts: {
+      seconds: 5,
+      resolution: '2K',
+      input_images: 2,
+      input_video_seconds: 3,
+    },
+    components: [
+      {
+        kind: 'base',
+        estimated_quota_before_group: 400000,
+        actual_quota_before_group: 450000,
+        estimated_tier: '2K',
+        actual_tier: '2K',
+      },
+      {
+        kind: 'plugin_addon',
+        plugin_key: 'hailuo',
+        estimated_quota_before_group: 100000,
+        actual_quota_before_group: 150000,
+        estimated_tier: 'reference_media',
+        actual_tier: 'reference_media',
+      },
+    ],
+  },
 };
 
 describe('taskLogDetails', () => {
@@ -133,6 +163,32 @@ describe('taskLogDetails', () => {
     expect(userDetails.basic.originModel).toBe('MiniMax-H3');
     expect(userDetails.admin).toBeNull();
     expect(userDetails.root).toBeNull();
+    expect(userDetails.billing).toMatchObject({
+      mode: 'tiered_expr',
+      groupRatio: 1.2,
+      estimatedQuota: 600000,
+      actualQuota: 720000,
+      settled: true,
+    });
+    expect(userDetails.billing.usageFacts).toContainEqual(['seconds', 5]);
+    expect(userDetails.billing.components).toEqual([
+      {
+        kind: 'base',
+        pluginKey: '',
+        estimatedQuotaBeforeGroup: 400000,
+        actualQuotaBeforeGroup: 450000,
+        estimatedTier: '2K',
+        actualTier: '2K',
+      },
+      {
+        kind: 'plugin_addon',
+        pluginKey: 'hailuo',
+        estimatedQuotaBeforeGroup: 100000,
+        actualQuotaBeforeGroup: 150000,
+        estimatedTier: 'reference_media',
+        actualTier: 'reference_media',
+      },
+    ]);
 
     const rootDetails = getTaskLogDetails(task, {
       isAdminUser: true,

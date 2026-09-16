@@ -142,6 +142,14 @@ func main() {
 		}
 		return a
 	}
+	service.GetTaskAdaptorForTaskFunc = func(task *model.Task) service.TaskPollingAdaptor {
+		a, err := relay.ResolveTaskAdaptorForTask(task)
+		if err != nil {
+			common.SysError("resolve task plugin snapshot for polling: " + err.Error())
+			return nil
+		}
+		return a
+	}
 
 	// Channel upstream model update check task
 	controller.StartChannelUpstreamModelUpdateTask()
@@ -295,6 +303,9 @@ func InitResources() error {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
 	}
+	// Task artifacts keep their existing upstream-proxy behavior unless a
+	// complete S3-compatible store configuration is present.
+	service.InitTaskArtifactStore()
 	if err = authz.Init(model.DB); err != nil {
 		common.FatalLog("failed to initialize authorization: " + err.Error())
 		return err

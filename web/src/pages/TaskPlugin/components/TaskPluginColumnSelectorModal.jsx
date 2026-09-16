@@ -27,7 +27,7 @@ export default function TaskPluginColumnSelectorModal({
   onChange,
   onReset,
   onCancel,
-  t,
+  t = (key) => key,
 }) {
   const selectableColumns = (columns ?? []).filter((column) => column.title);
   const allVisible = selectableColumns.every(

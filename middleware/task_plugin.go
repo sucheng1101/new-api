@@ -554,16 +554,28 @@ func PrepareTaskPluginEndpoint() gin.HandlerFunc {
 				}
 			}
 		}
+		c.Set(pluginruntime.ContextKeyRouteRequest, requestContext)
 		bodyObject, _ := requestContext.Body.(map[string]any)
 		bodyKind, _ := bodyObject["kind"].(string)
-		allowedBody := false
-		for _, allowed := range pinned.Operation.BodyKinds {
-			if bodyKind == string(allowed) {
-				allowedBody = true
-				break
+		candidates := pinned.Candidates
+		if len(candidates) == 0 {
+			candidates = []pluginruntime.ProtocolBinding{{
+				Plugin:    pinned.Plugin,
+				Protocol:  pinned.Protocol,
+				Operation: pinned.Operation,
+				Model:     pinned.Model,
+			}}
+		}
+		eligibleCandidates := make([]pluginruntime.ProtocolBinding, 0, len(candidates))
+		for _, candidate := range candidates {
+			if candidate.Plugin == nil || !pluginruntime.SupportsHostProtocol(candidate.Protocol) {
+				continue
+			}
+			if taskPluginOperationAcceptsBody(candidate.Operation, bodyKind) {
+				eligibleCandidates = append(eligibleCandidates, candidate)
 			}
 		}
-		if !allowedBody {
+		if len(eligibleCandidates) == 0 {
 			logger.LogWarn(
 				c,
 				"task_plugin subsystem=endpoint event=prepare_rejected generation=%d plugin=%q stage=request_decode reason=body_kind_mismatch body_kind=%q",
@@ -595,19 +607,36 @@ func PrepareTaskPluginEndpoint() gin.HandlerFunc {
 				}
 			}
 		}
+		if len(eligibleCandidates) > 1 {
+			// Shared public models are selected by channel priority and weight. Keep
+			// the request structural checks here, then let Distribute bind the
+			// protocol parser and usage profile for the channel it selected.
+			pinned.Candidates = eligibleCandidates
+			pinned.Plugin = eligibleCandidates[0].Plugin
+			pinned.Protocol = eligibleCandidates[0].Protocol
+			pinned.Operation = eligibleCandidates[0].Operation
+			c.Set(pluginruntime.ContextKeyPinnedEndpoint, pinned)
+			logger.LogDebug(
+				c,
+				"task_plugin subsystem=endpoint event=prepared_candidates generation=%d candidate_count=%d claimed_model=%q stream=%t",
+				pinned.Generation.Number,
+				len(eligibleCandidates),
+				pinned.Model,
+				stream,
+			)
+			c.Next()
+			return
+		}
 		protocolContext := pluginruntime.ProtocolRequestContext{
 			RouteRequestContext: requestContext,
-			Protocol:            pinned.Protocol,
-			Operation:           pinned.Operation.Name,
+			Protocol:            eligibleCandidates[0].Protocol,
+			Operation:           eligibleCandidates[0].Operation.Name,
 			Model:               pinned.Model,
 			UpstreamModel:       pinned.MappedModel,
 			Stream:              stream,
 		}
 		hookStarted := time.Now()
-		candidates := pinned.Candidates
-		if len(candidates) == 0 {
-			candidates = []pluginruntime.ProtocolBinding{{Plugin: pinned.Plugin, Protocol: pinned.Protocol, Operation: pinned.Operation, Model: pinned.Model}}
-		}
+		candidates = eligibleCandidates
 		accepted := make([]pluginruntime.ProtocolBinding, 0, len(candidates))
 		var resolved map[string]any
 		var failures []string
@@ -732,6 +761,184 @@ func PrepareTaskPluginEndpoint() gin.HandlerFunc {
 		)
 		c.Next()
 	}
+}
+
+func taskPluginOperationAcceptsBody(operation pluginruntime.HostProtocolOperation, bodyKind string) bool {
+	for _, allowed := range operation.BodyKinds {
+		if bodyKind == string(allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+// bindTaskPluginEndpointToSelectedChannel finalizes a shared endpoint after
+// the normal channel selector has chosen its priority/weight winner. The
+// selected channel, rather than registry ordering, owns the protocol parser,
+// validation schema, and pricing identity for this request.
+func bindTaskPluginEndpointToSelectedChannel(c *gin.Context, channel *model.Channel) error {
+	pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedEndpoint)
+	if !exists {
+		return nil
+	}
+	if c.GetString("expected_task_plugin_key") != "" {
+		// A single compatible candidate was finalized during endpoint prepare.
+		return nil
+	}
+	pinned, ok := pinnedValue.(pluginruntime.PinnedEndpoint)
+	if !ok || pinned.Generation == nil || pinned.Plugin == nil || channel == nil {
+		return fmt.Errorf("task plugin endpoint binding is invalid")
+	}
+	candidate, found := taskPluginCandidateForSelectedChannel(pinned, channel)
+	if !found || candidate.Plugin == nil {
+		return fmt.Errorf("selected channel is not compatible with this task plugin request")
+	}
+
+	requestValue, found := c.Get(pluginruntime.ContextKeyRouteRequest)
+	requestContext, valid := requestValue.(pluginruntime.RouteRequestContext)
+	if !found || !valid {
+		var err error
+		requestContext, err = buildTaskPluginRouteRequest(c)
+		if err != nil {
+			return err
+		}
+	}
+	stream, err := taskPluginRequestStream(requestContext)
+	if err != nil {
+		return err
+	}
+	protocolContext := pluginruntime.ProtocolRequestContext{
+		RouteRequestContext: requestContext,
+		Protocol:            candidate.Protocol,
+		Operation:           candidate.Operation.Name,
+		Model:               pinned.Model,
+		UpstreamModel:       pinned.MappedModel,
+		Stream:              stream,
+	}
+	started := time.Now()
+	resolvedValue, callErr := candidate.Plugin.Engine.CallPathWithAdmissionTimeout(
+		context.WithoutCancel(c.Request.Context()),
+		pluginruntime.DefaultCallTimeout,
+		"protocols",
+		[]string{candidate.Protocol, "decodeRequest"},
+		protocolContext.JSValue(),
+	)
+	if callErr != nil {
+		return fmt.Errorf("%s", taskPluginHookDetail(callErr))
+	}
+	resolved, valid := resolvedValue.(map[string]any)
+	if !valid {
+		return fmt.Errorf("%s", taskPluginInvalidRouteResult)
+	}
+	if kind, _ := resolved["kind"].(string); kind != string(pluginruntime.RouteTypeSubmit) {
+		return fmt.Errorf("%s", taskPluginInvalidRouteResult)
+	}
+	resolvedModel, valid := resolved["model"].(string)
+	if !valid || strings.TrimSpace(resolvedModel) == "" {
+		return fmt.Errorf("decoded request is missing a model")
+	}
+	if resolvedModel != pinned.Model || (pinned.MappedModel == "" && !slices.Contains(candidate.Plugin.Meta.Models, resolvedModel)) {
+		return fmt.Errorf("model %q is not served by this plugin", resolvedModel)
+	}
+	if _, forbidden := resolved["renderer"]; forbidden {
+		return fmt.Errorf("%s", taskPluginInvalidRouteResult)
+	}
+	action := ""
+	if resolvedAction, present := resolved["action"]; present {
+		action, valid = resolvedAction.(string)
+		if !valid {
+			return fmt.Errorf("%s", taskPluginInvalidRouteResult)
+		}
+	}
+	if normalizedBody, present := resolved["requestBody"]; present {
+		requestContext.RequestBody = normalizedBody
+	}
+
+	pinned.Plugin = candidate.Plugin
+	pinned.Protocol = candidate.Protocol
+	pinned.Operation = candidate.Operation
+	pinned.Candidates = []pluginruntime.ProtocolBinding{candidate}
+	c.Set(pluginruntime.ContextKeyPinnedEndpoint, pinned)
+	c.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{
+		Generation: pinned.Generation,
+		Plugin:     candidate.Plugin,
+	})
+	c.Set(pluginruntime.ContextKeyProtocolRequest, protocolContext)
+	c.Set(pluginruntime.ContextKeyRouteRequest, requestContext)
+	c.Set("task_request", requestContext.RequestBody)
+	c.Set("resolved_task_model", pinned.Model)
+	c.Set("expected_task_plugin_key", candidate.Plugin.Meta.Key)
+	c.Set("task_plugin_key", candidate.Plugin.Meta.Key)
+	c.Set("platform", candidate.Plugin.Meta.Key)
+	service.AppendTaskPluginIdentityFilter(c, candidate.Plugin.Meta.Key)
+	c.Set("relay_mode", relayconstant.RelayModeVideoSubmit)
+	if strings.TrimSpace(action) != "" {
+		c.Set("task_action", action)
+	}
+	if intentErr := applyOriginTaskIntent(c, resolved, candidate.Plugin.Meta); intentErr != nil {
+		return fmt.Errorf("%s", intentErr.Message)
+	}
+	logger.LogDebug(
+		c,
+		"task_plugin subsystem=endpoint event=bound generation=%d plugin=%q channel_id=%d channel_type=%d protocol=%q model=%q action_present=%t elapsed_ms=%d",
+		pinned.Generation.Number,
+		candidate.Plugin.Meta.Key,
+		channel.Id,
+		channel.Type,
+		candidate.Protocol,
+		pinned.Model,
+		strings.TrimSpace(action) != "",
+		time.Since(started).Milliseconds(),
+	)
+	return nil
+}
+
+func taskPluginCandidateForSelectedChannel(pinned pluginruntime.PinnedEndpoint, channel *model.Channel) (pluginruntime.ProtocolBinding, bool) {
+	candidates := pinned.Candidates
+	if len(candidates) == 0 && pinned.Plugin != nil {
+		candidates = []pluginruntime.ProtocolBinding{{
+			Plugin:    pinned.Plugin,
+			Protocol:  pinned.Protocol,
+			Operation: pinned.Operation,
+			Model:     pinned.Model,
+		}}
+	}
+	if channel.Type == constant.ChannelTypeTaskPlugin {
+		pluginKey := channel.GetSetting().TaskPluginKey
+		for _, candidate := range candidates {
+			if candidate.Plugin != nil && candidate.Plugin.Meta.Key == pluginKey {
+				return candidate, true
+			}
+		}
+		return pluginruntime.ProtocolBinding{}, false
+	}
+	plugin, found := pinned.Generation.GetByChannelType(channel.Type)
+	if !found {
+		return pluginruntime.ProtocolBinding{}, false
+	}
+	for _, candidate := range candidates {
+		if candidate.Plugin == plugin {
+			return candidate, true
+		}
+	}
+	return pluginruntime.ProtocolBinding{}, false
+}
+
+func taskPluginRequestStream(requestContext pluginruntime.RouteRequestContext) (bool, error) {
+	body, bodyOK := requestContext.Body.(map[string]any)
+	if !bodyOK || body["kind"] != string(pluginruntime.BodyJSON) {
+		return false, nil
+	}
+	requestBody, _ := body["value"].(map[string]any)
+	streamValue, present := requestBody["stream"]
+	if !present {
+		return false, nil
+	}
+	stream, valid := streamValue.(bool)
+	if !valid {
+		return false, fmt.Errorf("stream must be a boolean")
+	}
+	return stream, nil
 }
 
 func buildTaskPluginRouteRequest(c *gin.Context) (pluginruntime.RouteRequestContext, error) {

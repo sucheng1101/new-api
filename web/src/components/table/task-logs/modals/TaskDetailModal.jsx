@@ -45,6 +45,62 @@ const formatDuration = (seconds) => {
     .padStart(2, '0')}s`;
 };
 
+const formatQuota = (value, t) => {
+  if (value === null || value === undefined) return '-';
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '-';
+  return `${amount.toLocaleString()} ${t('额度')}`;
+};
+
+const formatUsageFact = (key, value, t) => {
+  switch (key) {
+    case 'seconds':
+    case 'duration':
+    case 'duration_seconds':
+      return { label: t('视频时长'), value: `${value} ${t('秒')}` };
+    case 'resolution':
+    case 'size':
+      return { label: t('分辨率'), value: String(value) };
+    case 'input_images':
+      return { label: t('参考图片数'), value: `${value} ${t('张')}` };
+    case 'input_video_seconds':
+      return { label: t('输入视频时长'), value: `${value} ${t('秒')}` };
+    default:
+      return { label: key, value: String(value) };
+  }
+};
+
+const componentLabel = (component, t) => {
+  if (component.kind === 'base') return t('公共基础价格');
+  if (component.kind === 'plugin_addon') {
+    return component.pluginKey
+      ? t('插件附加价格（{{plugin}}）', { plugin: component.pluginKey })
+      : t('插件附加价格');
+  }
+  return component.kind;
+};
+
+const componentValue = (component, t) => {
+  const parts = [];
+  if (component.estimatedTier) {
+    parts.push(`${t('预估档位')} ${component.estimatedTier}`);
+  }
+  if (component.actualTier) {
+    parts.push(`${t('实际档位')} ${component.actualTier}`);
+  }
+  if (component.estimatedQuotaBeforeGroup !== null) {
+    parts.push(
+      `${t('预估')} ${formatQuota(component.estimatedQuotaBeforeGroup, t)}`,
+    );
+  }
+  if (component.actualQuotaBeforeGroup !== null) {
+    parts.push(
+      `${t('实际')} ${formatQuota(component.actualQuotaBeforeGroup, t)}`,
+    );
+  }
+  return parts.join(' · ');
+};
+
 const DetailRow = ({ label, value, mono = false }) => {
   if (value === null || value === undefined || value === '') return null;
   return (
@@ -96,7 +152,7 @@ const TaskDetailModal = ({
     () => getTaskLogDetails(task, { isAdminUser, isRootUser }),
     [task, isAdminUser, isRootUser],
   );
-  const { basic, admin, root } = details;
+  const { basic, billing, admin, root } = details;
   const timings = basic.timings;
   const plugin = admin?.plugin;
   const runtime = root?.runtime;
@@ -177,6 +233,48 @@ const TaskDetailModal = ({
         <DetailRow label={t('实际模型')} value={basic.actualModel} mono />
         <DetailRow label={t('失败原因')} value={basic.failReason} />
       </DetailSection>
+
+      {billing ? (
+        <DetailSection title={t('计费明细')}>
+          <DetailRow
+            label={t('计费方式')}
+            value={
+              billing.mode === 'tiered_expr'
+                ? t('规格表达式计费')
+                : billing.mode
+            }
+          />
+          <DetailRow
+            label={t('结算状态')}
+            value={billing.settled ? t('已完成') : t('预扣中')}
+          />
+          <DetailRow
+            label={t('分组倍率')}
+            value={billing.groupRatio === null ? '' : `${billing.groupRatio}x`}
+          />
+          <DetailRow
+            label={t('基础与附加预估总额')}
+            value={formatQuota(billing.estimatedQuota, t)}
+          />
+          <DetailRow
+            label={t('最终扣除额度')}
+            value={formatQuota(billing.actualQuota, t)}
+          />
+          {billing.usageFacts.map(([key, value]) => {
+            const fact = formatUsageFact(key, value, t);
+            return (
+              <DetailRow key={key} label={fact.label} value={fact.value} />
+            );
+          })}
+          {billing.components.map((component, index) => (
+            <DetailRow
+              key={`${component.kind}-${component.pluginKey || index}`}
+              label={componentLabel(component, t)}
+              value={componentValue(component, t)}
+            />
+          ))}
+        </DetailSection>
+      ) : null}
 
       {admin ? (
         <DetailSection title={t('仅管理员可见')}>

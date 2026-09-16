@@ -26,7 +26,6 @@ import (
 	"gorm.io/gorm"
 )
 
-
 func TestMain(m *testing.M) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -64,6 +63,7 @@ func TestMain(m *testing.M) {
 		&model.ChannelKeyUsage{},
 		&model.ChannelUsageDaily{},
 		&model.SystemEventLog{},
+		&model.TaskArtifactObject{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -1376,7 +1376,6 @@ func TestSettle_TokenRecalcFallsBackToCompletionTokens(t *testing.T) {
 	}
 }
 
-
 // ─────────────── Skye 渠道账本回归测试（自 fork task_billing_test.go 移植，适配 rc.37 签名）───────────────
 
 func applyTaskPreconsume(t *testing.T, when time.Time, task *model.Task, selectedKey string, keyIndex int) string {
@@ -1404,14 +1403,12 @@ func applyTaskPreconsume(t *testing.T, when time.Time, task *model.Task, selecte
 	return fingerprint
 }
 
-
 func getChannelKeyUsageByFingerprint(t *testing.T, channelID int, fingerprint string) model.ChannelKeyUsage {
 	t.Helper()
 	var usage model.ChannelKeyUsage
 	require.NoError(t, model.DB.Where("channel_id = ? AND key_fingerprint = ?", channelID, fingerprint).First(&usage).Error)
 	return usage
 }
-
 
 func getChannelKeyUsageByIndex(t *testing.T, channelID int, keyIndex int) model.ChannelKeyUsage {
 	t.Helper()
@@ -1420,7 +1417,6 @@ func getChannelKeyUsageByIndex(t *testing.T, channelID int, keyIndex int) model.
 	return usage
 }
 
-
 func getChannelQuotaState(t *testing.T, channelID int) model.Channel {
 	t.Helper()
 	var channel model.Channel
@@ -1428,14 +1424,12 @@ func getChannelQuotaState(t *testing.T, channelID int) model.Channel {
 	return channel
 }
 
-
 func requireNoChannelUsageDailyRow(t *testing.T, channelID int, keyFingerprint string, usageDate string) {
 	t.Helper()
 	var row model.ChannelUsageDaily
 	err := model.DB.Where("channel_id = ? AND key_fingerprint = ? AND usage_date = ?", channelID, keyFingerprint, usageDate).First(&row).Error
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
-
 
 func seedTaskBillingUsageChannel(t *testing.T, channel *model.Channel) []*model.ChannelKeyUsage {
 	t.Helper()
@@ -1450,7 +1444,6 @@ func seedTaskBillingUsageChannel(t *testing.T, channel *model.Channel) []*model.
 	}
 	return ordered
 }
-
 
 func TestCASGuardedFailureBillingDoesNotDoubleRollbackChannelUsage(t *testing.T) {
 	truncate(t)
@@ -1489,7 +1482,6 @@ func TestCASGuardedFailureBillingDoesNotDoubleRollbackChannelUsage(t *testing.T)
 	keyUsage := getChannelKeyUsageByFingerprint(t, channelID, task.PrivateData.ChannelKeyFingerprint)
 	assert.EqualValues(t, 0, keyUsage.QuotaLimitUsed)
 }
-
 
 func TestLogTaskConsumptionRecordsSelectedChannelKey(t *testing.T) {
 	truncate(t)
@@ -1548,7 +1540,6 @@ func TestLogTaskConsumptionRecordsSelectedChannelKey(t *testing.T) {
 	assert.EqualValues(t, 1, detail.RequestCount)
 }
 
-
 func TestRecalculateTaskQuota_NegativeDeltaAdjustsFinalChannelQuota(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -1594,7 +1585,6 @@ func TestRecalculateTaskQuota_NegativeDeltaAdjustsFinalChannelQuota(t *testing.T
 	assert.EqualValues(t, 1, detail.RequestCount)
 }
 
-
 func TestRecalculateTaskQuota_NegativeDeltaReenablesKeyOnlyChannelAfterPositiveDeltaExhaustion(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -1638,7 +1628,6 @@ func TestRecalculateTaskQuota_NegativeDeltaReenablesKeyOnlyChannelAfterPositiveD
 	assert.Equal(t, common.ChannelStatusEnabled, keyUsage.Status)
 	assert.EqualValues(t, preConsumed, keyUsage.QuotaLimitUsed)
 }
-
 
 func TestRecalculateTaskQuota_PositiveDeltaAdjustsFinalChannelQuota(t *testing.T) {
 	truncate(t)
@@ -1685,7 +1674,6 @@ func TestRecalculateTaskQuota_PositiveDeltaAdjustsFinalChannelQuota(t *testing.T
 	assert.EqualValues(t, 1, detail.RequestCount)
 }
 
-
 func TestRecalculateTaskQuota_PositiveDeltaDisablesLastExhaustedKey(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -1726,7 +1714,6 @@ func TestRecalculateTaskQuota_PositiveDeltaDisablesLastExhaustedKey(t *testing.T
 	assert.EqualValues(t, actualQuota, keyUsage.QuotaLimitUsed)
 	assert.Equal(t, common.ChannelStatusAutoDisabled, keyUsage.Status)
 }
-
 
 func TestRefundTaskQuota_ReenablesAutoDisabledChannelAndKeyAfterPreconsumeRollback(t *testing.T) {
 	truncate(t)
@@ -1772,7 +1759,6 @@ func TestRefundTaskQuota_ReenablesAutoDisabledChannelAndKeyAfterPreconsumeRollba
 	assert.Equal(t, common.ChannelStatusEnabled, keyUsage.Status)
 	assert.EqualValues(t, 0, keyUsage.QuotaLimitUsed)
 }
-
 
 func TestRefundTaskQuota_ReenablesKeyOnlyChannelAfterPreconsumeRollback(t *testing.T) {
 	truncate(t)
@@ -1876,7 +1862,6 @@ func TestRefundTaskQuota_RollsBackChannelQuotaToZero(t *testing.T) {
 // RecalculateTaskQuota tests
 // ===========================================================================
 
-
 func TestRefundTaskQuota_RollsBackUsageAfterQuotaModeIsDisabled(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -1920,7 +1905,6 @@ func TestRefundTaskQuota_RollsBackUsageAfterQuotaModeIsDisabled(t *testing.T) {
 	assert.EqualValues(t, 0, keyUsage.QuotaLimitUsed)
 }
 
-
 func TestSettle_NonPerCall_AdaptorAdjustWorks(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -1951,7 +1935,6 @@ func TestSettle_NonPerCall_AdaptorAdjustWorks(t *testing.T) {
 	require.NotNil(t, log)
 	assert.Equal(t, model.LogTypeRefund, log.Type)
 }
-
 
 func TestSettle_PerCallBilling_RecordsTokensWithoutConsumingTokenCountAsQuota(t *testing.T) {
 	truncate(t)
@@ -2008,7 +1991,6 @@ func TestSettle_PerCallBilling_RecordsTokensWithoutConsumingTokenCountAsQuota(t 
 	assert.EqualValues(t, totalTokens, detail.TokenUsed)
 }
 
-
 func TestTaskBillingUsesPersistedFingerprintForMultiKeySettlement(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()
@@ -2057,8 +2039,6 @@ func TestTaskBillingUsesPersistedFingerprintForMultiKeySettlement(t *testing.T) 
 	assert.EqualValues(t, actualQuota, detail.Quota)
 }
 
-
-
 func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -2072,9 +2052,9 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
+		model.DB.Exec("DELETE FROM task_artifact_objects")
 	})
 }
-
 
 func seedUser(t *testing.T, id int, quota int) {
 	t.Helper()
@@ -2082,6 +2062,51 @@ func seedUser(t *testing.T, id int, quota int) {
 	require.NoError(t, model.DB.Create(user).Error)
 }
 
+func TestTaskUsageBillingQuoteAndCompletionKeepPluginAddonSeparate(t *testing.T) {
+	baseExpr := `u("resolution") == "2K" ? tier("2K", u("seconds") * 3) : tier("768", u("seconds"))`
+	addonExpr := `u("resolution") == "2K" ? tier("2K reference media", u("input_images") * 11 + u("input_video_seconds") * 7) : tier("768 reference media", u("input_images") * 5 + u("input_video_seconds") * 3)`
+	submissionFacts := map[string]any{
+		"seconds":             float64(5),
+		"resolution":          "2K",
+		"input_images":        float64(2),
+		"input_video_seconds": float64(15),
+	}
+
+	hailuo, err := QuoteTaskUsageBilling("MiniMax-H3", "hailuo", baseExpr, addonExpr, submissionFacts, 1)
+	require.NoError(t, err)
+	require.NotNil(t, hailuo.Snapshot)
+	require.Len(t, hailuo.Snapshot.Components, 2)
+	assert.Equal(t, "base", hailuo.Snapshot.Components[0].Kind)
+	assert.Equal(t, "plugin_addon", hailuo.Snapshot.Components[1].Kind)
+	assert.Equal(t, "hailuo", hailuo.Snapshot.Components[1].PluginKey)
+	assert.Equal(t, 142*common.QuotaPerUnit, hailuo.Snapshot.EstimatedQuotaBeforeGroup)
+	assert.Equal(t, int(142*common.QuotaPerUnit), hailuo.Quota)
+
+	promptHubs, err := QuoteTaskUsageBilling("MiniMax-H3", "prompt-hubs", baseExpr, "", map[string]any{
+		"seconds": float64(5), "resolution": "2K",
+	}, 1)
+	require.NoError(t, err)
+	require.Len(t, promptHubs.Snapshot.Components, 1)
+	assert.Equal(t, int(15*common.QuotaPerUnit), promptHubs.Quota)
+
+	settlement, facts, components, err := EvaluateTaskCompletionUsageWithComponents(hailuo.Snapshot, map[string]any{
+		"seconds":      float64(6),
+		"input_images": float64(1),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"seconds":             float64(6),
+		"resolution":          "2K",
+		"input_images":        float64(1),
+		"input_video_seconds": float64(15),
+	}, facts)
+	assert.Equal(t, int(134*common.QuotaPerUnit), settlement.ActualQuotaAfterGroup)
+	require.Len(t, components, 2)
+	assert.Equal(t, 18*common.QuotaPerUnit, components[0].ActualQuotaBeforeGroup)
+	assert.Equal(t, 116*common.QuotaPerUnit, components[1].ActualQuotaBeforeGroup)
+	assert.Equal(t, "2K", components[0].ActualTier)
+	assert.Equal(t, "2K reference media", components[1].ActualTier)
+}
 
 func seedToken(t *testing.T, id int, userId int, key string, remainQuota int) {
 	t.Helper()
@@ -2097,7 +2122,6 @@ func seedToken(t *testing.T, id int, userId int, key string, remainQuota int) {
 	require.NoError(t, model.DB.Create(token).Error)
 }
 
-
 func seedSubscription(t *testing.T, id int, userId int, amountTotal int64, amountUsed int64) {
 	t.Helper()
 	sub := &model.UserSubscription{
@@ -2112,13 +2136,11 @@ func seedSubscription(t *testing.T, id int, userId int, amountTotal int64, amoun
 	require.NoError(t, model.DB.Create(sub).Error)
 }
 
-
 func seedChannel(t *testing.T, id int) {
 	t.Helper()
 	ch := &model.Channel{Id: id, Name: "test_channel", Key: "sk-test", Status: common.ChannelStatusEnabled}
 	require.NoError(t, model.DB.Create(ch).Error)
 }
-
 
 func seedChargedAccounting(t *testing.T, userID, channelID, tokenID, quota, requestCount int) {
 	t.Helper()
@@ -2133,7 +2155,6 @@ func seedChargedAccounting(t *testing.T, userID, channelID, tokenID, quota, requ
 			Update("used_quota", quota).Error)
 	}
 }
-
 
 func makeTask(userId, channelId, quota, tokenId int, billingSource string, subscriptionId int) *model.Task {
 	return &model.Task{

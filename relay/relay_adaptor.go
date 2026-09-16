@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/ali"
@@ -40,6 +41,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/xunfei"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -179,6 +181,27 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 		return nil
 	}
 	return jspluginadaptor.New(plugin)
+}
+
+// ResolveTaskAdaptorForTask selects the executable release captured when a
+// task was submitted. Historical task polling and artifact reads must not drift
+// to whichever plugin version happens to be active now.
+func ResolveTaskAdaptorForTask(task *model.Task) (channel.TaskAdaptor, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is required")
+	}
+	if execution := task.PrivateData.Execution; execution != nil && execution.TaskPlugin != nil {
+		plugin, err := service.ResolveTaskPluginSnapshot(execution.TaskPlugin)
+		if err != nil {
+			return nil, err
+		}
+		return jspluginadaptor.New(plugin), nil
+	}
+	adaptor := GetTaskAdaptor(task.Platform)
+	if adaptor == nil {
+		return nil, fmt.Errorf("task adaptor is unavailable")
+	}
+	return adaptor, nil
 }
 
 // getTaskAdaptorForRequest 保留声明式/共享端点路由 pin 的确切插件对象。

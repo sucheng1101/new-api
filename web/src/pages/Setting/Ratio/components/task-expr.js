@@ -41,6 +41,10 @@ export function getTaskNumberFields(schema) {
     .sort(([left], [right]) => left.localeCompare(right));
 }
 
+export function canRenderTaskPricingMatrix(matrix, schema) {
+  return Boolean(matrix?.rows?.length && getTaskNumberFields(schema).length);
+}
+
 export function getTaskEnumFields(schema) {
   if (!schema) return [];
   return Object.entries(schema)

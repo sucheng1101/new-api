@@ -30,6 +30,41 @@ const numberValue = (value) =>
 
 const taskIsSuccessful = (task) => task?.status === 'SUCCESS';
 
+const getTaskBillingSummary = (task) => {
+  const raw = asRecord(task?.billing);
+  const components = Array.isArray(raw.components)
+    ? raw.components
+        .map((component) => asRecord(component))
+        .filter((component) => stringValue(component.kind))
+        .map((component) => ({
+          kind: stringValue(component.kind),
+          pluginKey: stringValue(component.plugin_key),
+          estimatedQuotaBeforeGroup: numberValue(
+            component.estimated_quota_before_group,
+          ),
+          actualQuotaBeforeGroup: numberValue(
+            component.actual_quota_before_group,
+          ),
+          estimatedTier: stringValue(component.estimated_tier),
+          actualTier: stringValue(component.actual_tier),
+        }))
+    : [];
+  const usageFacts = Object.entries(asRecord(raw.usage_facts));
+  const mode = stringValue(raw.mode);
+  if (!mode && components.length === 0 && usageFacts.length === 0) {
+    return null;
+  }
+  return {
+    mode,
+    groupRatio: numberValue(raw.group_ratio),
+    estimatedQuota: numberValue(raw.estimated_quota),
+    actualQuota: numberValue(raw.actual_quota),
+    settled: raw.settled === true,
+    usageFacts,
+    components,
+  };
+};
+
 export const getTaskTimings = (task, now = Date.now() / 1000) => {
   const submitTime = numberValue(task?.submit_time);
   const startTime = numberValue(task?.start_time);
@@ -94,6 +129,7 @@ export const getTaskLogDetails = (
     actualModel: stringValue(properties.upstream_model_name),
     failReason: stringValue(safeTask.fail_reason),
   };
+  const billing = getTaskBillingSummary(safeTask);
 
   let admin = null;
   if (isAdminUser) {
@@ -147,5 +183,5 @@ export const getTaskLogDetails = (
     };
   }
 
-  return { basic, admin, root };
+  return { basic, billing, admin, root };
 };

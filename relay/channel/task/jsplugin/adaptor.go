@@ -97,6 +97,13 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		if pinned, ok := pinnedValue.(pluginruntime.PinnedEndpoint); ok && pinned.Plugin == a.plugin {
 			if protocolValue, present := c.Get(pluginruntime.ContextKeyProtocolRequest); present {
 				if protocolContext, valid := protocolValue.(pluginruntime.ProtocolRequestContext); valid {
+					// Channel mapping is resolved after endpoint routing. The final
+					// decoder must see that upstream spelling so protocol selection,
+					// validation, and model-specific usage profiles agree.
+					if info != nil && strings.TrimSpace(info.UpstreamModelName) != "" {
+						protocolContext.UpstreamModel = info.UpstreamModelName
+						c.Set(pluginruntime.ContextKeyProtocolRequest, protocolContext)
+					}
 					resolvedValue, callErr := a.plugin.Engine.CallPath(context.WithoutCancel(c.Request.Context()), "protocols", []string{pinned.Protocol, "decodeRequest"}, protocolContext.JSValue())
 					resolved, resolvedOK := resolvedValue.(map[string]any)
 					resolvedModel, modelOK := resolved["model"].(string)

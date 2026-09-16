@@ -417,6 +417,29 @@ func TestGetTaskPluginMarksPreloadedPromptHubsAsThirdParty(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), `"origin":"third_party"`)
 }
 
+func TestListTaskPluginsKeepsPromptHubsThirdPartyAfterVersionOverride(t *testing.T) {
+	setupTaskPluginControllerTest(t)
+
+	source, err := plugins.Source("prompt-hubs")
+	require.NoError(t, err)
+	versionPattern := regexp.MustCompile(`version:\s*"[^"]+"`)
+	updatedSource := versionPattern.ReplaceAllString(source, `version: "99.0.0"`)
+	require.NotEqual(t, source, updatedSource)
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(updatedSource)))
+	require.NoError(t, model.SaveTaskPlugin(&model.TaskPlugin{
+		Key:        "prompt-hubs",
+		APIVersion: 1,
+		Version:    "99.0.0",
+		Source:     updatedSource,
+		SourceHash: digest,
+		Enabled:    true,
+	}))
+
+	item := listTaskPluginItem(t, "prompt-hubs")
+	assert.Equal(t, "override_over_factory", item.Source)
+	assert.Equal(t, "third_party", item.Origin)
+}
+
 func TestMasterSwitchEmptiesOptionsAndKeepsList(t *testing.T) {
 	setupTaskPluginControllerTest(t)
 	originalEnabled := constant.TaskPluginEnabled

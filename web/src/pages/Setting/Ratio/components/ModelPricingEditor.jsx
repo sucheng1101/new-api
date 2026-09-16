@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
@@ -32,6 +32,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tabs,
   Typography,
 } from '@douyinfe/semi-ui';
 import {
@@ -103,6 +104,7 @@ export default function ModelPricingEditor({
   const [addVisible, setAddVisible] = useState(false);
   const [batchVisible, setBatchVisible] = useState(false);
   const [newModelName, setNewModelName] = useState('');
+  const [taskPricingTab, setTaskPricingTab] = useState('base');
 
   const {
     selectedModel,
@@ -127,6 +129,7 @@ export default function ModelPricingEditor({
     handleBillingModeChange,
     handleBillingExprChange,
     handleRequestRuleExprChange,
+    handlePluginAddonExprChange,
     handleSubmit,
     addModel,
     deleteModel,
@@ -138,6 +141,10 @@ export default function ModelPricingEditor({
     candidateModelNames,
     filterMode,
   });
+
+  useEffect(() => {
+    setTaskPricingTab('base');
+  }, [selectedModel?.name]);
 
   const getExprModeLabel = useCallback(
     (model) => {
@@ -413,36 +420,16 @@ export default function ModelPricingEditor({
               ) : null
             }
           >
-            {selectedModel?.taskPricing &&
-            selectedModel.pluginVariants?.length > 0 ? (
+            {selectedModel?.taskPricing ? (
               <Banner
                 type='info'
                 bordered
                 fullMode={false}
                 closeIcon={null}
-                title={t('插件计费变体')}
-                description={
-                  <div>
-                    <div>
-                      {t(
-                        '该模型由多个任务插件提供。当前编辑器使用模型通用计费表达式，各插件变体状态如下：',
-                      )}
-                    </div>
-                    <div className='mt-2 flex flex-wrap gap-1'>
-                      {selectedModel.pluginVariants.map((variant) => (
-                        <Tag
-                          key={variant.pluginKey}
-                          color={variant.stale ? 'orange' : 'blue'}
-                        >
-                          {variant.pluginName || variant.pluginKey}
-                          {variant.compatible === false
-                            ? ` · ${t('需检查')}`
-                            : ''}
-                        </Tag>
-                      ))}
-                    </div>
-                  </div>
-                }
+                title={t('统一模型定价')}
+                description={t(
+                  '共享规格只维护一套基础价格；选定任务插件后，才会叠加该插件独有用量的附加价格。',
+                )}
                 style={{ margin: '16px 16px 0' }}
               />
             ) : null}
@@ -456,15 +443,95 @@ export default function ModelPricingEditor({
             ) : (
               <div>
                 {selectedModel.taskPricing ? (
-                  <TaskPricingEditor
-                    modelName={selectedModel.name}
-                    schema={selectedModel.usageSchema}
-                    examples={selectedModel.usageExamples}
-                    billingExpr={selectedModel.billingExpr}
-                    requestRuleExpr={selectedModel.requestRuleExpr}
-                    onBillingExprChange={handleBillingExprChange}
-                    onRequestRuleExprChange={handleRequestRuleExprChange}
-                  />
+                  <Tabs
+                    activeKey={taskPricingTab}
+                    onChange={setTaskPricingTab}
+                    type='button'
+                    style={{ padding: '0 16px 16px' }}
+                  >
+                    <Tabs.TabPane tab={t('基础价格')} itemKey='base'>
+                      <div style={{ paddingTop: 16 }}>
+                        <TaskPricingEditor
+                          modelName={selectedModel.name}
+                          schema={selectedModel.usageSchema}
+                          examples={selectedModel.usageExamples}
+                          billingExpr={selectedModel.billingExpr}
+                          requestRuleExpr={selectedModel.requestRuleExpr}
+                          onBillingExprChange={handleBillingExprChange}
+                          onRequestRuleExprChange={handleRequestRuleExprChange}
+                          title={t('公共基础价格')}
+                          description={t(
+                            '该价格适用于所有可承接此对外模型的插件，按共享的时长、分辨率等规格计算。',
+                          )}
+                          previewDescription={t(
+                            '按当前规格预览公共基础价格；选中实际插件后的附加项会在任务结算时另行叠加。',
+                          )}
+                        />
+                      </div>
+                    </Tabs.TabPane>
+                    {(selectedModel.pluginAddons ?? []).map((addon) => {
+                      const pluginKey = addon.plugin_key;
+                      const pluginName = addon.plugin_name || pluginKey;
+                      const addonSchema = addon.usage_schema ?? {};
+                      const hasAddonFields =
+                        Object.keys(addonSchema).length > 0;
+                      const addonExpr =
+                        selectedModel.pluginAddonExpressions?.[pluginKey] ??
+                        addon.configured ??
+                        '';
+                      const tabKey = `addon:${pluginKey}`;
+                      return (
+                        <Tabs.TabPane
+                          key={tabKey}
+                          itemKey={tabKey}
+                          tab={pluginName}
+                        >
+                          <div style={{ paddingTop: 16 }}>
+                            {addon.stale ? (
+                              <Banner
+                                type='warning'
+                                closeIcon={null}
+                                title={t('插件当前不可用')}
+                                description={t(
+                                  '此插件的历史附加价格仍会保留在配置中，但当前无法校验或编辑。恢复插件后可继续维护。',
+                                )}
+                              />
+                            ) : !hasAddonFields ? (
+                              <Banner
+                                type='info'
+                                closeIcon={null}
+                                title={t('无附加项')}
+                                description={t(
+                                  '该插件没有公共模型之外的计费用量事实。通过它执行时只使用“基础价格”页的时长和分辨率价格。',
+                                )}
+                              />
+                            ) : (
+                              <TaskPricingEditor
+                                modelName={`${selectedModel.name} · ${pluginName}`}
+                                schema={addonSchema}
+                                examples={addon.usage_examples ?? []}
+                                billingExpr={addonExpr}
+                                onBillingExprChange={(newExpr) =>
+                                  handlePluginAddonExprChange(
+                                    pluginKey,
+                                    newExpr,
+                                  )
+                                }
+                                allowRequestRules={false}
+                                title={t('插件附加价格')}
+                                description={t(
+                                  '只配置该插件独有的用量费用。分辨率仅用于选择该插件的附加价格档位，不会重复计算公共基础价格；结算时附加金额会与基础价格相加后，再统一应用分组倍率和取整。',
+                                )}
+                                previewDescription={t(
+                                  '按插件独有用量预览附加价格；分辨率只选择附加价档位，该金额会叠加到基础价格，不会覆盖或重复计算基础价格。',
+                                )}
+                              />
+                            )}
+                          </div>
+                        </Tabs.TabPane>
+                      );
+                    })}
+                  </Tabs>
                 ) : (
                   <>
                     <div className='mb-4'>

@@ -94,23 +94,13 @@ type OpenAIVideoConverter interface {
 
 type TaskArtifact = types.TaskArtifact
 
-type TaskArtifactClientRequest struct {
-	Method  string            `json:"method"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
+type TaskArtifactClientRequest = types.TaskArtifactClientRequest
 
 type TaskArtifactProvider interface {
 	ListArtifacts(task *model.Task) ([]TaskArtifact, error)
 }
 
-type TaskContentRequest struct {
-	URL                       string
-	Method                    string
-	Headers                   map[string]string
-	Body                      []byte
-	Credentialless            bool
-	DropCredentialsOnRedirect bool
-}
+type TaskContentRequest = types.TaskContentRequest
 
 type TaskContentRequestProvider interface {
 	BuildContentRequest(task *model.Task, artifactKey string, clientRequest TaskArtifactClientRequest) (*TaskContentRequest, error)
