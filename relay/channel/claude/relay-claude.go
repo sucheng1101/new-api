@@ -1,10 +1,12 @@
 package claude
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -375,6 +377,45 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 								Type: "text",
 								Text: common.GetPointer[string](mediaMessage.Text),
 							})
+						}
+					case dto.ContentTypeFile:
+						file := mediaMessage.GetFile()
+						if file == nil {
+							continue
+						}
+
+						switch strings.ToLower(filepath.Ext(file.FileName)) {
+						case ".pdf":
+							source := mediaMessage.ToFileSource()
+							if source == nil {
+								continue
+							}
+							base64Data, _, err := service.GetBase64Data(c, source, "formatting PDF for Claude")
+							if err != nil {
+								return nil, fmt.Errorf("get PDF data failed: %w", err)
+							}
+							claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+								Type: "document",
+								Source: &dto.ClaudeMessageSource{
+									Type:      "base64",
+									MediaType: "application/pdf",
+									Data:      base64Data,
+								},
+							})
+						case ".txt":
+							content, err := base64.StdEncoding.DecodeString(file.FileData)
+							if err != nil {
+								return nil, fmt.Errorf("decode text file data failed: %w", err)
+							}
+							if len(content) > 0 {
+								claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+									Type: "text",
+									Text: common.GetPointer(string(content)),
+								})
+							}
+						default:
+							// Claude's document input only supports PDFs; leave other file types out.
+							continue
 						}
 					default:
 						source := mediaMessage.ToFileSource()
