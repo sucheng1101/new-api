@@ -122,4 +122,3 @@
 - [ ] 从 `web/` 运行 `bun run i18n:lint`、`bun run eslint`、`bun run lint`、`bun run build`。
 - [ ] 使用浏览器验证钱包、推广、抽奖、管理员调整和新版看板的桌面/移动布局。
 - [ ] 每个阶段创建苏程作者的原子提交并推送项目自有 GitHub；生产发布前再执行 GitHub/Gitee 同提交门禁。
-
