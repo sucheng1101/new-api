@@ -271,6 +271,10 @@ func migrateDB() error {
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
+		&WalletOperation{},
+		&WalletTransaction{},
+		&WalletCashLot{},
+		&WalletConsumptionAllocation{},
 		&QuotaData{},
 		&Task{},
 		&PerfMetric{},
@@ -306,6 +310,9 @@ func migrateDB() error {
 		}
 	}
 	backfillChannelSortOrder()
+	if err := migrateWalletBalances(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -348,6 +355,10 @@ func migrateDBFast() error {
 		{&Log{}, "Log"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
+		{&WalletOperation{}, "WalletOperation"},
+		{&WalletTransaction{}, "WalletTransaction"},
+		{&WalletCashLot{}, "WalletCashLot"},
+		{&WalletConsumptionAllocation{}, "WalletConsumptionAllocation"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&PerfMetric{}, "PerfMetric"},
@@ -403,6 +414,9 @@ func migrateDBFast() error {
 		}
 	}
 	backfillChannelSortOrder()
+	if err := migrateWalletBalances(); err != nil {
+		return err
+	}
 	common.SysLog("database migrated")
 	return nil
 }
