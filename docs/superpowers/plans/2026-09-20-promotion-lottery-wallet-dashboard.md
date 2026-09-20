@@ -18,13 +18,13 @@
 - 新增：`model/wallet_migration.go`
 - 新增：`model/wallet_test.go`
 
-- [ ] 给 `users` 增加 `cash_quota`、`gift_quota`，保留 `quota` 聚合字段。
-- [ ] 新增不可变钱包流水、现金批次和消费来源分摊模型及唯一索引。
-- [ ] 实现现金/赠送入账、赠送优先与现金 FIFO 扣款、按原来源恢复的事务 API。
-- [ ] 实现幂等的历史余额回填：旧 `quota` 全部迁入现金余额并生成历史现金批次和迁移流水；旧 `aff_quota` 生成推广迁移流水。
-- [ ] 在普通迁移和快速迁移路径登记新表，并在建表完成后执行可重入回填。
-- [ ] 覆盖余额不变量、跨账户扣款、跨批次 FIFO、来源恢复、幂等和事务回滚测试。
-- [ ] 运行 `go test ./model -run Wallet -count=1`、`git diff --check`，提交并推送自有 GitHub。
+- [x] 给 `users` 增加 `cash_quota`、`gift_quota`，保留 `quota` 聚合字段。
+- [x] 新增不可变钱包流水、现金批次和消费来源分摊模型及唯一索引。
+- [x] 实现现金/赠送入账、赠送优先与现金 FIFO 扣款、按原来源恢复的事务 API。
+- [x] 实现幂等的历史余额回填：旧 `quota` 全部迁入现金余额并生成历史现金批次和迁移流水；旧 `aff_quota` 生成推广迁移流水。
+- [x] 在普通迁移和快速迁移路径登记新表，并在建表完成后执行可重入回填。
+- [x] 覆盖余额不变量、跨账户扣款、跨批次 FIFO、来源恢复、幂等和事务回滚测试。
+- [x] 运行 `go test ./model -run Wallet -count=1`、`git diff --check`，提交并推送自有 GitHub。
 
 ## 阶段 2：接入统一计费会话
 
