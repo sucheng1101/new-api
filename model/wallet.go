@@ -22,12 +22,13 @@ const (
 )
 
 const (
-	WalletBusinessHistoryMigration = "history_migration"
-	WalletBusinessCashCredit       = "cash_credit"
-	WalletBusinessGiftCredit       = "gift_credit"
-	WalletBusinessPromotionCredit  = "promotion_credit"
-	WalletBusinessModelConsume     = "model_consume"
-	WalletBusinessModelRefund      = "model_consume_refund"
+	WalletBusinessHistoryMigration  = "history_migration"
+	WalletBusinessCashCredit        = "cash_credit"
+	WalletBusinessGiftCredit        = "gift_credit"
+	WalletBusinessPromotionCredit   = "promotion_credit"
+	WalletBusinessPromotionTransfer = "promotion_transfer"
+	WalletBusinessModelConsume      = "model_consume"
+	WalletBusinessModelRefund       = "model_consume_refund"
 )
 
 // WalletOperation is the idempotency anchor for every wallet mutation.
@@ -209,6 +210,67 @@ func CreditGiftTx(tx *gorm.DB, userId, quota, sourceId int, sourceType, sourceRe
 		return err
 	}
 	return tx.Create(&WalletTransaction{UserId: userId, AccountType: WalletAccountGift, Direction: WalletDirectionCredit, Amount: quota, BalanceAfter: user.GiftQuota + quota, BusinessType: businessType, SourceType: sourceType, SourceId: sourceId, SourceRef: sourceRef, OperationId: op.Id, OperatorId: operatorId, Reason: reason, CreatedAt: common.GetTimestamp()}).Error
+}
+
+// CreditPromotionTx credits the non-withdrawable promotion account. Promotion
+// balance is intentionally kept outside quota/cash/gift so it can only be
+// transferred into gift balance through the promotion workflow.
+func CreditPromotionTx(tx *gorm.DB, userId, quota, sourceId int, sourceType, sourceRef, idempotencyKey string, operatorId int, reason string) error {
+	if quota <= 0 {
+		return errors.New("promotion credit must be positive")
+	}
+	op, done, err := beginWalletOperation(tx, userId, WalletBusinessPromotionCredit, idempotencyKey, quota)
+	if err != nil || done {
+		return err
+	}
+	user, err := lockWalletUser(tx, userId)
+	if err != nil {
+		return err
+	}
+	if err = tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{
+		"aff_quota":   gorm.Expr("aff_quota + ?", quota),
+		"aff_history": gorm.Expr("aff_history + ?", quota),
+	}).Error; err != nil {
+		return err
+	}
+	return tx.Create(&WalletTransaction{UserId: userId, AccountType: WalletAccountPromotion, Direction: WalletDirectionCredit, Amount: quota, BalanceAfter: user.AffQuota + quota, BusinessType: WalletBusinessPromotionCredit, SourceType: sourceType, SourceId: sourceId, SourceRef: sourceRef, OperationId: op.Id, OperatorId: operatorId, Reason: reason, CreatedAt: common.GetTimestamp()}).Error
+}
+
+func CreditPromotion(userId, quota, sourceId int, sourceType, sourceRef, idempotencyKey string, operatorId int, reason string) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		return CreditPromotionTx(tx, userId, quota, sourceId, sourceType, sourceRef, idempotencyKey, operatorId, reason)
+	})
+	invalidateWalletUserCache(userId, err)
+	return err
+}
+
+func TransferPromotionToGiftTx(tx *gorm.DB, userId, quota int, idempotencyKey string) error {
+	if quota <= 0 {
+		return errors.New("promotion transfer must be positive")
+	}
+	op, done, err := beginWalletOperation(tx, userId, WalletBusinessPromotionTransfer, idempotencyKey, quota)
+	if err != nil || done {
+		return err
+	}
+	user, err := lockWalletUser(tx, userId)
+	if err != nil {
+		return err
+	}
+	if user.AffQuota < quota {
+		return errors.New("邀请额度不足！")
+	}
+	if err = tx.Model(&User{}).Where("id = ? AND aff_quota >= ?", userId, quota).Updates(map[string]interface{}{
+		"aff_quota":  gorm.Expr("aff_quota - ?", quota),
+		"gift_quota": gorm.Expr("gift_quota + ?", quota),
+		"quota":      gorm.Expr("quota + ?", quota),
+	}).Error; err != nil {
+		return err
+	}
+	createdAt := common.GetTimestamp()
+	if err = tx.Create(&WalletTransaction{UserId: userId, AccountType: WalletAccountPromotion, Direction: WalletDirectionDebit, Amount: quota, BalanceAfter: user.AffQuota - quota, BusinessType: WalletBusinessPromotionTransfer, OperationId: op.Id, CreatedAt: createdAt, Reason: "推广余额转入赠送余额"}).Error; err != nil {
+		return err
+	}
+	return tx.Create(&WalletTransaction{UserId: userId, AccountType: WalletAccountGift, Direction: WalletDirectionCredit, Amount: quota, BalanceAfter: user.GiftQuota + quota, BusinessType: WalletBusinessPromotionTransfer, OperationId: op.Id, CreatedAt: createdAt, Reason: "推广余额转入赠送余额"}).Error
 }
 
 // DebitWalletTx deducts gift first and then cash lots in creation order.

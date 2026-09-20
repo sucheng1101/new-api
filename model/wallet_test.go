@@ -22,6 +22,7 @@ func setupWalletTestDB(t *testing.T) *gorm.DB {
 		&WalletTransaction{},
 		&WalletCashLot{},
 		&WalletConsumptionAllocation{},
+		&PromotionReward{},
 	))
 	previousDB := DB
 	DB = db

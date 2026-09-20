@@ -23,6 +23,21 @@ type Option struct {
 
 func validateOptionValue(key string, value string) (string, error) {
 	switch key {
+	case PromotionLevel1BasisPointsKey, PromotionLevel2BasisPointsKey:
+		basisPoints, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return "", fmt.Errorf("%s must be an integer", key)
+		}
+		level1, level2 := PromotionRates()
+		if key == PromotionLevel1BasisPointsKey {
+			level1 = basisPoints
+		} else {
+			level2 = basisPoints
+		}
+		if err := ValidatePromotionRates(level1, level2); err != nil {
+			return "", err
+		}
+		return strconv.Itoa(basisPoints), nil
 	case "ChannelUsageTimezone":
 		timezone := strings.TrimSpace(value)
 		if timezone == "" {
@@ -188,6 +203,8 @@ func InitOptionMap() {
 	//common.OptionMap["ChatLink"] = common.ChatLink
 	//common.OptionMap["ChatLink2"] = common.ChatLink2
 	common.OptionMap["QuotaPerUnit"] = strconv.FormatFloat(common.QuotaPerUnit, 'f', -1, 64)
+	common.OptionMap[PromotionLevel1BasisPointsKey] = strconv.Itoa(PromotionDefaultLevel1BasisPoints)
+	common.OptionMap[PromotionLevel2BasisPointsKey] = strconv.Itoa(PromotionDefaultLevel2BasisPoints)
 	common.OptionMap["RetryTimes"] = strconv.Itoa(common.RetryTimes)
 	common.OptionMap["DataExportInterval"] = strconv.Itoa(common.DataExportInterval)
 	common.OptionMap["DataExportDefaultTime"] = common.DataExportDefaultTime

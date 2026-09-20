@@ -12,18 +12,21 @@ import (
 )
 
 type Redemption struct {
-	Id           int            `json:"id"`
-	UserId       int            `json:"user_id"`
-	Key          string         `json:"key" gorm:"type:char(32);uniqueIndex"`
-	Status       int            `json:"status" gorm:"default:1"`
-	Name         string         `json:"name" gorm:"index"`
-	Quota        int            `json:"quota" gorm:"default:100"`
-	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
-	RedeemedTime int64          `json:"redeemed_time" gorm:"bigint"`
-	Count        int            `json:"count" gorm:"-:all"` // only for api request
-	UsedUserId   int            `json:"used_user_id"`
-	DeletedAt    gorm.DeletedAt `gorm:"index"`
-	ExpiredTime  int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
+	Id                         int            `json:"id"`
+	UserId                     int            `json:"user_id"`
+	Key                        string         `json:"key" gorm:"type:char(32);uniqueIndex"`
+	Status                     int            `json:"status" gorm:"default:1"`
+	Name                       string         `json:"name" gorm:"index"`
+	Quota                      int            `json:"quota" gorm:"default:100"`
+	CreatedTime                int64          `json:"created_time" gorm:"bigint"`
+	RedeemedTime               int64          `json:"redeemed_time" gorm:"bigint"`
+	Count                      int            `json:"count" gorm:"-:all"` // only for api request
+	UsedUserId                 int            `json:"used_user_id"`
+	DeletedAt                  gorm.DeletedAt `gorm:"index"`
+	ExpiredTime                int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
+	PromotionLevel1BasisPoints int            `json:"promotion_level1_basis_points" gorm:"default:0"`
+	PromotionLevel2BasisPoints int            `json:"promotion_level2_basis_points" gorm:"default:0"`
+	PromotionRewardTotal       int            `json:"promotion_reward_total" gorm:"default:0"`
 }
 
 func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total int64, err error) {
@@ -137,8 +140,16 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
 			return errors.New("该兑换码已过期")
 		}
-		err = tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", redemption.Quota)).Error
-		if err != nil {
+		if err = CreditCashTx(tx, userId, redemption.Quota, redemption.Id, "redemption", redemption.Key, WalletBusinessCashCredit, "redemption:"+redemption.Key, true, 0, "兑换码充值到账"); err != nil {
+			return err
+		}
+		level1, level2 := PromotionRates()
+		if err = CreatePromotionRewardsWithRatesTx(tx, "redemption", redemption.Id, redemption.Key, userId, redemption.Quota, level1, level2); err != nil {
+			return err
+		}
+		redemption.PromotionLevel1BasisPoints = level1
+		redemption.PromotionLevel2BasisPoints = level2
+		if err = tx.Model(&PromotionReward{}).Where("source_type = ? AND source_id = ?", "redemption", redemption.Id).Select("COALESCE(SUM(reward_quota), 0)").Scan(&redemption.PromotionRewardTotal).Error; err != nil {
 			return err
 		}
 		redemption.RedeemedTime = common.GetTimestamp()
@@ -151,6 +162,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 		common.SysError("redemption failed: " + err.Error())
 		return 0, ErrRedeemFailed
 	}
+	invalidateWalletUserCache(userId, nil)
 	RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码充值 %s，兑换码ID %d", logger.LogQuota(redemption.Quota), redemption.Id))
 	return redemption.Quota, nil
 }

@@ -181,6 +181,7 @@ func Register(c *gin.Context) {
 		DisplayName: user.Username,
 		InviterId:   inviterId,
 		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
+		RegisterIP:  c.ClientIP(),
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
@@ -323,7 +324,8 @@ func GenerateAccessToken(c *gin.Context) {
 }
 
 type TransferAffQuotaRequest struct {
-	Quota int `json:"quota" binding:"required"`
+	Quota          int    `json:"quota" binding:"required"`
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 func TransferAffQuota(c *gin.Context) {
@@ -338,7 +340,10 @@ func TransferAffQuota(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	err = user.TransferAffQuotaToQuota(tran.Quota)
+	if tran.IdempotencyKey == "" {
+		tran.IdempotencyKey = common.GetUUID()
+	}
+	err = user.TransferAffQuotaToQuotaWithKey(tran.Quota, tran.IdempotencyKey)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserTransferFailed, map[string]any{"Error": err.Error()})
 		return
@@ -592,6 +597,12 @@ func UpdateUser(c *gin.Context) {
 	if myRole <= updatedUser.Role && myRole != common.RoleRootUser {
 		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)
 		return
+	}
+	if updatedUser.PromotionReason != "" && updatedUser.InviterId != originUser.InviterId {
+		if err := model.SetUserInviterWithAudit(updatedUser.Id, updatedUser.InviterId, c.GetInt("id"), updatedUser.PromotionReason); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	if updatedUser.Password == "$I_LOVE_U" {
 		updatedUser.Password = "" // rollback to what it should be

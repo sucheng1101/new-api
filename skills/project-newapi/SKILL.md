@@ -64,6 +64,9 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Use database transactions, row locking or portable conditional updates, unique idempotency keys, and immutable ledgers for wallet mutations.
 - Keep aggregate balances and ledger entries consistent in the same transaction.
 - Payment callbacks, refunds, promotion rewards, and lottery awards require replay-safe tests.
+- Successful top-ups are settled only through `model.SettleTopUpSuccess`: order status, cash lot, promotion snapshots, and reward credits commit in one transaction. EPay, Stripe, Creem, Waffo, Waffo Pancake, and administrator completion must not modify quota directly.
+- Two-level promotion rewards use integer basis points (`PromotionLevel1BasisPoints`/`PromotionLevel2BasisPoints`, defaults 500/300). Redemption codes share the same promotion settlement and create refundable cash lots; subscriptions remain outside promotion settlement.
+- Promotion balance (`aff_quota`) stays outside spendable `quota` until an atomic promotion-to-gift transfer creates paired immutable ledger rows.
 - Any source-specific wallet deduction must restore the same source when a relay pre-consumption is partially or fully refunded.
 - Wallet relay billing uses `BillingSession`/`WalletFunding` with `RelayInfo.RequestId`; every debit/refund gets a distinct idempotency key while `WalletConsumptionAllocation` records gift-first and cash-FIFO sources. Async tasks persist `BillingRequestId` in `TaskPrivateData` so polling refunds and delta settlements use the same source allocations; legacy tasks without it retain the old quota path.
 - For direct non-session wallet billing (`PostConsumeQuota`), use the request ID plus an incrementing operation sequence to avoid idempotency-key collisions across repeated charges. Concurrent wallet operations use a portable upsert/no-op conflict path on the unique idempotency key before locking the user row.

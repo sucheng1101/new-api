@@ -114,6 +114,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		PaymentProvider: model.PaymentProviderCreem,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
+		CreateIP:        c.ClientIP(),
 	}
 	err = topUp.Insert()
 	if err != nil {

@@ -167,6 +167,7 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		PaymentProvider: model.PaymentProviderWaffoPancake,
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
+		CreateIP:        c.ClientIP(),
 	}
 	if err := topUp.Insert(); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo Pancake 创建充值订单失败 user_id=%d trade_no=%s amount=%d error=%q", id, tradeNo, req.Amount, err.Error()))

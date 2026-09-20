@@ -108,8 +108,9 @@ func GetOptions(c *gin.Context) {
 }
 
 type OptionUpdateRequest struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
+	Key    string `json:"key"`
+	Value  any    `json:"value"`
+	Reason string `json:"reason"`
 }
 
 func UpdateOption(c *gin.Context) {
@@ -311,6 +312,15 @@ func UpdateOption(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if option.Key == model.PromotionLevel1BasisPointsKey || option.Key == model.PromotionLevel2BasisPointsKey {
+		level1, level2 := model.PromotionRates()
+		_ = model.DB.Create(&model.PromotionConfigAudit{Level1BasisPoints: level1, Level2BasisPoints: level2, OperatorId: c.GetInt("id"), Reason: func() string {
+			if option.Reason != "" {
+				return option.Reason
+			}
+			return "管理员更新推广比例"
+		}(), CreatedAt: common.GetTimestamp()}).Error
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

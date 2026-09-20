@@ -54,6 +54,8 @@ type User struct {
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	CreatedAt        int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt      int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	RegisterIP       string         `json:"register_ip" gorm:"type:varchar(64);column:register_ip;index"`
+	PromotionReason  string         `json:"promotion_reason,omitempty" gorm:"-"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -360,40 +362,21 @@ func inviteUser(inviterId int) (err error) {
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
-	// 检查quota是否小于最小额度
-	if float64(quota) < common.QuotaPerUnit {
-		return fmt.Errorf("转移额度最小为%s！", logger.LogQuota(int(common.QuotaPerUnit)))
+	return user.TransferAffQuotaToQuotaWithKey(quota, common.GetUUID())
+}
+
+func (user *User) TransferAffQuotaToQuotaWithKey(quota int, idempotencyKey string) error {
+	if quota <= 0 {
+		return errors.New("转移额度必须大于零！")
 	}
-
-	// 开始数据库事务
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return tx.Error
+	if idempotencyKey == "" {
+		return errors.New("幂等键不能为空！")
 	}
-	defer tx.Rollback() // 确保在函数退出时事务能回滚
-
-	// 加锁查询用户以确保数据一致性
-	err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, user.Id).Error
-	if err != nil {
-		return err
-	}
-
-	// 再次检查用户的AffQuota是否足够
-	if user.AffQuota < quota {
-		return errors.New("邀请额度不足！")
-	}
-
-	// 更新用户额度
-	user.AffQuota -= quota
-	user.Quota += quota
-
-	// 保存用户状态
-	if err := tx.Save(user).Error; err != nil {
-		return err
-	}
-
-	// 提交事务
-	return tx.Commit().Error
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		return TransferPromotionToGiftTx(tx, user.Id, quota, fmt.Sprintf("promotion-transfer:%d:%s", user.Id, idempotencyKey))
+	})
+	invalidateWalletUserCache(user.Id, err)
+	return err
 }
 
 func (user *User) Insert(inviterId int) error {
