@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -12,6 +13,9 @@ func setupWalletTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&User{},
 		&WalletOperation{},
@@ -99,6 +103,46 @@ func TestWalletCreditAndDebitAreIdempotent(t *testing.T) {
 	require.EqualValues(t, 1, allocationCount)
 }
 
+func TestWalletPartialRestoreUsesLatestAllocationFirst(t *testing.T) {
+	db := setupWalletTestDB(t)
+	user := createWalletTestUser(t, db, "wallet-partial-restore", 0, 0, 0, 0)
+
+	require.NoError(t, CreditCash(user.Id, 40, 1, "topup", "topup-1", WalletBusinessCashCredit, "partial-cash-1", true, 0, ""))
+	require.NoError(t, CreditCash(user.Id, 50, 2, "topup", "topup-2", WalletBusinessCashCredit, "partial-cash-2", true, 0, ""))
+	require.NoError(t, CreditGift(user.Id, 30, 3, "admin_gift", "gift-1", WalletBusinessGiftCredit, "partial-gift-1", 0, ""))
+	require.NoError(t, DebitWallet(user.Id, 80, "request-partial", "partial-debit"))
+
+	require.NoError(t, RestoreWalletAllocationsQuota(user.Id, "request-partial", 25, "partial-restore-25"))
+	require.NoError(t, RestoreWalletAllocationsQuota(user.Id, "request-partial", 25, "partial-restore-25"))
+
+	balance, err := GetWalletBalance(user.Id)
+	require.NoError(t, err)
+	require.Equal(t, WalletBalance{Cash: 65, Gift: 0, Promotion: 0, Total: 65}, balance)
+
+	var lots []WalletCashLot
+	require.NoError(t, db.Order("id asc").Find(&lots).Error)
+	require.Len(t, lots, 2)
+	require.Equal(t, 25, lots[0].ConsumedQuota)
+	require.Zero(t, lots[1].ConsumedQuota)
+
+	var allocations []WalletConsumptionAllocation
+	require.NoError(t, db.Where("request_id = ?", "request-partial").Order("id asc").Find(&allocations).Error)
+	require.Len(t, allocations, 3)
+	require.Zero(t, allocations[0].RestoredQuota)
+	require.Equal(t, 15, allocations[1].RestoredQuota)
+	require.Equal(t, WalletAllocationActive, allocations[1].Status)
+	require.Equal(t, 10, allocations[2].RestoredQuota)
+	require.Equal(t, WalletAllocationRestored, allocations[2].Status)
+
+	require.NoError(t, RestoreWalletAllocationsQuota(user.Id, "request-partial", 55, "partial-restore-rest"))
+	balance, err = GetWalletBalance(user.Id)
+	require.NoError(t, err)
+	require.Equal(t, WalletBalance{Cash: 90, Gift: 30, Promotion: 0, Total: 120}, balance)
+	require.NoError(t, db.Order("id asc").Find(&lots).Error)
+	require.Zero(t, lots[0].ConsumedQuota)
+	require.Zero(t, lots[1].ConsumedQuota)
+}
+
 func TestWalletRejectsInsufficientBalanceWithoutPartialMutation(t *testing.T) {
 	db := setupWalletTestDB(t)
 	user := createWalletTestUser(t, db, "wallet-insufficient", 0, 0, 0, 0)
@@ -112,6 +156,37 @@ func TestWalletRejectsInsufficientBalanceWithoutPartialMutation(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&WalletOperation{}).Where("idempotency_key = ?", "debit-too-large").Count(&count).Error)
 	require.Zero(t, count)
+}
+
+func TestWalletConcurrentIdempotentCreditOnlyAppliesOnce(t *testing.T) {
+	db := setupWalletTestDB(t)
+	user := createWalletTestUser(t, db, "wallet-concurrent-idempotent", 0, 0, 0, 0)
+
+	const workers = 8
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- CreditCash(user.Id, 100, 1, "topup", "concurrent-order", WalletBusinessCashCredit, "concurrent-credit", true, 0, "")
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	balance, err := GetWalletBalance(user.Id)
+	require.NoError(t, err)
+	require.Equal(t, WalletBalance{Cash: 100, Gift: 0, Promotion: 0, Total: 100}, balance)
+
+	var operations, lots int64
+	require.NoError(t, db.Model(&WalletOperation{}).Where("idempotency_key = ?", "concurrent-credit").Count(&operations).Error)
+	require.NoError(t, db.Model(&WalletCashLot{}).Where("user_id = ?", user.Id).Count(&lots).Error)
+	require.EqualValues(t, 1, operations)
+	require.EqualValues(t, 1, lots)
 }
 
 func TestWalletMigrationBackfillsLegacyBalancesOnce(t *testing.T) {

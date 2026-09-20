@@ -107,10 +107,11 @@ type TaskPrivateData struct {
 	// ChannelStandardQuota 渠道限额标准口径预扣用量（不含分组倍率）。
 	ChannelStandardQuota int `json:"channel_standard_quota,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
-	BillingSource  string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
-	SubscriptionId int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
-	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
-	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	BillingSource    string              `json:"billing_source,omitempty"` // "wallet" 或 "subscription"
+	BillingRequestId string              `json:"billing_request_id,omitempty"`
+	SubscriptionId   int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
+	TokenId          int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
+	BillingContext   *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。

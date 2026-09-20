@@ -468,9 +468,22 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 		}
 	} else {
 		// Wallet
-		if quota > 0 {
+		if relayInfo.RequestId != "" {
+			relayInfo.DirectWalletOperationSeq++
+			operationSeq := relayInfo.DirectWalletOperationSeq
+			if quota > 0 {
+				key := fmt.Sprintf("wallet-direct-consume:%s:%d", relayInfo.RequestId, operationSeq)
+				err = model.DebitWallet(relayInfo.UserId, quota, relayInfo.RequestId, key)
+			} else if quota < 0 {
+				key := fmt.Sprintf("wallet-direct-refund:%s:%d", relayInfo.RequestId, operationSeq)
+				err = model.RestoreWalletAllocationsQuota(relayInfo.UserId, relayInfo.RequestId, -quota, key)
+			}
+			if err != nil {
+				relayInfo.DirectWalletOperationSeq--
+			}
+		} else if quota > 0 {
 			err = model.DecreaseUserQuota(relayInfo.UserId, quota, false)
-		} else {
+		} else if quota < 0 {
 			err = model.IncreaseUserQuota(relayInfo.UserId, -quota, false)
 		}
 		if err != nil {

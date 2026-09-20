@@ -55,6 +55,10 @@ func TestMain(m *testing.M) {
 		&model.SystemEventLog{},
 		&model.TopUp{},
 		&model.UserSubscription{},
+		&model.WalletOperation{},
+		&model.WalletTransaction{},
+		&model.WalletCashLot{},
+		&model.WalletConsumptionAllocation{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -81,6 +85,10 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM system_event_logs")
 		model.DB.Exec("DELETE FROM top_ups")
 		model.DB.Exec("DELETE FROM user_subscriptions")
+		model.DB.Exec("DELETE FROM wallet_operations")
+		model.DB.Exec("DELETE FROM wallet_transactions")
+		model.DB.Exec("DELETE FROM wallet_cash_lots")
+		model.DB.Exec("DELETE FROM wallet_consumption_allocations")
 	})
 }
 

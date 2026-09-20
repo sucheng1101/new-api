@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
@@ -27,8 +28,10 @@ type FundingSource interface {
 // ---------------------------------------------------------------------------
 
 type WalletFunding struct {
-	userId   int
-	consumed int // 实际预扣的用户额度
+	userId       int
+	requestId    string
+	consumed     int // 实际预扣的用户额度
+	operationSeq int
 }
 
 func (w *WalletFunding) Source() string { return BillingSourceWallet }
@@ -37,10 +40,16 @@ func (w *WalletFunding) PreConsume(amount int) error {
 	if amount <= 0 {
 		return nil
 	}
-	if err := model.DecreaseUserQuota(w.userId, amount, false); err != nil {
+	if w.requestId == "" {
+		return fmt.Errorf("wallet request id is required")
+	}
+	w.operationSeq++
+	key := fmt.Sprintf("wallet-consume:%s:%d", w.requestId, w.operationSeq)
+	if err := model.DebitWallet(w.userId, amount, w.requestId, key); err != nil {
+		w.operationSeq--
 		return err
 	}
-	w.consumed = amount
+	w.consumed += amount
 	return nil
 }
 
@@ -48,19 +57,44 @@ func (w *WalletFunding) Settle(delta int) error {
 	if delta == 0 {
 		return nil
 	}
-	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, false)
+	if w.requestId == "" {
+		return fmt.Errorf("wallet request id is required")
 	}
-	return model.IncreaseUserQuota(w.userId, -delta, false)
+	if delta > 0 {
+		w.operationSeq++
+		key := fmt.Sprintf("wallet-consume:%s:%d", w.requestId, w.operationSeq)
+		if err := model.DebitWallet(w.userId, delta, w.requestId, key); err != nil {
+			w.operationSeq--
+			return err
+		}
+		w.consumed += delta
+		return nil
+	}
+	w.operationSeq++
+	key := fmt.Sprintf("wallet-refund:%s:%d", w.requestId, w.operationSeq)
+	if err := model.RestoreWalletAllocationsQuota(w.userId, w.requestId, -delta, key); err != nil {
+		w.operationSeq--
+		return err
+	}
+	w.consumed += delta
+	return nil
 }
 
 func (w *WalletFunding) Refund() error {
 	if w.consumed <= 0 {
 		return nil
 	}
-	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
-	// 订阅的 RefundSubscriptionPreConsume 有 requestId 幂等保护所以可以重试。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
+	if w.requestId == "" {
+		return fmt.Errorf("wallet request id is required")
+	}
+	key := fmt.Sprintf("wallet-refund:%s:all", w.requestId)
+	if err := refundWithRetry(func() error {
+		return model.RestoreWalletAllocationsQuota(w.userId, w.requestId, 0, key)
+	}); err != nil {
+		return err
+	}
+	w.consumed = 0
+	return nil
 }
 
 // ---------------------------------------------------------------------------

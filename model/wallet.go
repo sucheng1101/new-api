@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -78,15 +79,16 @@ type WalletCashLot struct {
 
 // WalletConsumptionAllocation preserves the exact source of a model charge.
 type WalletConsumptionAllocation struct {
-	Id          int    `json:"id"`
-	UserId      int    `json:"user_id" gorm:"index"`
-	RequestId   string `json:"request_id" gorm:"index"`
-	OperationId int    `json:"operation_id" gorm:"index"`
-	AccountType string `json:"account_type" gorm:"type:varchar(16)"`
-	CashLotId   int    `json:"cash_lot_id" gorm:"index"`
-	Quota       int    `json:"quota"`
-	Status      string `json:"status" gorm:"type:varchar(16);index"`
-	CreatedAt   int64  `json:"created_at"`
+	Id            int    `json:"id"`
+	UserId        int    `json:"user_id" gorm:"index"`
+	RequestId     string `json:"request_id" gorm:"index"`
+	OperationId   int    `json:"operation_id" gorm:"index"`
+	AccountType   string `json:"account_type" gorm:"type:varchar(16)"`
+	CashLotId     int    `json:"cash_lot_id" gorm:"index"`
+	Quota         int    `json:"quota"`
+	RestoredQuota int    `json:"restored_quota"`
+	Status        string `json:"status" gorm:"type:varchar(16);index"`
+	CreatedAt     int64  `json:"created_at"`
 }
 
 // WalletBalance is the split balance returned to callers without exposing
@@ -128,8 +130,21 @@ func beginWalletOperation(tx *gorm.DB, userId int, businessType, idempotencyKey 
 		return nil, false, err
 	}
 	op := &WalletOperation{UserId: userId, BusinessType: businessType, RequestedQuota: requestedQuota, Status: WalletOpCompleted, IdempotencyKey: idempotencyKey, CreatedAt: common.GetTimestamp()}
-	if err := tx.Create(op).Error; err != nil {
-		return nil, false, err
+	result := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "idempotency_key"}},
+		DoNothing: true,
+	}).Create(op)
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		if err = tx.Where("idempotency_key = ?", idempotencyKey).First(&existing).Error; err != nil {
+			return nil, false, err
+		}
+		if existing.UserId != userId || existing.BusinessType != businessType || existing.RequestedQuota != requestedQuota {
+			return nil, false, errors.New("wallet idempotency key belongs to another operation")
+		}
+		return &existing, true, nil
 	}
 	return op, false, nil
 }
@@ -278,13 +293,28 @@ func DebitWallet(userId, quota int, requestId, idempotencyKey string) error {
 }
 
 func RestoreWalletAllocations(userId int, requestId, idempotencyKey string) error {
-	err := DB.Transaction(func(tx *gorm.DB) error { return RestoreWalletAllocationsTx(tx, userId, requestId, idempotencyKey) })
+	return RestoreWalletAllocationsQuota(userId, requestId, 0, idempotencyKey)
+
+}
+
+func RestoreWalletAllocationsQuota(userId int, requestId string, quota int, idempotencyKey string) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		return RestoreWalletAllocationsQuotaTx(tx, userId, requestId, quota, idempotencyKey)
+	})
 	invalidateWalletUserCache(userId, err)
 	return err
 }
 
 func RestoreWalletAllocationsTx(tx *gorm.DB, userId int, requestId, idempotencyKey string) error {
-	op, done, err := beginWalletOperation(tx, userId, WalletBusinessModelRefund, idempotencyKey, 0)
+	return RestoreWalletAllocationsQuotaTx(tx, userId, requestId, 0, idempotencyKey)
+}
+
+func RestoreWalletAllocationsQuotaTx(tx *gorm.DB, userId int, requestId string, quota int, idempotencyKey string) error {
+	requestedQuota := quota
+	if requestedQuota < 0 {
+		requestedQuota = 0
+	}
+	op, done, err := beginWalletOperation(tx, userId, WalletBusinessModelRefund, idempotencyKey, requestedQuota)
 	if err != nil || done {
 		return err
 	}
@@ -301,31 +331,61 @@ func RestoreWalletAllocationsTx(tx *gorm.DB, userId int, requestId, idempotencyK
 	}
 	cashBalanceAfter := user.CashQuota
 	giftBalanceAfter := user.GiftQuota
-	for _, allocation := range allocations {
+	remainingToRestore := quota
+	for index := len(allocations) - 1; index >= 0; index-- {
+		allocation := allocations[index]
+		available := allocation.Quota - allocation.RestoredQuota
+		if available <= 0 {
+			continue
+		}
+		take := available
+		if remainingToRestore > 0 && take > remainingToRestore {
+			take = remainingToRestore
+		}
 		if allocation.AccountType == WalletAccountGift {
-			if err = tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{"gift_quota": gorm.Expr("gift_quota + ?", allocation.Quota), "quota": gorm.Expr("quota + ?", allocation.Quota)}).Error; err != nil {
+			if err = tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{"gift_quota": gorm.Expr("gift_quota + ?", take), "quota": gorm.Expr("quota + ?", take)}).Error; err != nil {
 				return err
 			}
-			giftBalanceAfter += allocation.Quota
+			giftBalanceAfter += take
 		} else if allocation.AccountType == WalletAccountCash {
-			if err = tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{"cash_quota": gorm.Expr("cash_quota + ?", allocation.Quota), "quota": gorm.Expr("quota + ?", allocation.Quota)}).Error; err != nil {
+			if err = tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{"cash_quota": gorm.Expr("cash_quota + ?", take), "quota": gorm.Expr("quota + ?", take)}).Error; err != nil {
 				return err
 			}
-			cashBalanceAfter += allocation.Quota
-			if err = tx.Model(&WalletCashLot{}).Where("id = ?", allocation.CashLotId).Updates(map[string]interface{}{"consumed_quota": gorm.Expr("consumed_quota - ?", allocation.Quota)}).Error; err != nil {
-				return err
+			cashBalanceAfter += take
+			result := tx.Model(&WalletCashLot{}).
+				Where("id = ? AND consumed_quota >= ?", allocation.CashLotId, take).
+				Update("consumed_quota", gorm.Expr("consumed_quota - ?", take))
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errors.New("cash lot consumed quota is inconsistent")
 			}
 		}
 		balanceAfter := cashBalanceAfter
 		if allocation.AccountType == WalletAccountGift {
 			balanceAfter = giftBalanceAfter
 		}
-		if err = tx.Create(&WalletTransaction{UserId: userId, AccountType: allocation.AccountType, Direction: WalletDirectionCredit, Amount: allocation.Quota, BalanceAfter: balanceAfter, BusinessType: WalletBusinessModelRefund, SourceType: "wallet_allocation", SourceId: allocation.Id, SourceRef: requestId, OperationId: op.Id, CreatedAt: common.GetTimestamp()}).Error; err != nil {
+		if err = tx.Create(&WalletTransaction{UserId: userId, AccountType: allocation.AccountType, Direction: WalletDirectionCredit, Amount: take, BalanceAfter: balanceAfter, BusinessType: WalletBusinessModelRefund, SourceType: "wallet_allocation", SourceId: allocation.Id, SourceRef: requestId, OperationId: op.Id, CreatedAt: common.GetTimestamp()}).Error; err != nil {
 			return err
 		}
-		if err = tx.Model(&WalletConsumptionAllocation{}).Where("id = ?", allocation.Id).Update("status", WalletAllocationRestored).Error; err != nil {
+		newRestoredQuota := allocation.RestoredQuota + take
+		allocationStatus := WalletAllocationActive
+		if newRestoredQuota >= allocation.Quota {
+			allocationStatus = WalletAllocationRestored
+		}
+		if err = tx.Model(&WalletConsumptionAllocation{}).Where("id = ?", allocation.Id).Updates(map[string]interface{}{"restored_quota": newRestoredQuota, "status": allocationStatus}).Error; err != nil {
 			return err
 		}
+		if remainingToRestore > 0 {
+			remainingToRestore -= take
+			if remainingToRestore == 0 {
+				break
+			}
+		}
+	}
+	if quota > 0 && remainingToRestore > 0 {
+		return errors.New("wallet allocation restore incomplete")
 	}
 	return nil
 }

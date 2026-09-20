@@ -111,6 +111,19 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 	if taskIsSubscription(task) {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
+	requestId := task.PrivateData.BillingRequestId
+	if requestId != "" {
+		if delta > 0 {
+			key := fmt.Sprintf("task-wallet-consume:%s:%d", task.TaskID, task.Quota+delta)
+			return model.DebitWallet(task.UserId, delta, requestId, key)
+		}
+		if delta < 0 {
+			key := fmt.Sprintf("task-wallet-refund:%s:%d", task.TaskID, task.Quota+delta)
+			return model.RestoreWalletAllocationsQuota(task.UserId, requestId, -delta, key)
+		}
+		return nil
+	}
+	// Legacy tasks created before source allocations were persisted.
 	if delta > 0 {
 		return model.DecreaseUserQuota(task.UserId, delta, false)
 	}
