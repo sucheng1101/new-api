@@ -20,7 +20,10 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import '@douyinfe/semi-ui/dist/css/semi.css';
+// Semi UI 2.103 exposes its base stylesheet through package exports; component
+// styles are injected by vite-plugin-semi. Keep the import export-safe so Vite
+// can resolve the frontend with both the current and older Semi UI packages.
+import '@douyinfe/semi-ui/lib/es/_base/base.css';
 import { UserProvider } from './context/User';
 import 'react-toastify/dist/ReactToastify.css';
 import { StatusProvider } from './context/Status';
