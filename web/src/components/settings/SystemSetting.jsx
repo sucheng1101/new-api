@@ -101,6 +101,7 @@ const SystemSetting = () => {
     LinuxDOClientSecret: '',
     LinuxDOMinimumTrustLevel: '',
     ServerAddress: '',
+    TaskPublicAddress: '',
     // SSRF防护配置
     'fetch_setting.enable_ssrf_protection': true,
     'fetch_setting.allow_private_ip': '',
@@ -317,6 +318,13 @@ const SystemSetting = () => {
   const submitServerAddress = async () => {
     let ServerAddress = removeTrailingSlash(inputs.ServerAddress);
     await updateOptions([{ key: 'ServerAddress', value: ServerAddress }]);
+  };
+
+  const submitTaskPublicAddress = async () => {
+    const TaskPublicAddress = removeTrailingSlash(inputs.TaskPublicAddress);
+    await updateOptions([
+      { key: 'TaskPublicAddress', value: TaskPublicAddress },
+    ]);
   };
 
   const submitSMTP = async () => {
@@ -732,6 +740,19 @@ const SystemSetting = () => {
                   <Button onClick={submitServerAddress}>
                     {t('更新服务器地址')}
                   </Button>
+                  <div style={{ marginTop: 16 }}>
+                    <Form.Input
+                      field='TaskPublicAddress'
+                      label={t('任务制品公开地址')}
+                      placeholder='https://api.example.com'
+                      extraText={t(
+                        '视频等任务制品的访问地址。留空时使用服务器地址；本地开发可填写 http://127.0.0.1:5200。',
+                      )}
+                    />
+                    <Button onClick={submitTaskPublicAddress}>
+                      {t('更新任务制品地址')}
+                    </Button>
+                  </div>
                 </Form.Section>
               </Card>
 

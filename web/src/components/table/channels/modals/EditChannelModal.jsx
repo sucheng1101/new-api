@@ -61,6 +61,7 @@ import {
   getChannelIcon,
   getModelCategories,
   selectFilter,
+  isRoot,
 } from '../../../../helpers';
 import {
   displayAmountToQuota,
@@ -143,6 +144,7 @@ const DEPRECATED_DOUBAO_CODING_PLAN_BASE_URL = 'doubao-coding-plan';
 const MODEL_FETCHABLE_TYPES = new Set([
   1, 4, 14, 34, 17, 26, 27, 24, 47, 25, 20, 23, 31, 40, 42, 48, 43,
 ]);
+const CHANNEL_TYPE_TASK_PLUGIN = 61;
 
 function type2secretPrompt(type) {
   // inputs.type === 15 ? '按照如下格式输入：APIKey|SecretKey' : (inputs.type === 18 ? '按照如下格式输入：APPID|APISecret|APIKey' : '请输入渠道对应的鉴权密钥')
@@ -213,6 +215,7 @@ const EditChannelModal = (props) => {
     system_prompt: '',
     system_prompt_override: false,
     settings: '',
+    task_plugin_key: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
@@ -403,6 +406,9 @@ const EditChannelModal = (props) => {
   const [codexCredentialRefreshing, setCodexCredentialRefreshing] =
     useState(false);
   const [paramOverrideEditorVisible, setParamOverrideEditorVisible] =
+    useState(false);
+  const [taskPluginOptions, setTaskPluginOptions] = useState([]);
+  const [taskPluginOptionsLoading, setTaskPluginOptionsLoading] =
     useState(false);
 
   // 密钥显示状态
@@ -966,6 +972,7 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.task_plugin_key = parsedSettings.task_plugin_key || '';
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -974,6 +981,7 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.task_plugin_key = '';
         }
       } else {
         data.force_format = false;
@@ -982,6 +990,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.task_plugin_key = '';
       }
 
       if (data.settings) {
@@ -1155,6 +1164,25 @@ const EditChannelModal = (props) => {
       showError(message);
     }
     setLoading(false);
+  };
+
+  const fetchTaskPluginOptions = async () => {
+    if (!isRoot()) return;
+    setTaskPluginOptionsLoading(true);
+    try {
+      const res = await API.get('/api/task_plugin_options', {
+        skipErrorHandler: true,
+      });
+      if (res?.data?.success) {
+        setTaskPluginOptions(Array.isArray(res.data.data) ? res.data.data : []);
+      } else {
+        showError(res?.data?.message || t('加载任务插件失败'));
+      }
+    } catch (error) {
+      showError(error?.message || t('加载任务插件失败'));
+    } finally {
+      setTaskPluginOptionsLoading(false);
+    }
   };
 
   const fetchUpstreamModelList = async (name, options = {}) => {
@@ -1369,6 +1397,12 @@ const EditChannelModal = (props) => {
       setDoubaoApiEditUnlocked(false);
     }
   }, [inputs.type]);
+
+  useEffect(() => {
+    if (props.visible && inputs.type === CHANNEL_TYPE_TASK_PLUGIN) {
+      fetchTaskPluginOptions();
+    }
+  }, [props.visible, inputs.type]);
 
   useEffect(() => {
     const modelMap = new Map();
@@ -1901,7 +1935,18 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      task_plugin_key:
+        localInputs.type === CHANNEL_TYPE_TASK_PLUGIN
+          ? String(localInputs.task_plugin_key || '').trim()
+          : '',
     };
+    if (
+      localInputs.type === CHANNEL_TYPE_TASK_PLUGIN &&
+      !channelExtraSettings.task_plugin_key
+    ) {
+      showError(t('请选择要绑定的任务插件'));
+      return;
+    }
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
     // 处理 settings 字段（包括企业账户设置和字段透传控制）
@@ -1982,6 +2027,7 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.task_plugin_key;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
@@ -2225,7 +2271,9 @@ const EditChannelModal = (props) => {
 
   const channelOptionList = useMemo(
     () =>
-      CHANNEL_OPTIONS.map((opt) => ({
+      CHANNEL_OPTIONS.filter(
+        (opt) => opt.value !== CHANNEL_TYPE_TASK_PLUGIN || isRoot(),
+      ).map((opt) => ({
         ...opt,
         // 保持 label 为纯文本以支持搜索
         label: opt.label,
@@ -3012,6 +3060,33 @@ const EditChannelModal = (props) => {
                         onChange={(value) => handleInputChange('type', value)}
                         disabled={isIonetLocked}
                       />
+
+                      {inputs.type === CHANNEL_TYPE_TASK_PLUGIN && (
+                        <Form.Select
+                          field='task_plugin_key'
+                          label={t('任务插件')}
+                          placeholder={t('请选择要绑定的任务插件')}
+                          loading={taskPluginOptionsLoading}
+                          optionList={taskPluginOptions.map((plugin) => ({
+                            label: `${plugin.name || plugin.key}${plugin.version ? ` (${plugin.version})` : ''}`,
+                            value: plugin.key,
+                          }))}
+                          value={inputs.task_plugin_key || ''}
+                          rules={[
+                            {
+                              required: true,
+                              message: t('请选择要绑定的任务插件'),
+                            },
+                          ]}
+                          style={{ width: '100%' }}
+                          onChange={(value) =>
+                            handleInputChange('task_plugin_key', value)
+                          }
+                          extraText={t(
+                            '任务插件渠道通过插件协议处理请求，请先安装并启用对应插件。',
+                          )}
+                        />
+                      )}
 
                       {inputs.type === 57 && (
                         <Banner

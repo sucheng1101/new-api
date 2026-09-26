@@ -234,7 +234,12 @@ function renderSpeedLine(record, other, t) {
     useTime > 0 && completionTokens > 0
       ? Math.round(completionTokens / useTime)
       : 0;
-  const streamLabel = record.is_stream ? t('流') : t('非流');
+  const isTask = other?.is_task === true || other?.task_id != null;
+  const streamLabel = isTask
+    ? t('异步任务')
+    : record.is_stream
+      ? t('流')
+      : t('非流');
   const errorStatus = other?.stream_status;
 
   return (
@@ -252,13 +257,16 @@ function renderSpeedLine(record, other, t) {
     >
       {streamLabel}
       {speed > 0 && <span>· {speed} t/s</span>}
-      {record.is_stream && errorStatus && errorStatus.status !== 'ok' && (
-        <Tooltip content={buildStreamStatusTooltip(errorStatus, t)}>
-          <span style={{ color: '#ef4444', cursor: 'pointer' }}>
-            <CircleAlert size={13} strokeWidth={2.5} color='currentColor' />
-          </span>
-        </Tooltip>
-      )}
+      {!isTask &&
+        record.is_stream &&
+        errorStatus &&
+        errorStatus.status !== 'ok' && (
+          <Tooltip content={buildStreamStatusTooltip(errorStatus, t)}>
+            <span style={{ color: '#ef4444', cursor: 'pointer' }}>
+              <CircleAlert size={13} strokeWidth={2.5} color='currentColor' />
+            </span>
+          </Tooltip>
+        )}
     </span>
   );
 }
@@ -296,6 +304,16 @@ function renderCostPill(quota) {
       {renderQuota(quota, 6)}
     </span>
   );
+}
+
+function getDisplayQuota(record, other, quota) {
+  if (other?.is_task === true || other?.task_id != null) {
+    const actual = Number(other.actual_quota);
+    if (Number.isFinite(actual)) return actual;
+    const fee = Number(other.fee_quota);
+    if (Number.isFinite(fee)) return fee;
+  }
+  return quota;
 }
 
 function renderModelName(record, copyText, t) {
@@ -877,7 +895,7 @@ export const getLogsColumns = ({
             </Tooltip>
           );
         }
-        return renderCostPill(text);
+        return renderCostPill(getDisplayQuota(record, other, text));
       },
     },
     {

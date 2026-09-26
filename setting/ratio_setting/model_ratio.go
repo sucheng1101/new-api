@@ -753,3 +753,12 @@ func GetModelRatioOrPrice(model string) (float64, bool, bool) { // price or rati
 	}
 	return 37.5, false, false
 }
+
+// HasConfiguredModelRatio reports whether name has an explicit ratio entry
+// after wildcard normalization. Self-use fallback does not count.
+// （自官方 v1.0.0-rc.37 移植）
+func HasConfiguredModelRatio(name string) bool {
+	name = FormatMatchingModelName(name)
+	_, ok := modelRatioMap.Get(name)
+	return ok
+}

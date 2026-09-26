@@ -1,0 +1,75 @@
+services:
+  mysql:
+    image: mysql:8.2
+    container_name: new-api-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: new-api-local-dev
+      MYSQL_ROOT_PASSWORD: 123456
+      TZ: Asia/Shanghai
+    ports:
+      - "13306:3306"
+    volumes:
+      - new-api-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p123456 --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  redis:
+    image: redis:7
+    container_name: new-api-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+    ports:
+      - "16379:6379"
+    volumes:
+      - new-api-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: new-api-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: new-api-local
+      MINIO_ROOT_PASSWORD: new-api-local-artifacts
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - new-api-minio-data:/data
+
+  minio-init:
+    # The pinned MinIO server image ships the matching `mc` client. Reusing it
+    # avoids a second image pull through environments that block minio/mc.
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: new-api-minio-init
+    depends_on:
+      - minio
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: new-api-local
+      MINIO_ROOT_PASSWORD: new-api-local-artifacts
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 1; done
+        mc mb --ignore-existing local/new-api-task-artifacts
+
+volumes:
+  new-api-mysql-data:
+  new-api-redis-data:
+  new-api-minio-data:

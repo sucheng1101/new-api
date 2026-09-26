@@ -25,6 +25,20 @@ var commonFalseVal string
 var logKeyCol string
 var logGroupCol string
 
+// jsonScanBytes 归一化 json 列的驱动返回值:不同驱动/协议模式下同一列可能
+// 以 []byte 或 string 返回,静默丢弃 string 会导致字段被清零而不报错。
+// （自官方 v1.0.0-rc.37 移植，供 Task JSON 列 Scan 使用）
+func jsonScanBytes(value any) []byte {
+	switch v := value.(type) {
+	case []byte:
+		return v
+	case string:
+		return []byte(v)
+	default:
+		return nil
+	}
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingPostgreSQL {
@@ -286,6 +300,12 @@ func migrateDB() error {
 		&LotteryDraw{},
 		&QuotaData{},
 		&Task{},
+		&TaskPlugin{},
+		&TaskPluginSourceArchive{},
+		&TaskArtifactObject{},
+		&CasbinRule{},
+		&AuthzRole{},
+		&SystemTask{},
 		&PerfMetric{},
 		&MonitorGroup{},
 		&MonitorGroupTarget{},
@@ -379,6 +399,12 @@ func migrateDBFast() error {
 		{&LotteryDraw{}, "LotteryDraw"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
+		{&TaskPlugin{}, "TaskPlugin"},
+		{&TaskPluginSourceArchive{}, "TaskPluginSourceArchive"},
+		{&TaskArtifactObject{}, "TaskArtifactObject"},
+		{&CasbinRule{}, "CasbinRule"},
+		{&AuthzRole{}, "AuthzRole"},
+		{&SystemTask{}, "SystemTask"},
 		{&PerfMetric{}, "PerfMetric"},
 		{&MonitorGroup{}, "MonitorGroup"},
 		{&MonitorGroupTarget{}, "MonitorGroupTarget"},
@@ -443,6 +469,9 @@ func migrateDBFast() error {
 }
 
 func migrateLOGDB() error {
+	if err := MigrateAuditLogs(); err != nil {
+		return err
+	}
 	var err error
 	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
 		return err

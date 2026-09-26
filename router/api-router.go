@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	// Import oauth package to register providers via init()
 	_ "github.com/QuantumNous/new-api/oauth"
@@ -18,6 +19,7 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
 	{
+		registerAuthzRoutes(apiRouter)
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", controller.PostSetup)
 		apiRouter.GET("/status", controller.GetStatus)
@@ -211,6 +213,10 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
+			optionRoute.GET("/model_pricing", controller.GetModelPricingConfig)
+			optionRoute.PATCH("/model_pricing", controller.UpdateModelPricingConfig)
+			optionRoute.POST("/model_pricing/convert", controller.PreviewModelPricingConversion)
+			optionRoute.POST("/model_pricing/preview", controller.PreviewModelPricing)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
@@ -257,7 +263,26 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/:id/key-usages", controller.GetChannelKeyUsageList)
 			channelRoute.POST("/:id/key-usages/:fingerprint/reset", controller.ResetChannelKeyQuotaUsage)
 			channelRoute.PUT("/:id/key-usages/:fingerprint/config", controller.UpdateChannelKeyUsageConfig)
-			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)
+		// 任务插件管理（自官方 v1.0.0-rc.37 移植；RootAuth 守卫）
+	taskPluginRoute := apiRouter.Group("/plugin/task")
+	taskPluginRoute.Use(middleware.RootAuth())
+	{
+		taskPluginRoute.GET("", controller.ListTaskPlugins)
+		taskPluginRoute.POST("", controller.UploadTaskPlugin)
+		taskPluginRoute.PUT("", controller.UploadTaskPlugin)
+		taskPluginRoute.GET("/runtime/status", controller.GetTaskPluginRuntime)
+		taskPluginRoute.GET("/marketplace/sources", controller.GetTaskPluginMarketplaceSources)
+		taskPluginRoute.PUT("/marketplace/sources", controller.UpdateTaskPluginMarketplaceSources)
+		taskPluginRoute.GET("/:key", controller.GetTaskPlugin)
+		taskPluginRoute.GET("/:key/icon", controller.GetTaskPluginIcon)
+		taskPluginRoute.GET("/:key/versions", controller.GetTaskPluginVersions)
+		taskPluginRoute.POST("/:key/activate", controller.ActivateTaskPlugin)
+		taskPluginRoute.POST("/:key/status", controller.SetTaskPluginStatus)
+		taskPluginRoute.POST("/:key/dryrun", controller.DryRunTaskPlugin)
+		taskPluginRoute.DELETE("/:key/versions/:version", controller.DeleteTaskPluginVersion)
+	}
+	apiRouter.GET("/task_plugin_options", middleware.AdminAuth(), middleware.RequirePermission(authz.TaskPluginBind), controller.GetTaskPluginOptions)
+		channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)
 			channelRoute.GET("/test", controller.TestAllChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
 			channelRoute.GET("/update_balance", controller.UpdateAllChannelsBalance)
@@ -403,6 +428,7 @@ func SetApiRouter(router *gin.Engine) {
 		taskRoute := apiRouter.Group("/task")
 		{
 			taskRoute.GET("/self", middleware.UserAuth(), controller.GetUserTask)
+			taskRoute.GET("/:task_id/artifacts", middleware.TokenOrUserAuth(), controller.GetDashboardTaskArtifacts)
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 		}
 

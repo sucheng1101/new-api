@@ -241,6 +241,8 @@ func prepareChannelUsageMigrationDB(t *testing.T) {
 func prepareChannelUsageSecretDB(t *testing.T) {
 	t.Helper()
 	prepareChannelUsageMigrationDB(t)
+	// The fingerprint secret is process-scoped; do not let a prior isolated DB seed this one.
+	resetChannelKeyFingerprintSecretCache()
 	require.NoError(t, DB.AutoMigrate(&Option{}))
 }
 

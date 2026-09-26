@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -19,11 +20,13 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	opsmetrics "github.com/QuantumNous/new-api/pkg/ops_metrics"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	_ "github.com/QuantumNous/new-api/setting/monitoring_setting"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -50,6 +53,9 @@ func startMonitorGroupWorkers() {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		os.Exit(jsplugin.RunCLI(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	startTime := time.Now()
 
 	err := InitResources()
@@ -106,6 +112,7 @@ func main() {
 
 	// 热更新配置
 	go model.SyncOptions(common.SyncFrequency)
+	go authz.StartPolicySync(common.SyncFrequency)
 
 	// 数据看板
 	go model.UpdateQuotaData()
@@ -135,16 +142,30 @@ func main() {
 		}
 		return a
 	}
+	service.GetTaskAdaptorForTaskFunc = func(task *model.Task) service.TaskPollingAdaptor {
+		a, err := relay.ResolveTaskAdaptorForTask(task)
+		if err != nil {
+			common.SysError("resolve task plugin snapshot for polling: " + err.Error())
+			return nil
+		}
+		return a
+	}
 
 	// Channel upstream model update check task
 	controller.StartChannelUpstreamModelUpdateTask()
+	go controller.SyncTaskPlugins() // 任务插件同步（编译失败保留旧实例，30s 重试）
 
 	if common.IsMasterNode && constant.UpdateTask {
 		gopool.Go(func() {
 			controller.UpdateMidjourneyTaskBulk()
 		})
+		// 阶段1：任务轮询循环（rc.37 改为 RunTaskPollingOnce 驱动，原 controller.UpdateTaskBulk 已随
+		// 旧适配器退役；阶段5 若引入 system-task runner 再统一搬迁）
 		gopool.Go(func() {
-			controller.UpdateTaskBulk()
+			for {
+				service.RunTaskPollingOnce(context.Background(), nil)
+				time.Sleep(15 * time.Second)
+			}
 		})
 	}
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
@@ -280,6 +301,13 @@ func InitResources() error {
 	err = model.InitDB()
 	if err != nil {
 		common.FatalLog("failed to initialize database: " + err.Error())
+		return err
+	}
+	// Task artifacts keep their existing upstream-proxy behavior unless a
+	// complete S3-compatible store configuration is present.
+	service.InitTaskArtifactStore()
+	if err = authz.Init(model.DB); err != nil {
+		common.FatalLog("failed to initialize authorization: " + err.Error())
 		return err
 	}
 

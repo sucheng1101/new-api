@@ -1,9 +1,12 @@
 package relay
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
+	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/ali"
 	"github.com/QuantumNous/new-api/relay/channel/aws"
@@ -30,16 +33,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/replicate"
 	"github.com/QuantumNous/new-api/relay/channel/siliconflow"
 	"github.com/QuantumNous/new-api/relay/channel/submodel"
-	taskali "github.com/QuantumNous/new-api/relay/channel/task/ali"
-	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
-	taskGemini "github.com/QuantumNous/new-api/relay/channel/task/gemini"
-	"github.com/QuantumNous/new-api/relay/channel/task/hailuo"
-	taskjimeng "github.com/QuantumNous/new-api/relay/channel/task/jimeng"
-	"github.com/QuantumNous/new-api/relay/channel/task/kling"
-	tasksora "github.com/QuantumNous/new-api/relay/channel/task/sora"
-	"github.com/QuantumNous/new-api/relay/channel/task/suno"
-	taskvertex "github.com/QuantumNous/new-api/relay/channel/task/vertex"
-	taskVidu "github.com/QuantumNous/new-api/relay/channel/task/vidu"
+	jspluginadaptor "github.com/QuantumNous/new-api/relay/channel/task/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel/tencent"
 	"github.com/QuantumNous/new-api/relay/channel/vertex"
 	"github.com/QuantumNous/new-api/relay/channel/volcengine"
@@ -47,6 +41,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/xunfei"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -132,34 +127,119 @@ func GetTaskPlatform(c *gin.Context) constant.TaskPlatform {
 	return constant.TaskPlatform(c.GetString("platform"))
 }
 
-func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
-	switch platform {
-	//case constant.APITypeAIProxyLibrary:
-	//	return &aiproxy.Adaptor{}
-	case constant.TaskPlatformSuno:
-		return &suno.TaskAdaptor{}
+// taskPluginKeys 把旧 platform 常量映射到任务插件 key（自官方 v1.0.0-rc.37 移植）。
+// 旧 Go 任务适配器退役后，全部平台由内置 JS 插件 1:1 承接。
+var taskPluginKeys = map[constant.TaskPlatform]string{
+	constant.TaskPlatformSuno:                                            "sunoapi",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeAli)):         "alibaba",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeKling)):       "kling",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeJimeng)):      "jimeng",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeVidu)):        "vidu",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeDoubaoVideo)): "doubao",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeVolcEngine)):  "doubao",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeGemini)):      "google",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeMiniMax)):     "hailuo",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeSora)):        "sora",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeOpenAI)):      "sora",
+	constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeVertexAi)):    "vertex-ai",
+}
+
+// ResolveTaskPluginForPlatform 按 platform 解析已加载的任务插件（官方 rc.37）。
+func ResolveTaskPluginForPlatform(generation *pluginruntime.RoutingGeneration, platform constant.TaskPlatform) (*pluginruntime.LoadedPlugin, bool) {
+	if generation == nil {
+		return nil, false
 	}
-	if channelType, err := strconv.ParseInt(string(platform), 10, 64); err == nil {
-		switch channelType {
-		case constant.ChannelTypeAli:
-			return &taskali.TaskAdaptor{}
-		case constant.ChannelTypeKling:
-			return &kling.TaskAdaptor{}
-		case constant.ChannelTypeJimeng:
-			return &taskjimeng.TaskAdaptor{}
-		case constant.ChannelTypeVertexAi:
-			return &taskvertex.TaskAdaptor{}
-		case constant.ChannelTypeVidu:
-			return &taskVidu.TaskAdaptor{}
-		case constant.ChannelTypeDoubaoVideo, constant.ChannelTypeVolcEngine:
-			return &taskdoubao.TaskAdaptor{}
-		case constant.ChannelTypeSora, constant.ChannelTypeOpenAI:
-			return &tasksora.TaskAdaptor{}
-		case constant.ChannelTypeGemini:
-			return &taskGemini.TaskAdaptor{}
-		case constant.ChannelTypeMiniMax:
-			return &hailuo.TaskAdaptor{}
+	if key, ok := taskPluginKeys[platform]; ok {
+		if plugin, found := generation.Get(key); found {
+			return plugin, true
 		}
 	}
-	return nil
+	return generation.Get(string(platform))
+}
+
+// TaskPlatformUnavailableError 解释 platform 无适配器的原因：插件系统关闭、
+// 解析到的插件被停用，或 platform 本身无意义。区分对用户可操作，必须透传到客户端报错。（官方 rc.37）
+func TaskPlatformUnavailableError(platform constant.TaskPlatform) (string, string) {
+	if !pluginruntime.DefaultRegistry.Enabled() {
+		return "task_plugin_system_disabled", "the task plugin system is disabled on this gateway"
+	}
+	key := string(platform)
+	if mapped, ok := taskPluginKeys[platform]; ok {
+		key = mapped
+	}
+	for _, meta := range pluginruntime.DefaultRegistry.Snapshot().Factory {
+		if meta.Key == key {
+			return "task_plugin_disabled", fmt.Sprintf("task plugin %q is disabled on this gateway", key)
+		}
+	}
+	return "invalid_api_platform", fmt.Sprintf("invalid api platform: %s", platform)
+}
+
+func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
+	plugin, ok := ResolveTaskPluginForPlatform(pluginruntime.DefaultRegistry.Generation(), platform)
+	if !ok {
+		return nil
+	}
+	return jspluginadaptor.New(plugin)
+}
+
+// ResolveTaskAdaptorForTask selects the executable release captured when a
+// task was submitted. Historical task polling and artifact reads must not drift
+// to whichever plugin version happens to be active now.
+func ResolveTaskAdaptorForTask(task *model.Task) (channel.TaskAdaptor, error) {
+	if task == nil {
+		return nil, fmt.Errorf("task is required")
+	}
+	if execution := task.PrivateData.Execution; execution != nil && execution.TaskPlugin != nil {
+		plugin, err := service.ResolveTaskPluginSnapshot(execution.TaskPlugin)
+		if err != nil {
+			return nil, err
+		}
+		return jspluginadaptor.New(plugin), nil
+	}
+	adaptor := GetTaskAdaptor(task.Platform)
+	if adaptor == nil {
+		return nil, fmt.Errorf("task adaptor is unavailable")
+	}
+	return adaptor, nil
+}
+
+// getTaskAdaptorForRequest 保留声明式/共享端点路由 pin 的确切插件对象。
+// 旧式任务路由在返回适配器前 pin 到同一个 registry generation。（官方 rc.37）
+func getTaskAdaptorForRequest(c *gin.Context, platform constant.TaskPlatform) (constant.TaskPlatform, channel.TaskAdaptor) {
+	if c != nil {
+		if value, exists := c.Get(pluginruntime.ContextKeyPinnedPlugin); exists {
+			if pinned, ok := value.(pluginruntime.PinnedPlugin); ok && pinned.Plugin != nil {
+				platform = constant.TaskPlatform(pinned.Plugin.Meta.Key)
+				return platform, jspluginadaptor.New(pinned.Plugin)
+			}
+			return platform, nil
+		}
+		if value, exists := c.Get(pluginruntime.ContextKeyPinnedEndpoint); exists {
+			if pinned, ok := value.(pluginruntime.PinnedEndpoint); ok && pinned.Plugin != nil {
+				platform = constant.TaskPlatform(pinned.Plugin.Meta.Key)
+				return platform, jspluginadaptor.New(pinned.Plugin)
+			}
+			return platform, nil
+		}
+		if value, exists := c.Get(pluginruntime.ContextKeyPinnedRoute); exists {
+			if pinned, ok := value.(pluginruntime.PinnedRoute); ok && pinned.Plugin != nil {
+				platform = constant.TaskPlatform(pinned.Plugin.Meta.Key)
+				return platform, jspluginadaptor.New(pinned.Plugin)
+			}
+			return platform, nil
+		}
+	}
+	generation := pluginruntime.DefaultRegistry.Generation()
+	plugin, ok := ResolveTaskPluginForPlatform(generation, platform)
+	if !ok {
+		return platform, nil
+	}
+	if c != nil {
+		c.Set(pluginruntime.ContextKeyPinnedPlugin, pluginruntime.PinnedPlugin{
+			Generation: generation,
+			Plugin:     plugin,
+		})
+	}
+	return platform, jspluginadaptor.New(plugin)
 }

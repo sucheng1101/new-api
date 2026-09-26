@@ -1,6 +1,7 @@
 package dto
 
 type ChannelSettings struct {
+	TaskPluginKey          string `json:"task_plugin_key,omitempty"` // 渠道绑定的任务插件 key（官方 rc.37 同名字段）
 	ForceFormat            bool   `json:"force_format,omitempty"`
 	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`
 	Proxy                  string `json:"proxy"`
@@ -41,6 +42,7 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastDetectedModels []string      `json:"upstream_model_update_last_detected_models,omitempty"` // 上次检测到的可加入模型
 	UpstreamModelUpdateLastRemovedModels  []string      `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string      `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
+	DisableTaskPollingSleep               bool          `json:"disable_task_polling_sleep,omitempty"` // 是否跳过异步任务轮询间隔（官方 rc.37）
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

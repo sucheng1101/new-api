@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect, useMemo, useContext, useRef } from 'react';
 import { StatusContext } from '../../context/Status';
-import { API } from '../../helpers';
+import { API } from '../../helpers/api';
 import {
   getCustomExternalMenuItems,
   isSafeSidebarUrl,
@@ -27,6 +27,7 @@ import {
   normalizeSidebarCustomItems,
   createDefaultUserConfig,
 } from '../../helpers/externalMenu';
+import { DEFAULT_ADMIN_CONFIG, mergeAdminConfig } from './sidebarConfig';
 
 export {
   getCustomExternalMenuItems,
@@ -35,69 +36,11 @@ export {
   normalizeSidebarCustomItems,
   createDefaultUserConfig,
 } from '../../helpers/externalMenu';
+export { DEFAULT_ADMIN_CONFIG, mergeAdminConfig } from './sidebarConfig';
 
 // 创建一个全局事件系统来同步所有useSidebar实例
 const sidebarEventTarget = new EventTarget();
 const SIDEBAR_REFRESH_EVENT = 'sidebar-refresh';
-
-export const DEFAULT_ADMIN_CONFIG = {
-  chat: {
-    enabled: true,
-    playground: true,
-    chat: true,
-  },
-  console: {
-    enabled: true,
-    detail: true,
-    token: true,
-    log: true,
-    midjourney: true,
-    task: true,
-    monitorStatus: true,
-  },
-  personal: {
-    enabled: true,
-    topup: true,
-    promotion: true,
-    personal: true,
-  },
-  admin: {
-    enabled: true,
-    channel: true,
-    models: true,
-    deployment: true,
-    redemption: true,
-    user: true,
-    subscription: true,
-    setting: true,
-    monitorGroups: true,
-    ops: true,
-  },
-  custom: [],
-};
-
-const deepClone = (value) => JSON.parse(JSON.stringify(value));
-
-export const mergeAdminConfig = (savedConfig) => {
-  const merged = deepClone(DEFAULT_ADMIN_CONFIG);
-  if (!savedConfig || typeof savedConfig !== 'object') return merged;
-
-  for (const [sectionKey, sectionConfig] of Object.entries(savedConfig)) {
-    if (sectionKey === 'custom') continue;
-    if (!sectionConfig || typeof sectionConfig !== 'object') continue;
-
-    if (!merged[sectionKey]) {
-      merged[sectionKey] = { ...sectionConfig };
-      continue;
-    }
-
-    merged[sectionKey] = { ...merged[sectionKey], ...sectionConfig };
-  }
-
-  merged.custom = normalizeSidebarCustomItems(savedConfig.custom);
-
-  return merged;
-};
 
 export const useSidebar = () => {
   const [statusState] = useContext(StatusContext);

@@ -223,6 +223,12 @@ func GetUUID() string {
 	return code
 }
 
+// NewRequestId returns a compact request identifier for host-generated
+// records that are created outside the HTTP request-id middleware.
+func NewRequestId() string {
+	return GetTimeString() + GetRandomString(16)
+}
+
 const keyChars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func GenerateRandomCharsKey(length int) (string, error) {

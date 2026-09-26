@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"sync"
@@ -10,32 +11,49 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 )
 
 type Pricing struct {
-	ModelName              string                  `json:"model_name"`
-	Description            string                  `json:"description,omitempty"`
-	Icon                   string                  `json:"icon,omitempty"`
-	Tags                   string                  `json:"tags,omitempty"`
-	VendorID               int                     `json:"vendor_id,omitempty"`
-	QuotaType              int                     `json:"quota_type"`
-	ModelRatio             float64                 `json:"model_ratio"`
-	ModelPrice             float64                 `json:"model_price"`
-	OwnerBy                string                  `json:"owner_by"`
-	CompletionRatio        float64                 `json:"completion_ratio"`
-	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
-	CreateCacheRatio       *float64                `json:"create_cache_ratio,omitempty"`
-	ImageRatio             *float64                `json:"image_ratio,omitempty"`
-	AudioRatio             *float64                `json:"audio_ratio,omitempty"`
-	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
-	EnableGroup            []string                `json:"enable_groups"`
-	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
-	BillingMode            string                  `json:"billing_mode,omitempty"`
-	BillingExpr            string                  `json:"billing_expr,omitempty"`
-	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	ModelName              string                               `json:"model_name"`
+	Description            string                               `json:"description,omitempty"`
+	Icon                   string                               `json:"icon,omitempty"`
+	Tags                   string                               `json:"tags,omitempty"`
+	VendorID               int                                  `json:"vendor_id,omitempty"`
+	QuotaType              int                                  `json:"quota_type"`
+	ModelRatio             float64                              `json:"model_ratio"`
+	ModelPrice             float64                              `json:"model_price"`
+	OwnerBy                string                               `json:"owner_by"`
+	CompletionRatio        float64                              `json:"completion_ratio"`
+	CacheRatio             *float64                             `json:"cache_ratio,omitempty"`
+	CreateCacheRatio       *float64                             `json:"create_cache_ratio,omitempty"`
+	ImageRatio             *float64                             `json:"image_ratio,omitempty"`
+	AudioRatio             *float64                             `json:"audio_ratio,omitempty"`
+	AudioCompletionRatio   *float64                             `json:"audio_completion_ratio,omitempty"`
+	EnableGroup            []string                             `json:"enable_groups"`
+	SupportedEndpointTypes []constant.EndpointType              `json:"supported_endpoint_types"`
+	BillingMode            string                               `json:"billing_mode,omitempty"`
+	BillingExpr            string                               `json:"billing_expr,omitempty"`
+	BillingUsageSchema     map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema,omitempty"`
+	BillingUsageExamples   []jsplugin.UsageExample              `json:"billing_usage_examples,omitempty"`
+	BillingPluginAddons    []PricingPluginAddon                 `json:"billing_plugin_addons,omitempty"`
+	PricingVersion         string                               `json:"pricing_version,omitempty"`
+}
+
+// PricingPluginAddon is the customer-visible, plugin-specific surcharge that
+// may be added after the actual task plugin is selected. Expressions stay
+// visible in the same way as the public task price expression, but no plugin
+// source, credentials, or transport metadata is included here.
+type PricingPluginAddon struct {
+	PluginKey     string                               `json:"plugin_key"`
+	PluginName    string                               `json:"plugin_name"`
+	Icon          string                               `json:"icon,omitempty"`
+	BillingExpr   string                               `json:"billing_expr"`
+	UsageSchema   map[string]jsplugin.UsageFieldSchema `json:"usage_schema"`
+	UsageExamples []jsplugin.UsageExample              `json:"usage_examples,omitempty"`
 }
 
 type PricingVendor struct {
@@ -337,6 +355,9 @@ func updatePricing() {
 				pricing.BillingExpr = expr
 			}
 		}
+		generation := jsplugin.DefaultRegistry.Generation()
+		pricing.BillingUsageSchema, pricing.BillingUsageExamples = modelPricingUsageContractForModel(generation, model)
+		pricing.BillingPluginAddons = pricingPluginAddons(generation, model)
 		pricingMap = append(pricingMap, pricing)
 	}
 
@@ -356,6 +377,40 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
+}
+
+func pricingPluginAddons(generation *jsplugin.RoutingGeneration, modelName string) []PricingPluginAddon {
+	candidates := modelPricingPluginCandidates(generation, modelName)
+	if len(candidates) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(candidates))
+	for key := range candidates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	addons := make([]PricingPluginAddon, 0, len(keys))
+	for _, key := range keys {
+		candidate := candidates[key]
+		expression, configured := billing_setting.ResolveTaskBillingAddonExpr(key, modelName, "")
+		if !configured || strings.TrimSpace(expression) == "" {
+			continue
+		}
+		schema, examples := modelPricingPluginAddonContract(generation, modelName, candidate)
+		if len(schema) == 0 {
+			continue
+		}
+		addons = append(addons, PricingPluginAddon{
+			PluginKey:     key,
+			PluginName:    candidate.plugin.Meta.Name,
+			Icon:          candidate.plugin.Meta.Icon,
+			BillingExpr:   expression,
+			UsageSchema:   schema,
+			UsageExamples: examples,
+		})
+	}
+	return addons
 }
 
 // GetSupportedEndpointMap 返回全局端点到路径的映射

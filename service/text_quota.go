@@ -320,8 +320,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(summary.ToolCallSurchargeQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
 
-		if len(relayInfo.PriceData.OtherRatios) > 0 {
-			for _, otherRatio := range relayInfo.PriceData.OtherRatios {
+		if len(relayInfo.PriceData.OtherRatios()) > 0 {
+			for _, otherRatio := range relayInfo.PriceData.OtherRatios() {
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
@@ -334,8 +334,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(summary.ToolCallSurchargeQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
-		if len(relayInfo.PriceData.OtherRatios) > 0 {
-			for _, otherRatio := range relayInfo.PriceData.OtherRatios {
+		if len(relayInfo.PriceData.OtherRatios()) > 0 {
+			for _, otherRatio := range relayInfo.PriceData.OtherRatios() {
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
@@ -533,4 +533,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 func recordTextQuotaMetrics(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary) {
 	recordSuccessfulRelayQuota(relayInfo, int64(summary.CompletionTokens))
+}
+
+// noteQuotaClamp 记录本请求的额度饱和钳制（首个非 nil 生效），
+// 供消费日志 admin_info 审计。（自官方 v1.0.0-rc.37 移植）
+func noteQuotaClamp(relayInfo *relaycommon.RelayInfo, clamp *common.QuotaClamp) {
+	if clamp == nil || relayInfo == nil {
+		return
+	}
+	if relayInfo.QuotaClamp == nil {
+		relayInfo.QuotaClamp = clamp
+	}
 }

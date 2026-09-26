@@ -16,16 +16,54 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react';
-import { API, showError, showSuccess } from '../../../../helpers';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { showError, showSuccess } from '../../../../helpers';
 import {
   combineBillingExpr,
   splitBillingExprAndRequestRules,
 } from '../components/requestRuleExpr';
+import {
+  getModelPricing,
+  getTaskPluginModelNames,
+  saveModelPricing,
+} from '../api/modelPricing';
 
 export const PAGE_SIZE = 10;
 export const PRICE_SUFFIX = '$/1M tokens';
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
+
+const LEGACY_PRICING_FIELDS = [
+  'ModelPrice',
+  'ModelRatio',
+  'CompletionRatio',
+  'CacheRatio',
+  'CreateCacheRatio',
+  'ImageRatio',
+  'AudioRatio',
+  'AudioCompletionRatio',
+];
+
+const hasTaskUsageSchema = (model) =>
+  Boolean(
+    model?.taskPricing && Object.keys(model.usageSchema ?? {}).length > 0,
+  );
+
+const modelDraftSignature = (model) =>
+  JSON.stringify({
+    billingMode: model.billingMode,
+    fixedPrice: model.fixedPrice,
+    inputPrice: model.inputPrice,
+    completionPrice: model.completionPrice,
+    cachePrice: model.cachePrice,
+    createCachePrice: model.createCachePrice,
+    imagePrice: model.imagePrice,
+    audioInputPrice: model.audioInputPrice,
+    audioOutputPrice: model.audioOutputPrice,
+    billingExpr: model.billingExpr,
+    requestRuleExpr: model.requestRuleExpr,
+    pluginAddonExpressions: model.pluginAddonExpressions,
+    rawRatios: model.rawRatios,
+  });
 
 const EMPTY_MODEL = {
   name: '',
@@ -42,6 +80,8 @@ const EMPTY_MODEL = {
   audioOutputPrice: '',
   billingExpr: '',
   requestRuleExpr: '',
+  pluginAddons: [],
+  pluginAddonExpressions: {},
   rawRatios: {
     modelRatio: '',
     completionRatio: '',
@@ -121,7 +161,54 @@ const normalizeCompletionRatioMeta = (rawMeta) => {
   };
 };
 
-const buildModelState = (name, sourceMaps) => {
+const normalizePluginAddonExpressions = (pricingEntry) => {
+  const configured =
+    pricingEntry?.configured?.['billing_setting.plugin_billing_addon_expr'];
+  if (
+    !configured ||
+    typeof configured !== 'object' ||
+    Array.isArray(configured)
+  ) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(configured).filter(
+      ([pluginKey, expression]) =>
+        Boolean(pluginKey) && typeof expression === 'string',
+    ),
+  );
+};
+
+const buildModelState = (name, sourceMaps, pricingEntry = null) => {
+  const usageSchema = pricingEntry?.usage_schema ?? null;
+  const taskPricing = Boolean(Object.keys(usageSchema ?? {}).length);
+  const shared = {
+    pricingEntry,
+    taskPricing,
+    usageSchema,
+    usageExamples: pricingEntry?.usage_examples ?? [],
+    pluginAddons: pricingEntry?.plugin_addons ?? [],
+    pluginAddonExpressions: normalizePluginAddonExpressions(pricingEntry),
+  };
+
+  if (taskPricing) {
+    const fullBillingExpr =
+      pricingEntry?.configured?.['billing_setting.billing_expr'] ||
+      pricingEntry?.effective?.['billing_setting.billing_expr'] ||
+      '';
+    const { billingExpr, requestRuleExpr } =
+      splitBillingExprAndRequestRules(fullBillingExpr);
+    return {
+      ...EMPTY_MODEL,
+      ...shared,
+      name,
+      billingMode: 'tiered_expr',
+      billingExpr,
+      requestRuleExpr,
+      rawRatios: { ...EMPTY_MODEL.rawRatios },
+    };
+  }
+
   const billingMode = sourceMaps.ModelBillingMode?.[name];
   if (billingMode === 'tiered_expr') {
     const fullBillingExpr = sourceMaps.ModelBillingExpr?.[name] || '';
@@ -129,6 +216,7 @@ const buildModelState = (name, sourceMaps) => {
       splitBillingExprAndRequestRules(fullBillingExpr);
     return {
       ...EMPTY_MODEL,
+      ...shared,
       name,
       billingMode: 'tiered_expr',
       billingExpr,
@@ -160,6 +248,7 @@ const buildModelState = (name, sourceMaps) => {
 
   return {
     ...EMPTY_MODEL,
+    ...shared,
     name,
     billingMode: hasValue(fixedPrice) ? 'per-request' : 'per-token',
     fixedPrice,
@@ -224,8 +313,11 @@ const buildModelState = (name, sourceMaps) => {
 };
 
 export const isBasePricingUnset = (model) =>
-  model.billingMode !== 'tiered_expr' &&
-  !hasValue(model.fixedPrice) && !hasValue(model.inputPrice);
+  hasTaskUsageSchema(model)
+    ? !hasValue(model.billingExpr)
+    : model.billingMode !== 'tiered_expr' &&
+      !hasValue(model.fixedPrice) &&
+      !hasValue(model.inputPrice);
 
 export const getModelWarnings = (model, t) => {
   if (!model) {
@@ -289,10 +381,17 @@ export const getModelWarnings = (model, t) => {
 };
 
 export const buildSummaryText = (model, t) => {
+  if (hasTaskUsageSchema(model)) {
+    if (!model.billingExpr) return t('任务规格计费未配置');
+    const tierCount = (model.billingExpr.match(/tier\(/g) || []).length;
+    return tierCount > 0
+      ? t('任务规格计费（{{count}} 档）', { count: tierCount })
+      : t('任务表达式计费');
+  }
   const requestRuleSuffix =
     model.billingMode === 'tiered_expr' && model.requestRuleExpr
-    ? `，${t('请求规则')}`
-    : '';
+      ? `，${t('请求规则')}`
+      : '';
   if (model.billingMode === 'tiered_expr') {
     const expr = model.billingExpr;
     if (!expr) return `${t('表达式计费')}${requestRuleSuffix}`;
@@ -634,42 +733,85 @@ export function useModelPricingEditorState({
   const [loading, setLoading] = useState(false);
   const [conflictOnly, setConflictOnly] = useState(false);
   const [optionalFieldToggles, setOptionalFieldToggles] = useState({});
+  const [pricingSnapshot, setPricingSnapshot] = useState(null);
+  const [baselineSignatures, setBaselineSignatures] = useState({});
+  const [deletedEntries, setDeletedEntries] = useState({});
+
+  const loadPricingSnapshot = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [baseSnapshot, taskPluginModels] = await Promise.all([
+        getModelPricing(),
+        getTaskPluginModelNames(),
+      ]);
+      const candidateNames = Array.from(
+        new Set([
+          ...(Array.isArray(candidateModelNames) ? candidateModelNames : []),
+          ...taskPluginModels,
+        ]),
+      ).filter(Boolean);
+      const taskSnapshot = candidateNames.length
+        ? await getModelPricing(candidateNames)
+        : null;
+      const entriesByName = new Map(
+        (baseSnapshot.entries ?? []).map((entry) => [entry.model_name, entry]),
+      );
+      for (const entry of taskSnapshot?.entries ?? []) {
+        entriesByName.set(entry.model_name, entry);
+      }
+      setPricingSnapshot({
+        ...baseSnapshot,
+        entries: Array.from(entriesByName.values()).sort((left, right) =>
+          left.model_name.localeCompare(right.model_name),
+        ),
+      });
+    } catch (error) {
+      console.error('加载模型定价快照失败:', error);
+      showError(error.message || t('加载模型定价失败'));
+      setPricingSnapshot(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [candidateModelNames, t]);
 
   useEffect(() => {
+    void loadPricingSnapshot();
+  }, [loadPricingSnapshot]);
+
+  useEffect(() => {
+    if (!pricingSnapshot) return;
+    const snapshotOptions = pricingSnapshot.options ?? {};
     const sourceMaps = {
-      ModelPrice: parseOptionJSON(options.ModelPrice),
-      ModelRatio: parseOptionJSON(options.ModelRatio),
-      CompletionRatio: parseOptionJSON(options.CompletionRatio),
-      CompletionRatioMeta: parseOptionJSON(options.CompletionRatioMeta),
-      CacheRatio: parseOptionJSON(options.CacheRatio),
-      CreateCacheRatio: parseOptionJSON(options.CreateCacheRatio),
-      ImageRatio: parseOptionJSON(options.ImageRatio),
-      AudioRatio: parseOptionJSON(options.AudioRatio),
-      AudioCompletionRatio: parseOptionJSON(options.AudioCompletionRatio),
-      ModelBillingMode: parseOptionJSON(options['billing_setting.billing_mode']),
-      ModelBillingExpr: parseOptionJSON(options['billing_setting.billing_expr']),
+      ModelPrice: parseOptionJSON(snapshotOptions.ModelPrice),
+      ModelRatio: parseOptionJSON(snapshotOptions.ModelRatio),
+      CompletionRatio: parseOptionJSON(snapshotOptions.CompletionRatio),
+      CompletionRatioMeta: parseOptionJSON(options?.CompletionRatioMeta),
+      CacheRatio: parseOptionJSON(snapshotOptions.CacheRatio),
+      CreateCacheRatio: parseOptionJSON(snapshotOptions.CreateCacheRatio),
+      ImageRatio: parseOptionJSON(snapshotOptions.ImageRatio),
+      AudioRatio: parseOptionJSON(snapshotOptions.AudioRatio),
+      AudioCompletionRatio: parseOptionJSON(
+        snapshotOptions.AudioCompletionRatio,
+      ),
+      ModelBillingMode: parseOptionJSON(
+        snapshotOptions['billing_setting.billing_mode'],
+      ),
+      ModelBillingExpr: parseOptionJSON(
+        snapshotOptions['billing_setting.billing_expr'],
+      ),
     };
 
-    const names = new Set([
-      ...candidateModelNames,
-      ...Object.keys(sourceMaps.ModelPrice),
-      ...Object.keys(sourceMaps.ModelRatio),
-      ...Object.keys(sourceMaps.CompletionRatio),
-      ...Object.keys(sourceMaps.CompletionRatioMeta),
-      ...Object.keys(sourceMaps.CacheRatio),
-      ...Object.keys(sourceMaps.CreateCacheRatio),
-      ...Object.keys(sourceMaps.ImageRatio),
-      ...Object.keys(sourceMaps.AudioRatio),
-      ...Object.keys(sourceMaps.AudioCompletionRatio),
-      ...Object.keys(sourceMaps.ModelBillingMode),
-      ...Object.keys(sourceMaps.ModelBillingExpr),
-    ]);
-
-    const nextModels = Array.from(names)
-      .map((name) => buildModelState(name, sourceMaps))
+    const nextModels = (pricingSnapshot.entries ?? [])
+      .map((entry) => buildModelState(entry.model_name, sourceMaps, entry))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     setModels(nextModels);
+    setBaselineSignatures(
+      Object.fromEntries(
+        nextModels.map((model) => [model.name, modelDraftSignature(model)]),
+      ),
+    );
+    setDeletedEntries({});
     setInitialVisibleModelNames(
       filterMode === 'unset'
         ? nextModels
@@ -693,7 +835,7 @@ export function useModelPricingEditorState({
           : nextModels;
       return nextVisibleModels[0]?.name || '';
     });
-  }, [candidateModelNames, filterMode, options]);
+  }, [filterMode, options?.CompletionRatioMeta, pricingSnapshot]);
 
   const visibleModels = useMemo(() => {
     return filterMode === 'unset'
@@ -873,7 +1015,7 @@ export function useModelPricingEditorState({
   };
 
   const handleBillingModeChange = (value) => {
-    if (!selectedModel) return;
+    if (!selectedModel || hasTaskUsageSchema(selectedModel)) return;
     upsertModel(selectedModel.name, (model) => {
       const next = { ...model, billingMode: value };
       if (value === 'tiered_expr' && !model.billingExpr) {
@@ -899,6 +1041,17 @@ export function useModelPricingEditorState({
     }));
   };
 
+  const handlePluginAddonExprChange = (pluginKey, newExpr) => {
+    if (!selectedModel || !pluginKey) return;
+    upsertModel(selectedModel.name, (model) => ({
+      ...model,
+      pluginAddonExpressions: {
+        ...(model.pluginAddonExpressions ?? {}),
+        [pluginKey]: newExpr,
+      },
+    }));
+  };
+
   const addModel = (modelName) => {
     const trimmedName = modelName.trim();
     if (!trimmedName) {
@@ -914,9 +1067,20 @@ export function useModelPricingEditorState({
       ...EMPTY_MODEL,
       name: trimmedName,
       rawRatios: { ...EMPTY_MODEL.rawRatios },
+      pricingEntry: null,
+      taskPricing: false,
+      usageSchema: null,
+      usageExamples: [],
+      pluginAddons: [],
+      pluginAddonExpressions: {},
     };
 
     setModels((previous) => [nextModel, ...previous]);
+    setDeletedEntries((previous) => {
+      const next = { ...previous };
+      delete next[trimmedName];
+      return next;
+    });
     setOptionalFieldToggles((prev) => ({
       ...prev,
       [trimmedName]: buildOptionalFieldToggles(nextModel),
@@ -927,6 +1091,16 @@ export function useModelPricingEditorState({
   };
 
   const deleteModel = (name) => {
+    const deleted = models.find((model) => model.name === name);
+    if (
+      deleted?.pricingEntry &&
+      Object.keys(deleted.pricingEntry.configured ?? {}).length
+    ) {
+      setDeletedEntries((previous) => ({
+        ...previous,
+        [name]: deleted.pricingEntry,
+      }));
+    }
     const nextModels = models.filter((model) => model.name !== name);
     setModels(nextModels);
     setOptionalFieldToggles((prev) => {
@@ -1021,78 +1195,99 @@ export function useModelPricingEditorState({
   };
 
   const handleSubmit = async () => {
+    if (!pricingSnapshot) {
+      showError(t('模型定价快照尚未加载完成'));
+      return;
+    }
+
+    const buildPricingDraft = (model) => {
+      const pricing = { ...(model.pricingEntry?.configured ?? {}) };
+      const finalBillingExpr = combineBillingExpr(
+        model.billingExpr,
+        model.requestRuleExpr,
+      );
+      const pluginAddonExpressions = Object.fromEntries(
+        Object.entries(model.pluginAddonExpressions ?? {}).filter(
+          ([pluginKey, expression]) =>
+            Boolean(pluginKey) &&
+            typeof expression === 'string' &&
+            expression.trim() !== '',
+        ),
+      );
+      if (Object.keys(pluginAddonExpressions).length > 0) {
+        pricing['billing_setting.plugin_billing_addon_expr'] =
+          pluginAddonExpressions;
+      } else {
+        delete pricing['billing_setting.plugin_billing_addon_expr'];
+      }
+
+      if (hasTaskUsageSchema(model) || model.billingMode === 'tiered_expr') {
+        if (finalBillingExpr) {
+          pricing['billing_setting.billing_mode'] = 'tiered_expr';
+          pricing['billing_setting.billing_expr'] = finalBillingExpr;
+        } else {
+          delete pricing['billing_setting.billing_mode'];
+          delete pricing['billing_setting.billing_expr'];
+        }
+        return pricing;
+      }
+
+      const serialized = serializeModel(model, t);
+      for (const key of LEGACY_PRICING_FIELDS) {
+        delete pricing[key];
+        if (serialized[key] !== null) {
+          pricing[key] = serialized[key];
+        }
+      }
+      delete pricing['billing_setting.billing_mode'];
+      delete pricing['billing_setting.billing_expr'];
+      return pricing;
+    };
+
     setLoading(true);
     try {
-      const output = {
-        ModelPrice: {},
-        ModelRatio: {},
-        CompletionRatio: {},
-        CacheRatio: {},
-        CreateCacheRatio: {},
-        ImageRatio: {},
-        AudioRatio: {},
-        AudioCompletionRatio: {},
-      };
-
-      const tieredOutput = {
-        'billing_setting.billing_mode': {},
-        'billing_setting.billing_expr': {},
-      };
-
+      const changes = [];
       for (const model of models) {
-        if (model.billingMode === 'tiered_expr') {
-          const finalBillingExpr = combineBillingExpr(
-            model.billingExpr,
-            model.requestRuleExpr,
-          );
-          if (finalBillingExpr) {
-            tieredOutput['billing_setting.billing_mode'][model.name] = 'tiered_expr';
-            tieredOutput['billing_setting.billing_expr'][model.name] = finalBillingExpr;
-          }
+        const baseline = baselineSignatures[model.name];
+        if (baseline === modelDraftSignature(model)) continue;
+        const pricing = buildPricingDraft(model);
+        if (!baseline && Object.keys(pricing).length === 0) continue;
+        changes.push({
+          model_name: model.name,
+          expected_version:
+            model.pricingEntry?.version ?? pricingSnapshot.empty_version,
+          pricing,
+        });
+      }
+      for (const entry of Object.values(deletedEntries)) {
+        if (!entry || models.some((model) => model.name === entry.model_name)) {
+          continue;
         }
-
-        // Always serialize ratio/price values for all models (including
-        // tiered_expr) so they serve as fallback during multi-instance sync
-        // delay.  ModelPriceHelper checks billing_mode first, so these values
-        // are only used when billing_setting hasn't propagated yet.
-        try {
-          const serialized = serializeModel(model, t);
-          Object.entries(serialized).forEach(([key, value]) => {
-            if (value !== null) {
-              output[key][model.name] = value;
-            }
-          });
-        } catch (e) {
-          if (model.billingMode !== 'tiered_expr') {
-            throw e;
-          }
-        }
+        changes.push({
+          model_name: entry.model_name,
+          expected_version: entry.version,
+          pricing: {},
+        });
+      }
+      if (!changes.length) {
+        showSuccess(t('没有需要保存的更改'));
+        return;
       }
 
-      const requestQueue = [
-        ...Object.entries(output).map(([key, value]) =>
-          API.put('/api/option/', {
-            key,
-            value: JSON.stringify(value, null, 2),
-          }),
-        ),
-        ...Object.entries(tieredOutput).map(([key, value]) =>
-          API.put('/api/option/', {
-            key,
-            value: JSON.stringify(value, null, 2),
-          }),
-        ),
-      ];
-
-      const results = await Promise.all(requestQueue);
-      for (const res of results) {
-        if (!res?.data?.success) {
-          throw new Error(res?.data?.message || t('保存失败，请重试'));
-        }
+      const result = await saveModelPricing(changes);
+      if (result.conflict) {
+        await loadPricingSnapshot();
+        showError(t('配置已被其他管理员更新，请重新加载'));
+        return;
       }
 
+      await loadPricingSnapshot();
+      try {
+        await refresh?.();
+      } catch (error) {
+        console.error('刷新通用设置失败:', error);
+      }
       showSuccess(t('保存成功'));
-      await refresh();
     } catch (error) {
       console.error('保存失败:', error);
       showError(error.message || t('保存失败，请重试'));
@@ -1125,6 +1320,7 @@ export function useModelPricingEditorState({
     handleBillingModeChange,
     handleBillingExprChange,
     handleRequestRuleExprChange,
+    handlePluginAddonExprChange,
     handleSubmit,
     addModel,
     deleteModel,

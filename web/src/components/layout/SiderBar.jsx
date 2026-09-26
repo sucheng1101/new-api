@@ -56,6 +56,7 @@ const routerMap = {
   monitorStatus: '/console/monitor-status',
   monitorGroups: '/console/monitor-groups',
   ops: '/console/ops',
+  taskPlugin: '/console/task-plugin',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -215,6 +216,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
+        text: t('任务插件'),
+        itemKey: 'taskPlugin',
+        to: '/task-plugin',
+        className: isRoot() ? '' : 'tableHiddle',
+      },
+      {
         text: t('系统设置'),
         itemKey: 'setting',
         to: '/setting',
@@ -222,11 +229,9 @@ const SiderBar = ({ onNavigate = () => {} }) => {
       },
     ];
 
-    // 根据配置过滤项目
-    const filteredItems = items.filter((item) => {
-      const configVisible = isModuleVisible('admin', item.itemKey);
-      return configVisible;
-    });
+    const filteredItems = items.filter((item) =>
+      isModuleVisible('admin', item.itemKey),
+    );
 
     return filteredItems;
   }, [isAdmin(), isRoot(), t, isModuleVisible]);

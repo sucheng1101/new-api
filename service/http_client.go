@@ -167,3 +167,31 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 		return nil, fmt.Errorf("unsupported proxy scheme: %s, must be http, https, socks5 or socks5h", parsedURL.Scheme)
 	}
 }
+
+// GetSSRFProtectedHTTPClient 返回启用 SSRF 保护的专用 HTTP 客户端
+// （任务产物代理等受控抓取路径使用）。（自官方 v1.0.0-rc.37 移植）
+func GetSSRFProtectedHTTPClient() *http.Client {
+	if fetchSetting := system_setting.GetFetchSetting(); fetchSetting != nil && !fetchSetting.EnableSSRFProtection {
+		return GetHttpClient()
+	}
+	return ssrfProtectedHTTPClient
+}
+
+// ssrfProtectedHTTPClient 受控抓取专用客户端：禁用代理与自动重定向，
+// 超时独立于通用文本转发客户端。
+var ssrfProtectedHTTPClient = &http.Client{
+	Timeout:       300 * time.Second,
+	Transport:     &http.Transport{Proxy: nil, DisableKeepAlives: false},
+	CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// ValidateSSRFProtectedFetchURL 校验受控抓取目标 URL 的 SSRF 安全性。（自官方 v1.0.0-rc.37 移植）
+func ValidateSSRFProtectedFetchURL(urlStr string) error {
+	return validateURLWithCurrentFetchSetting(urlStr, true)
+}
+
+// validateURLWithCurrentFetchSetting 用当前 fetch 设置校验 URL 的 SSRF 安全性。（官方 rc.37 等价实现）
+func validateURLWithCurrentFetchSetting(urlStr string, applyDomainIPFilter bool) error {
+	fetchSetting := system_setting.GetFetchSetting()
+	return common.ValidateURLWithFetchSetting(urlStr, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, applyDomainIPFilter && fetchSetting.ApplyIPFilterForDomain)
+}

@@ -25,6 +25,7 @@ import {
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
 import { getTaskLogsColumns } from './TaskLogsColumnDefs';
+import './TaskLogsTable.css';
 
 const TaskLogsTable = (taskLogsData) => {
   const {
@@ -39,7 +40,8 @@ const TaskLogsTable = (taskLogsData) => {
     handlePageSizeChange,
     copyText,
     openContentModal,
-    openVideoModal,
+    openTaskDetail,
+    openTaskArtifact,
     openAudioModal,
     showUserInfoFunc,
     isAdminUser,
@@ -54,12 +56,23 @@ const TaskLogsTable = (taskLogsData) => {
       COLUMN_KEYS,
       copyText,
       openContentModal,
-      openVideoModal,
+      openTaskDetail,
+      openTaskArtifact,
       openAudioModal,
       showUserInfoFunc,
       isAdminUser,
     });
-  }, [t, COLUMN_KEYS, copyText, openContentModal, openVideoModal, openAudioModal, showUserInfoFunc, isAdminUser]);
+  }, [
+    t,
+    COLUMN_KEYS,
+    copyText,
+    openContentModal,
+    openTaskDetail,
+    openTaskArtifact,
+    openAudioModal,
+    showUserInfoFunc,
+    isAdminUser,
+  ]);
 
   // Filter columns based on visibility settings
   const getVisibleColumns = () => {

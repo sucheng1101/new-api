@@ -25,6 +25,20 @@ import {
   normalizeSidebarCustomItems,
   createDefaultUserConfig,
 } from '../../helpers/externalMenu';
+import { DEFAULT_ADMIN_CONFIG, mergeAdminConfig } from './sidebarConfig';
+
+describe('administrator sidebar modules', () => {
+  test('adds task plugins to saved legacy configurations and honors an explicit disable', () => {
+    expect(DEFAULT_ADMIN_CONFIG.admin.taskPlugin).toBe(true);
+
+    expect(
+      mergeAdminConfig({ admin: { channel: false } }).admin.taskPlugin,
+    ).toBe(true);
+    expect(
+      mergeAdminConfig({ admin: { taskPlugin: false } }).admin.taskPlugin,
+    ).toBe(false);
+  });
+});
 
 describe('custom external menu placement', () => {
   test('renders only enabled safe links at their configured placement', () => {

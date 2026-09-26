@@ -553,3 +553,17 @@ func TestRecordChannelUsageStandardScope(t *testing.T) {
 	channel61 := getChannelQuotaState(t, 61)
 	assert.EqualValues(t, 300, channel61.QuotaLimitUsed)
 }
+
+// 自 Skye task_billing_test.go 迁移的助手（官方版测试文件替换后保留）
+func seedChannelWithQuotaLimit(t *testing.T, id int, quotaLimit int64) {
+	t.Helper()
+	ch := &model.Channel{
+		Id:             id,
+		Name:           "test_channel_limited",
+		Key:            "sk-test",
+		Status:         common.ChannelStatusEnabled,
+		QuotaLimitMode: model.ChannelQuotaLimitModeChannel,
+		QuotaLimit:     quotaLimit,
+	}
+	require.NoError(t, model.DB.Create(ch).Error)
+}

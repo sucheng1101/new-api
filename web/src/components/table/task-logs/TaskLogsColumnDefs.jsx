@@ -18,7 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Progress, Tag, Tooltip, Typography } from '@douyinfe/semi-ui';
+import {
+  Avatar,
+  Button,
+  Progress,
+  Space,
+  Tag,
+  Typography,
+} from '@douyinfe/semi-ui';
 import {
   Music,
   FileText,
@@ -30,8 +37,6 @@ import {
   XCircle,
   Loader,
   List,
-  Hash,
-  Video,
   Sparkles,
 } from 'lucide-react';
 import {
@@ -43,7 +48,7 @@ import {
 } from '../../../constants/common.constant';
 import { CHANNEL_OPTIONS } from '../../../constants/channel.constants';
 import { stringToColor } from '../../../helpers/render';
-import { Avatar, Space } from '@douyinfe/semi-ui';
+import { getTaskLogActions, getTaskTimings } from './taskLogDetails';
 
 const colors = [
   'amber',
@@ -63,6 +68,14 @@ const colors = [
   'yellow',
 ];
 
+const CANONICAL_VIDEO_ACTIONS = {
+  imageToVideo: 'image_to_video',
+  textToVideo: 'text_to_video',
+  firstTailToVideo: 'first_tail_to_video',
+  referenceToVideo: 'reference_to_video',
+  remix: 'remix',
+};
+
 // Render functions
 const renderTimestamp = (timestampInSeconds) => {
   const date = new Date(timestampInSeconds * 1000); // 从秒转换为毫秒
@@ -77,16 +90,29 @@ const renderTimestamp = (timestampInSeconds) => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`; // 格式化输出
 };
 
-function renderDuration(submit_time, finishTime) {
-  if (!submit_time || !finishTime) return 'N/A';
-  const durationSec = finishTime - submit_time;
-  const color = durationSec > 60 ? 'red' : 'green';
+function formatDurationValue(seconds) {
+  if (seconds === null || seconds === undefined) return '-';
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = (seconds % 60).toFixed(0).padStart(2, '0');
+  return `${minutes}m ${rest}s`;
+}
 
-  // 返回带有样式的颜色标签
+function renderDuration(record, t) {
+  const timings = getTaskTimings(record);
+  if (timings.totalSeconds === null) return '-';
+  const totalLabel = timings.isFinished ? t('总耗时') : t('已等待');
+  const color = timings.totalSeconds > 60 ? 'red' : 'green';
   return (
-    <Tag color={color} shape='circle'>
-      {durationSec} s
-    </Tag>
+    <div className='task-log-duration'>
+      <Tag color={color} shape='circle'>
+        {formatDurationValue(timings.totalSeconds)}
+      </Tag>
+      <Typography.Text type='tertiary' size='small'>
+        {totalLabel} · {t('排队')} {formatDurationValue(timings.queueSeconds)} ·{' '}
+        {t('执行')} {formatDurationValue(timings.executionSeconds)}
+      </Typography.Text>
+    </div>
   );
 }
 
@@ -105,30 +131,35 @@ const renderType = (type, t) => {
         </Tag>
       );
     case TASK_ACTION_GENERATE:
+    case CANONICAL_VIDEO_ACTIONS.imageToVideo:
       return (
         <Tag color='blue' shape='circle' prefixIcon={<Sparkles size={14} />}>
           {t('图生视频')}
         </Tag>
       );
     case TASK_ACTION_TEXT_GENERATE:
+    case CANONICAL_VIDEO_ACTIONS.textToVideo:
       return (
         <Tag color='blue' shape='circle' prefixIcon={<Sparkles size={14} />}>
           {t('文生视频')}
         </Tag>
       );
     case TASK_ACTION_FIRST_TAIL_GENERATE:
+    case CANONICAL_VIDEO_ACTIONS.firstTailToVideo:
       return (
         <Tag color='blue' shape='circle' prefixIcon={<Sparkles size={14} />}>
           {t('首尾生视频')}
         </Tag>
       );
     case TASK_ACTION_REFERENCE_GENERATE:
+    case CANONICAL_VIDEO_ACTIONS.referenceToVideo:
       return (
         <Tag color='blue' shape='circle' prefixIcon={<Sparkles size={14} />}>
           {t('参照生视频')}
         </Tag>
       );
     case TASK_ACTION_REMIX_GENERATE:
+    case CANONICAL_VIDEO_ACTIONS.remix:
       return (
         <Tag color='blue' shape='circle' prefixIcon={<Sparkles size={14} />}>
           {t('视频Remix')}
@@ -239,8 +270,9 @@ export const getTaskLogsColumns = ({
   copyText,
   openContentModal,
   isAdminUser,
-  openVideoModal,
-  openAudioModal,
+  openTaskDetail = () => {},
+  openTaskArtifact = () => {},
+  openAudioModal = () => {},
 }) => {
   return [
     {
@@ -261,10 +293,10 @@ export const getTaskLogsColumns = ({
     },
     {
       key: COLUMN_KEYS.DURATION,
-      title: t('花费时间'),
+      title: t('耗时'),
       dataIndex: 'finish_time',
       render: (finish, record) => {
-        return <>{finish ? renderDuration(record.submit_time, finish) : '-'}</>;
+        return renderDuration(record, t);
       },
     },
     {
@@ -301,15 +333,10 @@ export const getTaskLogsColumns = ({
         const displayText = String(record.username || userId || '?');
         return (
           <Space>
-            <Avatar
-              size='extra-small'
-              color={stringToColor(displayText)}
-            >
+            <Avatar size='extra-small' color={stringToColor(displayText)}>
               {displayText.slice(0, 1)}
             </Avatar>
-            <Typography.Text>
-              {displayText}
-            </Typography.Text>
+            <Typography.Text>{displayText}</Typography.Text>
           </Space>
         );
       },
@@ -382,68 +409,66 @@ export const getTaskLogsColumns = ({
       },
     },
     {
-      key: COLUMN_KEYS.FAIL_REASON,
+      key: COLUMN_KEYS.DETAILS,
       title: t('详情'),
-      dataIndex: 'fail_reason',
+      dataIndex: 'task_id',
       fixed: 'right',
-      render: (text, record, index) => {
-        // Suno audio preview
-        const isSunoSuccess =
-          record.platform === 'suno' &&
-          record.status === 'SUCCESS' &&
-          Array.isArray(record.data) &&
-          record.data.some((c) => c.audio_url);
-        if (isSunoSuccess) {
-          return (
-            <a
-              href='#'
-              onClick={(e) => {
-                e.preventDefault();
-                openAudioModal(record.data);
-              }}
-            >
-              {t('点击预览音乐')}
-            </a>
-          );
+      width: 84,
+      render: (_text, record) => (
+        <Button
+          theme='borderless'
+          type='primary'
+          size='small'
+          onClick={() => openTaskDetail(record)}
+        >
+          {t('详情')}
+        </Button>
+      ),
+    },
+    {
+      key: COLUMN_KEYS.ARTIFACTS,
+      title: t('制品'),
+      dataIndex: 'artifact_available',
+      fixed: 'right',
+      width: 98,
+      render: (_text, record) => {
+        switch (getTaskLogActions(record).artifact) {
+          case 'plugin':
+            return (
+              <Button
+                theme='borderless'
+                type='primary'
+                size='small'
+                onClick={() => openTaskArtifact(record)}
+              >
+                {t('查看制品')}
+              </Button>
+            );
+          case 'legacy-video':
+            return (
+              <Button
+                theme='borderless'
+                type='primary'
+                size='small'
+                onClick={() => openTaskArtifact(record)}
+              >
+                {t('查看视频')}
+              </Button>
+            );
+          case 'legacy-audio':
+            return (
+              <Button
+                theme='borderless'
+                type='primary'
+                size='small'
+                onClick={() => openAudioModal(record.data)}
+              >
+                {t('查看音频')}
+              </Button>
+            );
+          default:
+            return '-';
         }
-
-        // 视频预览：优先使用 result_url，兼容旧数据 fail_reason 中的 URL
-        const isVideoTask =
-          record.action === TASK_ACTION_GENERATE ||
-          record.action === TASK_ACTION_TEXT_GENERATE ||
-          record.action === TASK_ACTION_FIRST_TAIL_GENERATE ||
-          record.action === TASK_ACTION_REFERENCE_GENERATE ||
-          record.action === TASK_ACTION_REMIX_GENERATE;
-        const isSuccess = record.status === 'SUCCESS';
-        const resultUrl = record.result_url;
-        const hasResultUrl = typeof resultUrl === 'string' && /^https?:\/\//.test(resultUrl);
-        if (isSuccess && isVideoTask && hasResultUrl) {
-          return (
-            <a
-              href='#'
-              onClick={(e) => {
-                e.preventDefault();
-                openVideoModal(resultUrl);
-              }}
-            >
-              {t('点击预览视频')}
-            </a>
-          );
-        }
-        if (!text) {
-          return t('无');
-        }
-        return (
-          <Typography.Text
-            ellipsis={{ showTooltip: true }}
-            style={{ width: 100 }}
-            onClick={() => {
-              openContentModal(text);
-            }}
-          >
-            {text}
-          </Typography.Text>
-        );
       },
     },
   ];
