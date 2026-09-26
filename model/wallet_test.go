@@ -18,6 +18,7 @@ func setupWalletTestDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&User{},
+		&AdminWalletOperation{},
 		&WalletOperation{},
 		&WalletTransaction{},
 		&WalletCashLot{},
