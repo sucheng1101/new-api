@@ -453,6 +453,13 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 }
 
 func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool) (err error) {
+	return postConsumeQuota(relayInfo, quota, preConsumedQuota, sendEmail, true)
+}
+
+// postConsumeQuota applies a direct billing delta. The lottery accumulator is
+// optional because SettleBilling's legacy path records the complete actual
+// charge after applying a pre-consumed amount.
+func postConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int, sendEmail bool, recordLottery bool) (err error) {
 
 	// 1) Consume from wallet quota OR subscription item
 	if relayInfo != nil && relayInfo.BillingSource == BillingSourceSubscription {
@@ -488,6 +495,11 @@ func PostConsumeQuota(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQu
 		}
 		if err != nil {
 			return err
+		}
+		if recordLottery && quota > 0 {
+			if err := model.RecordLotteryConsumption(relayInfo.UserId, quota); err != nil {
+				common.SysLog("error recording lottery consumption: " + err.Error())
+			}
 		}
 	}
 

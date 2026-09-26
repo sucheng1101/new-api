@@ -275,10 +275,15 @@ func migrateDB() error {
 		&WalletTransaction{},
 		&WalletCashLot{},
 		&WalletConsumptionAllocation{},
+		&AdminWalletOperation{},
+		&WalletRefund{},
 		&PromotionReward{},
 		&PromotionRelationAudit{},
 		&PromotionConfigAudit{},
 		&PromotionRiskEvent{},
+		&LotteryPrize{},
+		&LotteryDaily{},
+		&LotteryDraw{},
 		&QuotaData{},
 		&Task{},
 		&PerfMetric{},
@@ -363,10 +368,15 @@ func migrateDBFast() error {
 		{&WalletTransaction{}, "WalletTransaction"},
 		{&WalletCashLot{}, "WalletCashLot"},
 		{&WalletConsumptionAllocation{}, "WalletConsumptionAllocation"},
+		{&AdminWalletOperation{}, "AdminWalletOperation"},
+		{&WalletRefund{}, "WalletRefund"},
 		{&PromotionReward{}, "PromotionReward"},
 		{&PromotionRelationAudit{}, "PromotionRelationAudit"},
 		{&PromotionConfigAudit{}, "PromotionConfigAudit"},
 		{&PromotionRiskEvent{}, "PromotionRiskEvent"},
+		{&LotteryPrize{}, "LotteryPrize"},
+		{&LotteryDaily{}, "LotteryDaily"},
+		{&LotteryDraw{}, "LotteryDraw"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&PerfMetric{}, "PerfMetric"},
@@ -423,6 +433,9 @@ func migrateDBFast() error {
 	}
 	backfillChannelSortOrder()
 	if err := migrateWalletBalances(); err != nil {
+		return err
+	}
+	if err := migrateUserSidebarPromotionModule(); err != nil {
 		return err
 	}
 	common.SysLog("database migrated")

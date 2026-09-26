@@ -75,6 +75,14 @@ func SettleTopUpSuccess(tradeNo, expectedProvider string, creditedQuota int, cal
 		if err := CreatePromotionRewardsWithRatesTx(tx, "topup", locked.Id, locked.TradeNo, locked.UserId, creditedQuota, level1, level2); err != nil {
 			return err
 		}
+		if LotteryInviteRechargeEnabled() {
+			var invited User
+			if err := tx.Select("inviter_id").First(&invited, locked.UserId).Error; err == nil && invited.InviterId > 0 {
+				if err := GrantLotteryAttemptTx(tx, invited.InviterId, 1); err != nil {
+					return err
+				}
+			}
+		}
 		if err := tx.Model(&PromotionReward{}).Where("source_type = ? AND source_id = ?", "topup", locked.Id).Select("COALESCE(SUM(reward_quota), 0)").Scan(&locked.PromotionRewardTotal).Error; err != nil {
 			return err
 		}

@@ -197,6 +197,11 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
 		return
 	}
+	if inviterId > 0 && model.LotteryInviteRegisterEnabled() {
+		if err := model.GrantLotteryAttempt(inviterId, 1); err != nil {
+			common.SysLog(fmt.Sprintf("grant lottery attempt after invite registration failed: %v", err))
+		}
+	}
 	// 生成默认令牌
 	if constant.GenerateDefaultToken {
 		key, err := common.GenerateKey()
@@ -408,6 +413,8 @@ func GetSelf(c *gin.Context) {
 		"telegram_id":       user.TelegramId,
 		"group":             user.Group,
 		"quota":             user.Quota,
+		"cash_quota":        user.CashQuota,
+		"gift_quota":        user.GiftQuota,
 		"used_quota":        user.UsedQuota,
 		"request_count":     user.RequestCount,
 		"aff_code":          user.AffCode,
@@ -876,16 +883,18 @@ func CreateUser(c *gin.Context) {
 }
 
 type ManageRequest struct {
-	Id     int    `json:"id"`
-	Action string `json:"action"`
-	Value  int    `json:"value"`
-	Mode   string `json:"mode"`
+	Id             int    `json:"id"`
+	Action         string `json:"action"`
+	Value          int    `json:"value"`
+	Mode           string `json:"mode"`
+	IdempotencyKey string `json:"idempotency_key"`
+	Reason         string `json:"reason"`
 }
 
 // ManageUser Only admin user can do this
 func ManageUser(c *gin.Context) {
 	var req ManageRequest
-	err := json.NewDecoder(c.Request.Body).Decode(&req)
+	err := common.DecodeJson(c.Request.Body, &req)
 
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
@@ -954,17 +963,20 @@ func ManageUser(c *gin.Context) {
 	case "add_quota":
 		adminName := c.GetString("username")
 		adminId := c.GetInt("id")
+		if req.IdempotencyKey == "" {
+			req.IdempotencyKey = common.GetUUID()
+		}
 		adminInfo := map[string]interface{}{
 			"admin_id":       adminId,
 			"admin_username": adminName,
 		}
 		switch req.Mode {
-		case "add":
+		case "add", "gift":
 			if req.Value <= 0 {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
+			if err := model.AdminCreditWallet(user.Id, req.Value, adminId, req.Mode == "gift", req.IdempotencyKey, req.Reason); err != nil {
 				common.ApiError(c, err)
 				return
 			}
@@ -975,20 +987,12 @@ func ManageUser(c *gin.Context) {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.DecreaseUserQuota(user.Id, req.Value, true); err != nil {
+			if err := model.AdminDebitWallet(user.Id, req.Value, adminId, req.IdempotencyKey, req.Reason); err != nil {
 				common.ApiError(c, err)
 				return
 			}
 			model.RecordLogWithAdminInfo(user.Id, model.LogTypeManage,
-				fmt.Sprintf("管理员减少用户额度 %s", logger.LogQuota(req.Value)), adminInfo)
-		case "override":
-			oldQuota := user.Quota
-			if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", req.Value).Error; err != nil {
-				common.ApiError(c, err)
-				return
-			}
-			model.RecordLogWithAdminInfo(user.Id, model.LogTypeManage,
-				fmt.Sprintf("管理员覆盖用户额度从 %s 为 %s", logger.LogQuota(oldQuota), logger.LogQuota(req.Value)), adminInfo)
+				fmt.Sprintf("管理员扣减用户额度 %s", logger.LogQuota(req.Value)), adminInfo)
 		default:
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 			return

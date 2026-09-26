@@ -4470,13 +4470,10 @@
     "每 3 秒自动刷新使用日志": "Tự động làm mới nhật ký sử dụng mỗi 3 giây",
     "统计按标准口径累计，不受分组倍率和用户侧优惠影响": "Thống kê được cộng dồn theo chuẩn, không bị ảnh hưởng bởi hệ số nhóm hoặc ưu đãi phía người dùng.",
     "{{price}}/1M Token": "{{price}}/1M Token",
-    "请求详情": "Chi tiết yêu cầu",
     "事件详情": "Chi tiết sự kiện",
     "事件 ID": "ID sự kiện",
     "错误分类": "Phân loại lỗi",
-    "错误信息": "Thông tin lỗi",
     "错误类型": "Loại lỗi",
-    "错误码": "Mã lỗi",
     "查看请求详情": "Xem chi tiết yêu cầu",
     "额外信息": "Thông tin bổ sung",
     "暂无详细信息": "Không có thông tin chi tiết",
@@ -4519,6 +4516,8 @@
     "退款信息": "Thông tin hoàn tiền",
     "退款详情": "Chi tiết hoàn tiền",
     "链路阶段": "Giai đoạn yêu cầu",
-    "额度变化": "Thay đổi hạn mức"
+    "额度变化": "Thay đổi hạn mức",
+    "推广中心": "Trung tâm khuyến mãi",
+    "邀请奖励与推广余额": "Thưởng mời và số dư khuyến mãi"
   }
 }

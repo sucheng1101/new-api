@@ -162,6 +162,7 @@ const PaymentSetting = () => {
             type='card'
             defaultActiveKey='general'
             contentStyle={{ paddingTop: 24 }}
+            lazyRender
           >
             <Tabs.TabPane tab={t('通用设置')} itemKey='general'>
               <SettingsGeneralPayment

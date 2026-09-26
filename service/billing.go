@@ -3,7 +3,9 @@ package service
 import (
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -57,6 +59,11 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 		if err := relayInfo.Billing.Settle(actualQuota); err != nil {
 			return err
 		}
+		if actualQuota > 0 {
+			if err := model.RecordLotteryConsumption(relayInfo.UserId, actualQuota); err != nil {
+				logger.LogError(ctx, "error recording lottery consumption: "+err.Error())
+			}
+		}
 
 		// 发送额度通知（订阅计费使用订阅剩余额度）
 		if actualQuota != 0 {
@@ -72,7 +79,14 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 	// 回退：无 BillingSession 时使用旧路径
 	quotaDelta := actualQuota - relayInfo.FinalPreConsumedQuota
 	if quotaDelta != 0 {
-		return PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
+		if err := postConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true, false); err != nil {
+			return err
+		}
+	}
+	if actualQuota > 0 {
+		if err := model.RecordLotteryConsumption(relayInfo.UserId, actualQuota); err != nil {
+			common.SysLog("error recording lottery consumption: " + err.Error())
+		}
 	}
 	return nil
 }

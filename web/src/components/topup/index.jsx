@@ -29,13 +29,14 @@ import {
   copy,
   getQuotaPerUnit,
 } from '../../helpers';
-import { Modal, Toast } from '@douyinfe/semi-ui';
+import { Modal, Toast, Card, Button } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
 
 import RechargeCard from './RechargeCard';
-import InvitationCard from './InvitationCard';
+import WalletOverview from './WalletOverview';
+import LotteryWheel from './LotteryWheel';
 import TransferModal from './modals/TransferModal';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
@@ -95,6 +96,11 @@ const TopUp = () => {
 
   // 账单Modal状态
   const [openHistory, setOpenHistory] = useState(false);
+
+  const [lotteryState, setLotteryState] = useState(null);
+  const [lotteryDraws, setLotteryDraws] = useState([]);
+  const [lotteryLoading, setLotteryLoading] = useState(false);
+  const [wheelTarget, setWheelTarget] = useState(null);
 
   // 订阅相关
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
@@ -516,6 +522,61 @@ const TopUp = () => {
     }
   };
 
+  const getLotteryState = async () => {
+    try {
+      const [statusRes, drawsRes] = await Promise.all([
+        API.get('/api/user/lottery/status'),
+        API.get('/api/user/lottery/draws?limit=5'),
+      ]);
+      if (statusRes.data?.success) {
+        setLotteryState({
+          ...statusRes.data.data.status,
+          threshold: statusRes.data.data.threshold,
+          dailyAttempts: statusRes.data.data.daily_attempts,
+          inviteRegisterEnabled: statusRes.data.data.invite_register_enabled,
+          inviteRechargeEnabled: statusRes.data.data.invite_recharge_enabled,
+          prizes: statusRes.data.data.prizes || [],
+        });
+      }
+      if (drawsRes.data?.success)
+        setLotteryDraws(drawsRes.data.data?.items || []);
+    } catch (e) {
+      // lottery is optional and should not block wallet management
+    }
+  };
+
+  const drawLottery = async () => {
+    if (lotteryLoading) return;
+    setLotteryLoading(true);
+    try {
+      const res = await API.post('/api/user/lottery/draw', {
+        idempotency_key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      });
+      if (res.data?.success) {
+        const draw = res.data.data;
+        const prizes = lotteryState?.prizes || [];
+        // 找到中奖奖品在转盘上的扇区；找不到时随机落点兜底
+        let idx = prizes.findIndex((p) => p.id === draw?.prize_id);
+        if (idx < 0 && prizes.length) {
+          idx = Math.floor(Math.random() * prizes.length);
+        }
+        setWheelTarget(idx >= 0 ? idx : 0);
+        // 转盘动画结束后再结算提示与刷新
+        setTimeout(async () => {
+          setLotteryLoading(false);
+          showSuccess(draw?.prize_name || t('抽奖完成'));
+          await Promise.all([getLotteryState(), getUserQuota()]);
+        }, 4400);
+      } else {
+        showError(res.data?.message || t('暂时没有可用抽奖次数'));
+        setLotteryLoading(false);
+      }
+    } catch (e) {
+      showError(t('抽奖请求失败'));
+      setLotteryLoading(false);
+    }
+  };
+
   const getSubscriptionPlans = async () => {
     setSubscriptionLoading(true);
     try {
@@ -647,7 +708,7 @@ const TopUp = () => {
                 ? data.waffo_min_topup
                 : enableWaffoPancakeTopUp
                   ? data.waffo_pancake_min_topup
-                : 1;
+                  : 1;
           setEnableOnlineTopUp(enableOnlineTopUp);
           setEnableStripeTopUp(enableStripeTopUp);
           setEnableCreemTopUp(enableCreemTopUp);
@@ -743,6 +804,7 @@ const TopUp = () => {
   useEffect(() => {
     // 始终获取最新用户数据，确保余额等统计信息准确
     getUserQuota().then();
+    getLotteryState().then();
     setTransferAmount(getQuotaPerUnit());
   }, []);
 
@@ -941,7 +1003,13 @@ const TopUp = () => {
       </Modal>
 
       {/* 主布局区域 */}
-      <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
+      <WalletOverview
+        t={t}
+        userState={userState}
+        renderQuota={renderQuota}
+        onOpenHistory={handleOpenHistory}
+      />
+      <div className='grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start'>
         <RechargeCard
           t={t}
           enableOnlineTopUp={enableOnlineTopUp}
@@ -987,14 +1055,56 @@ const TopUp = () => {
           allSubscriptions={allSubscriptions}
           reloadSubscriptionSelf={getSubscriptionSelf}
         />
-        <InvitationCard
-          t={t}
-          userState={userState}
-          renderQuota={renderQuota}
-          setOpenTransfer={setOpenTransfer}
-          affLink={affLink}
-          handleAffLinkClick={handleAffLinkClick}
-        />
+        <div className='space-y-4'>
+          <Card className='!rounded-xl' title={t('每日抽奖')}>
+            <div className='text-sm text-gray-500 mb-3'>
+              {t('消费')} {renderQuota(lotteryState?.consumed_quota || 0)} /{' '}
+              {renderQuota(lotteryState?.threshold || 0)} · {t('可用次数')}{' '}
+              {Math.max(
+                0,
+                (lotteryState?.granted_attempts || 0) -
+                  (lotteryState?.used_attempts || 0),
+              )}
+            </div>
+            <LotteryWheel
+              prizes={(lotteryState?.prizes || []).slice(0, 12)}
+              targetIndex={wheelTarget}
+              spinning={lotteryLoading}
+              disabled={
+                lotteryLoading ||
+                !lotteryState ||
+                lotteryState.used_attempts >= lotteryState.granted_attempts
+              }
+              onCenterClick={drawLottery}
+            />
+            <Button
+              block
+              type='primary'
+              loading={lotteryLoading}
+              disabled={
+                !lotteryState ||
+                lotteryState.used_attempts >= lotteryState.granted_attempts
+              }
+              onClick={drawLottery}
+            >
+              {t('立即抽奖')}
+            </Button>
+            {lotteryDraws.length > 0 && (
+              <div className='text-xs text-gray-500 mt-3 text-center'>
+                {t('最近中奖')}: {lotteryDraws[0].prize_name}
+              </div>
+            )}
+          </Card>
+          <Card className='!rounded-xl' title={t('邀请好友解锁抽奖')}>
+            <div className='text-xs text-gray-500 mb-2'>
+              {t('邀请好友注册或充值可按管理员配置解锁抽奖次数')}
+            </div>
+            <div className='flex gap-2'>
+              <input className='semi-input flex-1' value={affLink} readOnly />
+              <Button onClick={handleAffLinkClick}>{t('复制邀请链接')}</Button>
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   );

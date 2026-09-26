@@ -44,6 +44,7 @@ import {
   Avatar,
   Row,
   Col,
+  Input,
   InputNumber,
   RadioGroup,
   Radio,
@@ -68,6 +69,7 @@ const EditUserModal = (props) => {
   const [adjustQuotaLocal, setAdjustQuotaLocal] = useState('');
   const [adjustAmountLocal, setAdjustAmountLocal] = useState('');
   const [adjustMode, setAdjustMode] = useState('add');
+  const [adjustReasonLocal, setAdjustReasonLocal] = useState('');
   const [adjustLoading, setAdjustLoading] = useState(false);
   const isMobile = useIsMobile();
   const [groupOptions, setGroupOptions] = useState([]);
@@ -169,15 +171,20 @@ const EditUserModal = (props) => {
   /* --------------------- atomic quota adjust -------------------- */
   const adjustQuota = async () => {
     const quotaVal = parseInt(adjustQuotaLocal) || 0;
-    if (quotaVal <= 0 && adjustMode !== 'override') return;
-    if (adjustMode === 'override' && (adjustQuotaLocal === '' || adjustQuotaLocal == null)) return;
+    if (quotaVal <= 0) return;
     setAdjustLoading(true);
     try {
+      const idempotencyKey =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const res = await API.post('/api/user/manage', {
         id: parseInt(userId),
         action: 'add_quota',
         mode: adjustMode,
-        value: adjustMode === 'override' ? quotaVal : Math.abs(quotaVal),
+        value: Math.abs(quotaVal),
+        idempotency_key: idempotencyKey,
+        reason: adjustReasonLocal.trim(),
       });
       const { success, message } = res.data;
       if (success) {
@@ -185,6 +192,7 @@ const EditUserModal = (props) => {
         setAdjustModalOpen(false);
         setAdjustQuotaLocal('');
         setAdjustAmountLocal('');
+        setAdjustReasonLocal('');
         const userRes = await API.get(`/api/user/${userId}`);
         if (userRes.data.success) {
           const data = userRes.data.data;
@@ -215,8 +223,6 @@ const EditUserModal = (props) => {
       case 'subtract':
         result = current - Math.abs(val);
         return `${t('当前额度')}：${renderQuota(current)}，-${renderQuota(Math.abs(val))} = ${renderQuota(result)}`;
-      case 'override':
-        return `${t('当前额度')}：${renderQuota(current)} → ${renderQuota(val)}`;
       default:
         return '';
     }
@@ -469,6 +475,7 @@ const EditUserModal = (props) => {
           setAdjustModalOpen(false);
           setAdjustQuotaLocal('');
           setAdjustAmountLocal('');
+          setAdjustReasonLocal('');
           setAdjustMode('add');
         }}
         confirmLoading={adjustLoading}
@@ -500,8 +507,8 @@ const EditUserModal = (props) => {
             style={{ width: '100%' }}
           >
             <Radio value='add'>{t('添加')}</Radio>
+            <Radio value='gift'>{t('赠送')}</Radio>
             <Radio value='subtract'>{t('减少')}</Radio>
-            <Radio value='override'>{t('覆盖')}</Radio>
           </RadioGroup>
         </div>
         <div className='mb-3'>
@@ -513,7 +520,7 @@ const EditUserModal = (props) => {
             placeholder={t('输入金额')}
             value={adjustAmountLocal}
             precision={6}
-            min={adjustMode === 'override' ? undefined : 0}
+            min={0}
             step={0.000001}
             onChange={(val) => {
               const amount = val === '' || val == null ? '' : val;
@@ -521,9 +528,7 @@ const EditUserModal = (props) => {
               setAdjustQuotaLocal(
                 amount === ''
                   ? ''
-                  : adjustMode === 'override'
-                    ? displayAmountToQuota(amount)
-                    : displayAmountToQuota(Math.abs(amount)),
+                  : displayAmountToQuota(Math.abs(amount)),
               );
             }}
             style={{ width: '100%' }}
@@ -546,21 +551,32 @@ const EditUserModal = (props) => {
           <InputNumber
             placeholder={t('输入额度')}
             value={adjustQuotaLocal}
-            min={adjustMode === 'override' ? undefined : 0}
+            min={0}
             onChange={(val) => {
               const quota = val === '' || val == null ? '' : val;
               setAdjustQuotaLocal(quota);
               setAdjustAmountLocal(
                 quota === ''
                   ? ''
-                  : adjustMode === 'override'
-                    ? Number(quotaToDisplayAmount(quota).toFixed(6))
-                    : Number(quotaToDisplayAmount(Math.abs(quota)).toFixed(6)),
+                  : Number(quotaToDisplayAmount(Math.abs(quota)).toFixed(6)),
               );
             }}
             style={{ width: '100%' }}
             showClear
             step={500000}
+          />
+        </div>
+        <div className='mb-3'>
+          <div className='mb-1'>
+            <Text size='small'>{t('备注')}</Text>
+          </div>
+          <Input
+            mode='textarea'
+            value={adjustReasonLocal}
+            placeholder={t('请输入本次操作备注')}
+            onChange={setAdjustReasonLocal}
+            autosize={{ minRows: 2, maxRows: 4 }}
+            style={{ width: '100%' }}
           />
         </div>
       </Modal>

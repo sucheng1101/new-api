@@ -75,6 +75,109 @@ type PromotionRiskEvent struct {
 	CreatedAt     int64  `json:"created_at" gorm:"index"`
 }
 
+type PromotionSummary struct {
+	AffQuota        int `json:"aff_quota"`
+	AffHistoryQuota int `json:"aff_history_quota"`
+	InvitedCount    int `json:"invited_count"`
+	Level1Rate      int `json:"level1_rate_basis_points"`
+	Level2Rate      int `json:"level2_rate_basis_points"`
+}
+
+func GetPromotionSummary(userId int) (PromotionSummary, error) {
+	var user User
+	if err := DB.Select("aff_quota", "aff_history", "aff_count").First(&user, userId).Error; err != nil {
+		return PromotionSummary{}, err
+	}
+	level1, level2 := PromotionRates()
+	return PromotionSummary{AffQuota: user.AffQuota, AffHistoryQuota: user.AffHistoryQuota, InvitedCount: user.AffCount, Level1Rate: level1, Level2Rate: level2}, nil
+}
+
+type PromotionInvitee struct {
+	Id          int    `json:"id"`
+	Username    string `json:"username"`
+	CreatedAt   int64  `json:"created_at"`
+	Level       int    `json:"level"`
+	RewardQuota int    `json:"reward_quota"`
+}
+
+func ListPromotionInvitees(userId, limit, offset int) ([]PromotionInvitee, int64, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var direct []User
+	if err := DB.Select("id", "username", "created_at").Where("inviter_id = ?", userId).Order("id desc").Find(&direct).Error; err != nil {
+		return nil, 0, err
+	}
+	ids := make([]int, 0, len(direct))
+	for _, user := range direct {
+		ids = append(ids, user.Id)
+	}
+	var second []User
+	if len(ids) > 0 {
+		if err := DB.Select("id", "username", "created_at").Where("inviter_id IN ?", ids).Order("id desc").Find(&second).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+	items := make([]PromotionInvitee, 0, len(direct)+len(second))
+	appendInvitee := func(user User, level int) error {
+		var reward int
+		if err := DB.Model(&PromotionReward{}).Where("beneficiary_user_id = ? AND payer_user_id = ?", userId, user.Id).Select("COALESCE(SUM(reward_quota), 0)").Scan(&reward).Error; err != nil {
+			return err
+		}
+		items = append(items, PromotionInvitee{Id: user.Id, Username: maskPromotionUsername(user.Username), CreatedAt: user.CreatedAt, Level: level, RewardQuota: reward})
+		return nil
+	}
+	for _, user := range direct {
+		if err := appendInvitee(user, 1); err != nil {
+			return nil, 0, err
+		}
+	}
+	for _, user := range second {
+		if err := appendInvitee(user, 2); err != nil {
+			return nil, 0, err
+		}
+	}
+	total := int64(len(items))
+	if offset >= len(items) {
+		return []PromotionInvitee{}, total, nil
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end], total, nil
+}
+
+func maskPromotionUsername(username string) string {
+	runes := []rune(username)
+	if len(runes) <= 2 {
+		return string(runes[:1]) + "*"
+	}
+	return string(runes[:1]) + "***" + string(runes[len(runes)-1:])
+}
+
+func ListPromotionRewards(userId int, limit, offset int) ([]PromotionReward, int64, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := DB.Model(&PromotionReward{}).Where("beneficiary_user_id = ?", userId)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []PromotionReward
+	if err := query.Order("id desc").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
 func SetUserInviterWithAudit(userId, inviterId, operatorId int, reason string) error {
 	if reason == "" {
 		return errors.New("修改推广关系必须填写原因")
@@ -117,6 +220,37 @@ func SetUserInviterWithAudit(userId, inviterId, operatorId int, reason string) e
 	})
 	invalidateUserCache(userId)
 	return err
+}
+
+func ReleasePromotionReward(id, operatorId int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var reward PromotionReward
+		if err := tx.First(&reward, id).Error; err != nil {
+			return err
+		}
+		if reward.Status != PromotionRewardFrozen {
+			return errors.New("promotion reward is not frozen")
+		}
+		if reward.RewardQuota <= 0 {
+			return tx.Model(&reward).Updates(map[string]interface{}{"status": PromotionRewardCredited, "updated_at": common.GetTimestamp()}).Error
+		}
+		key := fmt.Sprintf("promotion:release:%d", reward.Id)
+		if err := CreditPromotionTx(tx, reward.BeneficiaryUserId, reward.RewardQuota, reward.Id, "promotion_release", reward.SourceRef, key, operatorId, "推广奖励释放"); err != nil {
+			return err
+		}
+		var op WalletOperation
+		if err := tx.Where("idempotency_key = ?", key).First(&op).Error; err != nil {
+			return err
+		}
+		return tx.Model(&reward).Updates(map[string]interface{}{"status": PromotionRewardCredited, "operation_id": op.Id, "updated_at": common.GetTimestamp()}).Error
+	})
+}
+
+func VoidPromotionReward(id, operatorId int, reason string) error {
+	if reason == "" {
+		return errors.New("作废原因不能为空")
+	}
+	return DB.Model(&PromotionReward{}).Where("id = ? AND status IN ?", id, []string{PromotionRewardFrozen, PromotionRewardCredited}).Updates(map[string]interface{}{"status": PromotionRewardVoided, "updated_at": common.GetTimestamp()}).Error
 }
 
 func PromotionRates() (int, int) {

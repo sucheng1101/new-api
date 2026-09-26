@@ -49,6 +49,7 @@ import DrawingSetting from '../../components/settings/DrawingSetting';
 import PaymentSetting from '../../components/settings/PaymentSetting';
 import ModelDeploymentSetting from '../../components/settings/ModelDeploymentSetting';
 import PerformanceSetting from '../../components/settings/PerformanceSetting';
+import PromotionLotterySetting from '../../components/settings/PromotionLotterySetting';
 
 const Setting = () => {
   const { t } = useTranslation();
@@ -157,6 +158,16 @@ const Setting = () => {
       ),
       content: <PerformanceSetting />,
       itemKey: 'performance',
+    });
+    panes.push({
+      tab: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <Activity size={18} />
+          {t('推广与抽奖')}
+        </span>
+      ),
+      content: <PromotionLotterySetting />,
+      itemKey: 'promotion-lottery',
     });
     panes.push({
       tab: (

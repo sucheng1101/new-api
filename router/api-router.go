@@ -98,6 +98,15 @@ func SetApiRouter(router *gin.Engine) {
 				//selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
 				//selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPancakePay)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
+				selfRoute.GET("/wallet", controller.GetUserWallet)
+				selfRoute.GET("/wallet/transactions", controller.GetUserWalletTransactions)
+				selfRoute.POST("/promotion/transfers", controller.TransferAffQuota)
+				selfRoute.GET("/promotion/summary", controller.GetPromotionSummary)
+				selfRoute.GET("/promotion/rewards", controller.GetPromotionRewards)
+				selfRoute.GET("/promotion/invitees", controller.GetPromotionInvitees)
+				selfRoute.GET("/lottery/status", controller.GetLotteryStatus)
+				selfRoute.POST("/lottery/draw", controller.DrawLottery)
+				selfRoute.GET("/lottery/draws", controller.GetLotteryDraws)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 
 				// 2FA routes
@@ -129,6 +138,19 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/:id", controller.GetUser)
 				adminRoute.POST("/", controller.CreateUser)
 				adminRoute.POST("/manage", controller.ManageUser)
+				adminRoute.POST("/refund", controller.AdminRefundWalletSource)
+				adminRoute.POST("/wallet/recharges", controller.AdminWalletRecharge)
+				adminRoute.POST("/wallet/gifts", controller.AdminWalletGift)
+				adminRoute.POST("/wallet/refunds/preview", controller.AdminPreviewWalletRefund)
+				adminRoute.POST("/wallet/refunds", controller.AdminRefundWalletSource)
+				adminRoute.POST("/wallet/corrections", controller.AdminWalletCorrection)
+				adminRoute.GET("/wallet/adjustments", controller.AdminWalletAdjustments)
+				adminRoute.GET("/promotions/relations", controller.AdminPromotionRelations)
+				adminRoute.PUT("/promotions/relations/:user_id", controller.AdminSetPromotionRelation)
+				adminRoute.GET("/promotions/rewards", controller.AdminPromotionRewards)
+				adminRoute.POST("/promotions/rewards/:id/release", controller.AdminReleasePromotionReward)
+				adminRoute.POST("/promotions/rewards/:id/void", controller.AdminVoidPromotionReward)
+				adminRoute.GET("/promotions/risk-events", controller.AdminPromotionRiskEvents)
 				adminRoute.PUT("/", controller.UpdateUser)
 				adminRoute.DELETE("/:id", controller.DeleteUser)
 				adminRoute.DELETE("/:id/reset_passkey", controller.AdminResetPasskey)
@@ -137,6 +159,19 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+		}
+
+		adminLotteryRoute := apiRouter.Group("/admin/lottery")
+		adminLotteryRoute.Use(middleware.AdminAuth())
+		{
+			adminLotteryRoute.GET("/settings", controller.AdminLotterySettings)
+			adminLotteryRoute.PUT("/settings", controller.UpdateAdminLotterySettings)
+			adminLotteryRoute.GET("/draws", controller.AdminLotteryDraws)
+			adminLotteryRoute.POST("/grants", controller.AdminLotteryGrants)
+			adminLotteryRoute.GET("/prizes", controller.ListAdminLotteryPrizes)
+			adminLotteryRoute.POST("/prizes", controller.UpsertAdminLotteryPrize)
+			adminLotteryRoute.PUT("/prizes", controller.UpsertAdminLotteryPrize)
+			adminLotteryRoute.DELETE("/prizes/:id", controller.DeleteAdminLotteryPrize)
 		}
 
 		// Subscription billing (plans, purchase, admin management)
@@ -306,6 +341,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/", middleware.AdminAuth(), controller.GetAllQuotaDates)
 		dataRoute.GET("/users", middleware.AdminAuth(), controller.GetQuotaDatesByUser)
 		dataRoute.GET("/self", middleware.UserAuth(), controller.GetUserQuotaDates)
+		dataRoute.GET("/flow", middleware.AdminAuth(), controller.GetAllFlowQuotaDates)
+		dataRoute.GET("/flow/self", middleware.UserAuth(), controller.GetUserFlowQuotaDates)
 
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

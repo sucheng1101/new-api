@@ -29,6 +29,12 @@ const (
 	WalletBusinessPromotionTransfer = "promotion_transfer"
 	WalletBusinessModelConsume      = "model_consume"
 	WalletBusinessModelRefund       = "model_consume_refund"
+	WalletBusinessAdminCashCredit   = "admin_cash_credit"
+	WalletBusinessAdminGiftCredit   = "admin_gift_credit"
+	WalletBusinessAdminCorrection  = "admin_correction"
+	WalletBusinessAdminDebit        = "admin_debit"
+	WalletBusinessAdminRefund       = "admin_refund"
+	WalletBusinessLotteryReward     = "lottery_reward"
 )
 
 // WalletOperation is the idempotency anchor for every wallet mutation.

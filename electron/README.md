@@ -30,7 +30,7 @@ npm start
 ```
 
 This will:
-- Start the Go backend on port 3000
+- Start the Go backend on port 1001
 - Open an Electron window with DevTools enabled
 - Create a system tray icon (menu bar on macOS)
 - Store database in `../data/new-api.db`
@@ -60,9 +60,9 @@ npm run build:linux  # Creates .AppImage and .deb
 ## Configuration
 
 ### Port
-Default port is 3000. To change, edit `main.js`:
+Default port is 1001. To change, edit `main.js`:
 ```javascript
-const PORT = 3000; // Change to desired port
+const PORT = 1001; // Change to desired port
 ```
 
 ### Database Location

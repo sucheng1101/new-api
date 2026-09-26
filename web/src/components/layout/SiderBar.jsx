@@ -52,6 +52,7 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   personal: '/console/personal',
+  promotion: '/console/promotion',
   monitorStatus: '/console/monitor-status',
   monitorGroups: '/console/monitor-groups',
   ops: '/console/ops',
@@ -141,6 +142,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('钱包管理'),
         itemKey: 'topup',
         to: '/topup',
+      },
+      {
+        text: t('推广中心'),
+        itemKey: 'promotion',
+        to: '/promotion',
       },
       {
         text: t('个人设置'),

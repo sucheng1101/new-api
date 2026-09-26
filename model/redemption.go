@@ -27,6 +27,8 @@ type Redemption struct {
 	PromotionLevel1BasisPoints int            `json:"promotion_level1_basis_points" gorm:"default:0"`
 	PromotionLevel2BasisPoints int            `json:"promotion_level2_basis_points" gorm:"default:0"`
 	PromotionRewardTotal       int            `json:"promotion_reward_total" gorm:"default:0"`
+	RefundedQuota              int            `json:"refunded_quota" gorm:"default:0"`
+	RefundStatus               string         `json:"refund_status" gorm:"type:varchar(32);default:''"`
 }
 
 func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total int64, err error) {

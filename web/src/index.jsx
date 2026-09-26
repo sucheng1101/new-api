@@ -20,9 +20,10 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-// Semi UI 2.103 exposes its base stylesheet through package exports; component
-// styles are injected by vite-plugin-semi. Keep the import export-safe so Vite
-// can resolve the frontend with both the current and older Semi UI packages.
+// Load the complete Semi UI component stylesheet. The base file only contains
+// design tokens and reset rules, which leaves buttons, cards, and tables without
+// their borders and interactive states in a Vite dev build.
+import '../node_modules/@douyinfe/semi-ui/dist/css/semi.min.css';
 import '@douyinfe/semi-ui/lib/es/_base/base.css';
 import { UserProvider } from './context/User';
 import 'react-toastify/dist/ReactToastify.css';

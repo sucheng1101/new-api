@@ -38,6 +38,24 @@ func validateOptionValue(key string, value string) (string, error) {
 			return "", err
 		}
 		return strconv.Itoa(basisPoints), nil
+	case LotteryThresholdKey:
+		threshold, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || threshold <= 0 {
+			return "", fmt.Errorf("%s must be a positive integer", key)
+		}
+		return strconv.Itoa(threshold), nil
+	case LotteryDailyAttemptsKey:
+		attempts, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || attempts < 1 || attempts > 100 {
+			return "", fmt.Errorf("%s must be between 1 and 100", key)
+		}
+		return strconv.Itoa(attempts), nil
+	case LotteryKeepAttemptsKey, LotteryInviteRegisterKey, LotteryInviteRechargeKey:
+		keep, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return "", fmt.Errorf("%s must be boolean", key)
+		}
+		return strconv.FormatBool(keep), nil
 	case "ChannelUsageTimezone":
 		timezone := strings.TrimSpace(value)
 		if timezone == "" {
@@ -205,6 +223,11 @@ func InitOptionMap() {
 	common.OptionMap["QuotaPerUnit"] = strconv.FormatFloat(common.QuotaPerUnit, 'f', -1, 64)
 	common.OptionMap[PromotionLevel1BasisPointsKey] = strconv.Itoa(PromotionDefaultLevel1BasisPoints)
 	common.OptionMap[PromotionLevel2BasisPointsKey] = strconv.Itoa(PromotionDefaultLevel2BasisPoints)
+	common.OptionMap[LotteryThresholdKey] = strconv.Itoa(10 * int(common.QuotaPerUnit))
+	common.OptionMap[LotteryDailyAttemptsKey] = "1"
+	common.OptionMap[LotteryKeepAttemptsKey] = "false"
+	common.OptionMap[LotteryInviteRegisterKey] = "false"
+	common.OptionMap[LotteryInviteRechargeKey] = "false"
 	common.OptionMap["RetryTimes"] = strconv.Itoa(common.RetryTimes)
 	common.OptionMap["DataExportInterval"] = strconv.Itoa(common.DataExportInterval)
 	common.OptionMap["DataExportDefaultTime"] = common.DataExportDefaultTime
@@ -583,6 +606,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.DataExportDefaultTime = value
 	case "ChannelUsageTimezone":
 		common.ChannelUsageTimezone = validatedValue
+	case LotteryThresholdKey, LotteryDailyAttemptsKey, LotteryKeepAttemptsKey, LotteryInviteRegisterKey, LotteryInviteRechargeKey:
+		// Lottery settings are read dynamically by model/lottery.go.
 	case "ModelRatio":
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":

@@ -125,9 +125,10 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 
 	// 个人中心区域 - 所有用户都可以访问
 	defaultConfig["personal"] = map[string]interface{}{
-		"enabled":  true,
-		"topup":    true,
-		"personal": true,
+		"enabled":   true,
+		"topup":     true,
+		"personal":  true,
+		"promotion": true,
 	}
 
 	// 管理员区域 - 根据角色决定
@@ -387,7 +388,11 @@ func (user *User) Insert(inviterId int) error {
 			return err
 		}
 	}
-	user.Quota = common.QuotaForNewUser
+	// New-user allowance is a gift balance. Keep the aggregate invariant
+	// quota = cash_quota + gift_quota from the first insert.
+	user.GiftQuota = common.QuotaForNewUser
+	user.CashQuota = 0
+	user.Quota = user.CashQuota + user.GiftQuota
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 
@@ -423,7 +428,7 @@ func (user *User) Insert(inviterId int) error {
 	}
 	if inviterId != 0 {
 		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
+			_ = CreditGift(user.Id, common.QuotaForInvitee, 0, "invite", fmt.Sprintf("invitee:%d", user.Id), WalletBusinessGiftCredit, fmt.Sprintf("invitee-gift:%d", user.Id), 0, "邀请注册赠送")
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
 		if common.QuotaForInviter > 0 {
@@ -446,7 +451,9 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 			return err
 		}
 	}
-	user.Quota = common.QuotaForNewUser
+	user.GiftQuota = common.QuotaForNewUser
+	user.CashQuota = 0
+	user.Quota = user.CashQuota + user.GiftQuota
 	user.AffCode = common.GetRandomString(4)
 
 	// 初始化用户设置
@@ -484,7 +491,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	}
 	if inviterId != 0 {
 		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
+			_ = CreditGift(user.Id, common.QuotaForInvitee, 0, "invite", fmt.Sprintf("invitee:%d", user.Id), WalletBusinessGiftCredit, fmt.Sprintf("invitee-gift:%d", user.Id), 0, "邀请注册赠送")
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
 		if common.QuotaForInviter > 0 {

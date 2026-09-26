@@ -10,6 +10,28 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func parseFlowQuotaTimeRange(c *gin.Context) (int64, int64, bool) {
+	startTimestamp, err := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	if err != nil || startTimestamp <= 0 {
+		common.ApiErrorMsg(c, "invalid start_timestamp")
+		return 0, 0, false
+	}
+	endTimestamp, err := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	if err != nil || endTimestamp <= 0 {
+		common.ApiErrorMsg(c, "invalid end_timestamp")
+		return 0, 0, false
+	}
+	if endTimestamp < startTimestamp {
+		common.ApiErrorMsg(c, "invalid time range")
+		return 0, 0, false
+	}
+	if endTimestamp-startTimestamp > 2592000 {
+		common.ApiErrorMsg(c, "time range cannot exceed one month")
+		return 0, 0, false
+	}
+	return startTimestamp, endTimestamp, true
+}
+
 func GetAllQuotaDates(c *gin.Context) {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
@@ -65,4 +87,30 @@ func GetUserQuotaDates(c *gin.Context) {
 		"data":    dates,
 	})
 	return
+}
+
+func GetAllFlowQuotaDates(c *gin.Context) {
+	startTimestamp, endTimestamp, ok := parseFlowQuotaTimeRange(c)
+	if !ok {
+		return
+	}
+	dates, err := model.GetFlowQuotaData(startTimestamp, endTimestamp, c.Query("username"), 0, c.GetInt("role"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": dates})
+}
+
+func GetUserFlowQuotaDates(c *gin.Context) {
+	startTimestamp, endTimestamp, ok := parseFlowQuotaTimeRange(c)
+	if !ok {
+		return
+	}
+	dates, err := model.GetFlowQuotaData(startTimestamp, endTimestamp, "", c.GetInt("id"), common.RoleCommonUser)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": dates})
 }
