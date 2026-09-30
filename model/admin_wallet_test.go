@@ -3,6 +3,7 @@ package model
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,6 +41,88 @@ func TestAdminWalletGiftRechargeDebitAndCorrectionAreIdempotent(t *testing.T) {
 	require.NoError(t, db.Model(&WalletTransaction{}).Where("user_id = ?", user.Id).Count(&transactions).Error)
 	require.EqualValues(t, 5, operations)
 	require.EqualValues(t, 6, transactions)
+}
+
+func TestAdminCashRechargeCreatesPromotionRewardsIndependentlyOfLottery(t *testing.T) {
+	db := setupWalletTestDB(t)
+	previousOptions := common.OptionMap
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap = map[string]string{
+		PromotionLevel1BasisPointsKey: "500",
+		PromotionLevel2BasisPointsKey: "300",
+		LotteryInviteRechargeKey:      "false",
+		LotteryEnabledKey:             "false",
+	}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptions
+		common.OptionMapRWMutex.Unlock()
+	})
+	require.NoError(t, db.AutoMigrate(&LotteryDaily{}))
+
+	level2 := User{Username: "admin-recharge-level2", Password: "wallet-test-password", Status: common.UserStatusEnabled, AffCode: "admin-recharge-level2-code"}
+	require.NoError(t, db.Create(&level2).Error)
+	level1 := User{Username: "admin-recharge-level1", Password: "wallet-test-password", Status: common.UserStatusEnabled, AffCode: "admin-recharge-level1-code"}
+	require.NoError(t, db.Create(&level1).Error)
+	level1.InviterId = level2.Id
+	require.NoError(t, db.Save(&level1).Error)
+	payer := User{Username: "admin-recharge-payer", Password: "wallet-test-password", Status: common.UserStatusEnabled, AffCode: "admin-recharge-payer-code"}
+	require.NoError(t, db.Create(&payer).Error)
+	payer.InviterId = level1.Id
+	require.NoError(t, db.Save(&payer).Error)
+
+	require.NoError(t, AdminCreditWallet(payer.Id, 1000, 99, false, "admin-recharge-rebate", "manual recharge"))
+	require.NoError(t, AdminCreditWallet(payer.Id, 1000, 99, false, "admin-recharge-rebate", "manual recharge"))
+
+	var level1Balance, level2Balance User
+	require.NoError(t, db.First(&level1Balance, level1.Id).Error)
+	require.NoError(t, db.First(&level2Balance, level2.Id).Error)
+	require.Equal(t, 50, level1Balance.AffQuota)
+	require.Equal(t, 30, level2Balance.AffQuota)
+	var rewardCount, lotteryCount int64
+	require.NoError(t, db.Model(&PromotionReward{}).Where("source_type = ?", "admin_wallet").Count(&rewardCount).Error)
+	require.EqualValues(t, 2, rewardCount)
+	require.NoError(t, db.Model(&LotteryDaily{}).Count(&lotteryCount).Error)
+	require.Zero(t, lotteryCount)
+}
+
+func TestAdminCashRechargeLotteryIsIndependentOfPromotionRates(t *testing.T) {
+	db := setupWalletTestDB(t)
+	previousOptions := common.OptionMap
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap = map[string]string{
+		PromotionLevel1BasisPointsKey:    "0",
+		PromotionLevel2BasisPointsKey:    "0",
+		LotteryInviteRechargeKey:         "true",
+		LotteryInviteRechargeAttemptsKey: "2",
+		LotteryEnabledKey:                "true",
+	}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptions
+		common.OptionMapRWMutex.Unlock()
+	})
+	require.NoError(t, db.AutoMigrate(&LotteryDaily{}))
+
+	inviter := User{Username: "admin-recharge-lottery-inviter", Password: "wallet-test-password", Status: common.UserStatusEnabled, AffCode: "admin-recharge-lottery-inviter-code"}
+	require.NoError(t, db.Create(&inviter).Error)
+	payer := User{Username: "admin-recharge-lottery-payer", Password: "wallet-test-password", Status: common.UserStatusEnabled, AffCode: "admin-recharge-lottery-payer-code"}
+	require.NoError(t, db.Create(&payer).Error)
+	payer.InviterId = inviter.Id
+	require.NoError(t, db.Save(&payer).Error)
+
+	require.NoError(t, AdminCreditWallet(payer.Id, 1000, 99, false, "admin-recharge-lottery", "manual recharge"))
+	require.NoError(t, AdminCreditWallet(payer.Id, 1000, 99, false, "admin-recharge-lottery", "manual recharge"))
+
+	status, err := GetLotteryStatus(inviter.Id)
+	require.NoError(t, err)
+	require.Equal(t, 2, status.GrantedAttempts)
+	var rewards []PromotionReward
+	require.NoError(t, db.Where("source_type = ?", "admin_wallet").Find(&rewards).Error)
+	require.Len(t, rewards, 1)
+	require.Equal(t, PromotionRewardRoundedZero, rewards[0].Status)
 }
 
 func TestAdminWalletRejectsInsufficientReductionWithoutMutation(t *testing.T) {

@@ -66,15 +66,34 @@ func AdminCreditWallet(userId, amount, operatorId int, gift bool, idempotencyKey
 		if gift {
 			operationType, accountType, businessType = AdminWalletOperationGiftCredit, WalletAccountGift, WalletBusinessAdminGiftCredit
 		}
-		if _, done, err := beginAdminWalletOperationTx(tx, userId, operatorId, amount, operationType, accountType, idempotencyKey, reason); err != nil || done {
+		op, done, err := beginAdminWalletOperationTx(tx, userId, operatorId, amount, operationType, accountType, idempotencyKey, reason)
+		if err != nil || done {
 			return err
 		}
 		if gift {
 			return CreditGiftTx(tx, userId, amount, operatorId, "admin", idempotencyKey, businessType, "admin-gift:"+idempotencyKey, operatorId, reason)
 		}
-		return CreditCashTx(tx, userId, amount, operatorId, "admin", idempotencyKey, businessType, "admin-cash:"+idempotencyKey, false, operatorId, reason)
+		if err = CreditCashTx(tx, userId, amount, op.Id, "admin", idempotencyKey, businessType, "admin-cash:"+idempotencyKey, false, operatorId, reason); err != nil {
+			return err
+		}
+		if err = CreatePromotionRewardsTx(tx, "admin_wallet", op.Id, idempotencyKey, userId, amount); err != nil {
+			return err
+		}
+		grantInviteRechargeLotteryTx(tx, userId)
+		return nil
 	})
-	invalidateWalletUserCache(userId, err)
+	if err == nil {
+		invalidateWalletUserCache(userId, nil)
+		var operation AdminWalletOperation
+		if DB.Where("idempotency_key = ?", idempotencyKey).First(&operation).Error == nil && operation.OperationType == AdminWalletOperationCashCredit {
+			var rewards []PromotionReward
+			if DB.Where("source_type = ? AND source_id = ?", "admin_wallet", operation.Id).Find(&rewards).Error == nil {
+				for _, reward := range rewards {
+					invalidateWalletUserCache(reward.BeneficiaryUserId, nil)
+				}
+			}
+		}
+	}
 	return err
 }
 

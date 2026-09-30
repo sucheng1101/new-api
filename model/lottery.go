@@ -412,6 +412,22 @@ func GrantLotteryAttemptTx(tx *gorm.DB, userId int, count int) error {
 		}).Error
 }
 
+// grantInviteRechargeLotteryTx keeps invitation lottery rewards independent
+// from cash and promotion settlement. A lottery storage error is logged but
+// does not roll back the recharge or its promotion rewards.
+func grantInviteRechargeLotteryTx(tx *gorm.DB, payerUserId int) {
+	if !LotteryInviteRechargeEnabled() {
+		return
+	}
+	var invited User
+	if err := tx.Select("inviter_id").First(&invited, payerUserId).Error; err != nil || invited.InviterId <= 0 {
+		return
+	}
+	if err := GrantLotteryAttemptTx(tx, invited.InviterId, LotteryInviteRechargeAttempts()); err != nil {
+		common.SysError("failed to grant invitation recharge lottery attempts: " + err.Error())
+	}
+}
+
 func GrantLotteryAttempt(userId, count int) error {
 	return DB.Transaction(func(tx *gorm.DB) error { return GrantLotteryAttemptTx(tx, userId, count) })
 }
