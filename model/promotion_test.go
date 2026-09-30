@@ -120,3 +120,69 @@ func TestTransferPromotionToGiftIsAtomicAndIdempotent(t *testing.T) {
 	require.Equal(t, 25, refreshed.GiftQuota)
 	require.Equal(t, 25, refreshed.Quota)
 }
+
+func TestGetPromotionSummaryIncludesInviteCodeAndWalletBreakdown(t *testing.T) {
+	db := setupPromotionTestDB(t)
+	user := &User{
+		Username:        "promotion-summary",
+		AffCode:         "summary-code",
+		Status:          common.UserStatusEnabled,
+		AffCount:        3,
+		AffQuota:        75,
+		AffHistoryQuota: 120,
+	}
+	require.NoError(t, db.Create(user).Error)
+	require.NoError(t, db.Create(&User{Username: "promotion-summary-direct-1", AffCode: "summary-direct-1", Status: common.UserStatusEnabled, InviterId: user.Id}).Error)
+	require.NoError(t, db.Create(&User{Username: "promotion-summary-direct-2", AffCode: "summary-direct-2", Status: common.UserStatusEnabled, InviterId: user.Id}).Error)
+
+	summary, err := GetPromotionSummary(user.Id)
+	require.NoError(t, err)
+	require.Equal(t, "summary-code", summary.AffCode)
+	require.Equal(t, 75, summary.AffQuota)
+	require.Equal(t, 120, summary.AffHistoryQuota)
+	require.Equal(t, 2, summary.InvitedCount)
+	require.Equal(t, 500, summary.Level1Rate)
+	require.Equal(t, 300, summary.Level2Rate)
+}
+
+func TestHydrateUserAffCountsUsesActualInviteRelations(t *testing.T) {
+	db := setupPromotionTestDB(t)
+	inviter := &User{Username: "promotion-hydrate-inviter", AffCode: "hydrate-inviter", Status: common.UserStatusEnabled, AffCount: 9}
+	require.NoError(t, db.Create(inviter).Error)
+	require.NoError(t, db.Create(&User{Username: "promotion-hydrate-direct-1", AffCode: "hydrate-direct-1", Status: common.UserStatusEnabled, InviterId: inviter.Id}).Error)
+	require.NoError(t, db.Create(&User{Username: "promotion-hydrate-direct-2", AffCode: "hydrate-direct-2", Status: common.UserStatusEnabled, InviterId: inviter.Id}).Error)
+
+	users := []*User{{Id: inviter.Id, AffCount: inviter.AffCount}}
+	require.NoError(t, hydrateUserAffCounts(db, users))
+	require.Equal(t, 2, users[0].AffCount)
+}
+
+func TestInsertCountsInvitationWhenLegacyQuotaRewardDisabled(t *testing.T) {
+	db := setupPromotionTestDB(t)
+	previousNewUserQuota := common.QuotaForNewUser
+	previousInviteeQuota := common.QuotaForInvitee
+	previousInviterQuota := common.QuotaForInviter
+	common.QuotaForNewUser = 0
+	common.QuotaForInvitee = 0
+	common.QuotaForInviter = 0
+	t.Cleanup(func() {
+		common.QuotaForNewUser = previousNewUserQuota
+		common.QuotaForInvitee = previousInviteeQuota
+		common.QuotaForInviter = previousInviterQuota
+	})
+
+	inviter := &User{Username: "promotion-count-inviter", AffCode: "count-inviter", Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(inviter).Error)
+	invitee := &User{Username: "promotion-count-invitee", Password: "password123", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, InviterId: inviter.Id}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	var refreshedInviter User
+	require.NoError(t, db.First(&refreshedInviter, inviter.Id).Error)
+	require.Equal(t, 1, refreshedInviter.AffCount)
+	require.Zero(t, refreshedInviter.AffQuota)
+	require.Zero(t, refreshedInviter.AffHistoryQuota)
+
+	var refreshedInvitee User
+	require.NoError(t, db.First(&refreshedInvitee, invitee.Id).Error)
+	require.Equal(t, inviter.Id, refreshedInvitee.InviterId)
+}

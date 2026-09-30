@@ -76,20 +76,25 @@ type PromotionRiskEvent struct {
 }
 
 type PromotionSummary struct {
-	AffQuota        int `json:"aff_quota"`
-	AffHistoryQuota int `json:"aff_history_quota"`
-	InvitedCount    int `json:"invited_count"`
-	Level1Rate      int `json:"level1_rate_basis_points"`
-	Level2Rate      int `json:"level2_rate_basis_points"`
+	AffCode         string `json:"aff_code"`
+	AffQuota        int    `json:"aff_quota"`
+	AffHistoryQuota int    `json:"aff_history_quota"`
+	InvitedCount    int    `json:"invited_count"`
+	Level1Rate      int    `json:"level1_rate_basis_points"`
+	Level2Rate      int    `json:"level2_rate_basis_points"`
 }
 
 func GetPromotionSummary(userId int) (PromotionSummary, error) {
 	var user User
-	if err := DB.Select("aff_quota", "aff_history", "aff_count").First(&user, userId).Error; err != nil {
+	if err := DB.Select("aff_code", "aff_quota", "aff_history").First(&user, userId).Error; err != nil {
+		return PromotionSummary{}, err
+	}
+	var invitedCount int64
+	if err := DB.Model(&User{}).Where("inviter_id = ?", userId).Count(&invitedCount).Error; err != nil {
 		return PromotionSummary{}, err
 	}
 	level1, level2 := PromotionRates()
-	return PromotionSummary{AffQuota: user.AffQuota, AffHistoryQuota: user.AffHistoryQuota, InvitedCount: user.AffCount, Level1Rate: level1, Level2Rate: level2}, nil
+	return PromotionSummary{AffCode: user.AffCode, AffQuota: user.AffQuota, AffHistoryQuota: user.AffHistoryQuota, InvitedCount: int(invitedCount), Level1Rate: level1, Level2Rate: level2}, nil
 }
 
 type PromotionInvitee struct {

@@ -57,6 +57,8 @@ const OtherSetting = () => {
   const [updateData, setUpdateData] = useState({
     tag_name: '',
     content: '',
+    html_url: '',
+    source: '',
   });
 
   const updateOption = async (key, value) => {
@@ -272,45 +274,24 @@ const OtherSetting = () => {
         ...loadingInput,
         CheckUpdate: true,
       }));
-      // Use a CORS proxy to avoid direct cross-origin requests to GitHub API
-      // Option 1: Use a public CORS proxy service
-      // const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-      // const res = await API.get(
-      //   `${proxyUrl}https://api.github.com/repos/Calcium-Ion/new-api/releases/latest`,
-      // );
-
-      // Option 2: Use the JSON proxy approach which often works better with GitHub API
-      const res = await fetch(
-        'https://api.github.com/repos/ASL-mj/new-api/releases/latest',
-        {
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            // Adding User-Agent which is often required by GitHub API
-            'User-Agent': 'new-api-update-checker',
-          },
-        },
-      ).then((response) => response.json());
-
-      // Option 3: Use a local proxy endpoint
-      // Create a cached version of the response to avoid frequent GitHub API calls
-      // const res = await API.get('/api/status/github-latest-release');
-
-      const { tag_name, body } = res;
-      if (!tag_name) {
-        // GitHub 对没有 Release 的仓库返回 404
-        showError('本仓库尚未发布 Release，无法检查更新');
+      const releaseResponse = await API.get('/api/status/latest-release');
+      const { success, data, message } = releaseResponse.data;
+      const release = data?.release;
+      if (!success || !release?.tag_name) {
+        showError(message || t('检查更新失败，请稍后再试'));
         return;
       }
-      if (tag_name === statusState?.status?.version) {
-        showSuccess(`已是最新版本：${tag_name}`);
-      } else {
-        setUpdateData({
-          tag_name: tag_name,
-          content: marked.parse(body),
-        });
-        setShowUpdateModal(true);
+      if (release.tag_name === statusState?.status?.version) {
+        showSuccess(`${t('当前版本')}：${release.tag_name}`);
+        return;
       }
+      setUpdateData({
+        tag_name: release.tag_name,
+        content: marked.parse(release.body || ''),
+        html_url: release.html_url || '',
+        source: data.source || '',
+      });
+      setShowUpdateModal(true);
     } catch (error) {
       console.error('Failed to check for updates:', error);
       showError('检查更新失败，请稍后再试');
@@ -344,9 +325,10 @@ const OtherSetting = () => {
   }, []);
 
   // Function to open GitHub release page
-  const openGitHubRelease = () => {
+  const openRelease = () => {
     window.open(
-      `https://github.com/Calcium-Ion/new-api/releases/tag/${updateData.tag_name}`,
+      updateData.html_url ||
+        `https://github.com/sucheng1101/new-api/releases/tag/${updateData.tag_name}`,
       '_blank',
     );
   };
@@ -564,7 +546,7 @@ const OtherSetting = () => {
             type='primary'
             onClick={() => {
               setShowUpdateModal(false);
-              openGitHubRelease();
+              openRelease();
             }}
           >
             {t('详情')}

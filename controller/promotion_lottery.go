@@ -97,7 +97,16 @@ func AdminPromotionRiskEvents(c *gin.Context) {
 }
 
 func AdminLotterySettings(c *gin.Context) {
-	common.ApiSuccess(c, gin.H{"threshold": model.LotteryDailyThreshold(), "daily_attempts": model.LotteryDailyAttempts(), "keep_attempts": model.LotteryKeepAttempts(), "invite_register_enabled": model.LotteryInviteRegisterEnabled(), "invite_recharge_enabled": model.LotteryInviteRechargeEnabled()})
+	common.ApiSuccess(c, gin.H{
+		"enabled":                  model.LotteryEnabled(),
+		"threshold":                model.LotteryDailyThreshold(),
+		"daily_attempts":           model.LotteryDailyAttempts(),
+		"keep_attempts":            model.LotteryKeepAttempts(),
+		"invite_register_enabled":  model.LotteryInviteRegisterEnabled(),
+		"invite_recharge_enabled":  model.LotteryInviteRechargeEnabled(),
+		"invite_register_attempts": model.LotteryInviteRegisterAttempts(),
+		"invite_recharge_attempts": model.LotteryInviteRechargeAttempts(),
+	})
 }
 func UpdateAdminLotterySettings(c *gin.Context) {
 	var values map[string]interface{}
@@ -105,7 +114,26 @@ func UpdateAdminLotterySettings(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	keys := map[string]string{"threshold": model.LotteryThresholdKey, "daily_attempts": model.LotteryDailyAttemptsKey, "keep_attempts": model.LotteryKeepAttemptsKey, "invite_register_enabled": model.LotteryInviteRegisterKey, "invite_recharge_enabled": model.LotteryInviteRechargeKey}
+	keys := map[string]string{
+		"enabled":                  model.LotteryEnabledKey,
+		"threshold":                model.LotteryThresholdKey,
+		"daily_attempts":           model.LotteryDailyAttemptsKey,
+		"keep_attempts":            model.LotteryKeepAttemptsKey,
+		"invite_register_enabled":  model.LotteryInviteRegisterKey,
+		"invite_recharge_enabled":  model.LotteryInviteRechargeKey,
+		"invite_register_attempts": model.LotteryInviteRegisterAttemptsKey,
+		"invite_recharge_attempts": model.LotteryInviteRechargeAttemptsKey,
+	}
+	validated := make(map[string]string)
+	for name, key := range keys {
+		if value, ok := values[name]; ok {
+			validated[key] = common.Interface2String(value)
+		}
+	}
+	if err := model.ValidateLotterySettings(validated); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	for name, key := range keys {
 		if value, ok := values[name]; ok {
 			if err := model.UpdateOption(key, common.Interface2String(value)); err != nil {
@@ -124,6 +152,19 @@ func AdminLotteryDraws(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, rows)
+}
+
+func AdminLotteryStats(c *gin.Context) {
+	startTimestamp, endTimestamp, ok := parseFlowQuotaTimeRange(c)
+	if !ok {
+		return
+	}
+	stats, err := model.GetLotteryStats(startTimestamp, endTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, stats)
 }
 func AdminLotteryGrants(c *gin.Context) {
 	var req struct {
@@ -178,18 +219,18 @@ func GetLotteryStatus(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	prizes, prizeErr := model.ListLotteryPrizes()
+	prizes, prizeErr := model.ListLotteryPrizeViews()
 	if prizeErr != nil {
 		common.ApiError(c, prizeErr)
 		return
 	}
 	enabled := make([]model.LotteryPrize, 0, len(prizes))
 	for _, prize := range prizes {
-		if prize.Enabled && prize.Weight > 0 && prize.Stock != 0 {
+		if prize.Eligible {
 			enabled = append(enabled, prize)
 		}
 	}
-	common.ApiSuccess(c, gin.H{"status": status, "threshold": model.LotteryDailyThreshold(), "daily_attempts": model.LotteryDailyAttempts(), "keep_attempts": model.LotteryKeepAttempts(), "invite_register_enabled": model.LotteryInviteRegisterEnabled(), "invite_recharge_enabled": model.LotteryInviteRechargeEnabled(), "prizes": enabled})
+	common.ApiSuccess(c, gin.H{"status": status, "enabled": model.LotteryEnabled(), "threshold": model.LotteryDailyThreshold(), "daily_attempts": model.LotteryDailyAttempts(), "keep_attempts": model.LotteryKeepAttempts(), "invite_register_enabled": model.LotteryInviteRegisterEnabled(), "invite_recharge_enabled": model.LotteryInviteRechargeEnabled(), "invite_register_attempts": model.LotteryInviteRegisterAttempts(), "invite_recharge_attempts": model.LotteryInviteRechargeAttempts(), "prizes": enabled})
 }
 
 type LotteryDrawRequest struct {
@@ -225,7 +266,7 @@ func GetLotteryDraws(c *gin.Context) {
 }
 
 func ListAdminLotteryPrizes(c *gin.Context) {
-	prizes, err := model.ListLotteryPrizes()
+	prizes, err := model.ListLotteryPrizeViews()
 	if err != nil {
 		common.ApiError(c, err)
 		return

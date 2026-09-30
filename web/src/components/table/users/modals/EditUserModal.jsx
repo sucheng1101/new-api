@@ -398,6 +398,81 @@ const EditUserModal = (props) => {
                       </Col>
 
                       <Col span={24}>
+                        {(() => {
+                          const wallet = inputs || values || {};
+                          const availableQuota = Number(wallet.quota) || 0;
+                          const cashQuota = Number(wallet.cash_quota) || 0;
+                          const giftQuota = Number(wallet.gift_quota) || 0;
+                          const promotionQuota = Number(wallet.aff_quota) || 0;
+                          const usedQuota = Number(wallet.used_quota) || 0;
+                          const totalQuota = availableQuota + usedQuota;
+                          const metrics = [
+                            {
+                              label: t('当前可用余额'),
+                              value: availableQuota,
+                              className: 'border-blue-200 bg-blue-50/70',
+                              valueClassName: 'text-blue-700',
+                            },
+                            {
+                              label: t('现金余额'),
+                              value: cashQuota,
+                            },
+                            {
+                              label: t('赠送余额'),
+                              value: giftQuota,
+                            },
+                            {
+                              label: t('推广待转余额'),
+                              value: promotionQuota,
+                              className: 'border-orange-200 bg-orange-50/70',
+                              valueClassName: 'text-orange-700',
+                            },
+                            {
+                              label: t('已用额度'),
+                              value: usedQuota,
+                            },
+                            {
+                              label: t('累计额度'),
+                              value: totalQuota,
+                            },
+                          ];
+
+                          return (
+                            <div className='rounded-xl border border-gray-200 bg-gray-50/70 p-3'>
+                              <div className='mb-2 flex flex-wrap items-center justify-between gap-2'>
+                                <Text className='text-sm font-medium'>
+                                  {t('余额构成')}
+                                </Text>
+                                <Text type='tertiary' size='small' className='max-w-full'>
+                                  {t('当前可用余额 = 现金余额 + 赠送余额')}
+                                </Text>
+                              </div>
+                              <div className='grid grid-cols-2 gap-2 sm:grid-cols-3'>
+                                {metrics.map((metric) => (
+                                  <div
+                                    key={metric.label}
+                                    className={`rounded-lg border border-gray-200 bg-white px-2.5 py-2 ${metric.className || ''}`}
+                                  >
+                                    <div className='text-xs text-gray-500'>
+                                      {metric.label}
+                                    </div>
+                                    <div
+                                      className={`mt-1 text-sm font-semibold text-gray-800 ${metric.valueClassName || ''}`}
+                                    >
+                                      {renderQuota(metric.value)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className='mt-2 text-xs text-gray-500'>
+                                {t('推广余额需划转后才会计入可用余额')}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </Col>
+
+                      <Col span={24}>
                         <div
                           className='text-xs cursor-pointer'
                           style={{ color: 'var(--semi-color-text-2)' }}

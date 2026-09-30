@@ -220,6 +220,10 @@ func GetAllUsers(pageInfo *common.PageInfo, sortBy, sortOrder string) (users []*
 		tx.Rollback()
 		return nil, 0, err
 	}
+	if err = hydrateUserAffCounts(tx, users); err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
 
 	// Commit transaction
 	if err = tx.Commit().Error; err != nil {
@@ -287,6 +291,10 @@ func SearchUsers(keyword string, group string, startIdx int, num int, sortBy, so
 		tx.Rollback()
 		return nil, 0, err
 	}
+	if err = hydrateUserAffCounts(tx, users); err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
 
 	// 提交事务
 	if err = tx.Commit().Error; err != nil {
@@ -302,7 +310,7 @@ func userSortClause(sortBy, sortOrder string) string {
 	case "total_quota":
 		column = "(quota + used_quota)"
 	case "aff_count":
-		column = "aff_count"
+		column = "(SELECT COUNT(*) FROM users AS invitees WHERE invitees.inviter_id = users.id AND invitees.deleted_at IS NULL)"
 	default:
 		return "id desc"
 	}
@@ -310,6 +318,44 @@ func userSortClause(sortBy, sortOrder string) string {
 		return "id desc"
 	}
 	return column + " " + sortOrder + ", id " + sortOrder
+}
+
+type userAffCountRow struct {
+	InviterId int
+	Count     int64
+}
+
+func hydrateUserAffCounts(tx *gorm.DB, users []*User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(users))
+	for _, user := range users {
+		if user != nil && user.Id > 0 {
+			ids = append(ids, user.Id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var rows []userAffCountRow
+	if err := tx.Model(&User{}).
+		Select("inviter_id, COUNT(*) AS count").
+		Where("inviter_id IN ?", ids).
+		Group("inviter_id").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	counts := make(map[int]int, len(rows))
+	for _, row := range rows {
+		counts[row.InviterId] = int(row.Count)
+	}
+	for _, user := range users {
+		if user != nil {
+			user.AffCount = counts[user.Id]
+		}
+	}
+	return nil
 }
 
 func GetUserById(id int, selectAll bool) (*User, error) {
@@ -434,7 +480,9 @@ func (user *User) Insert(inviterId int) error {
 		if common.QuotaForInviter > 0 {
 			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
 			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+		}
+		if err := inviteUser(inviterId); err != nil {
+			common.SysLog(fmt.Sprintf("failed to update inviter statistics for user %d: %v", inviterId, err))
 		}
 	}
 	return nil
@@ -496,7 +544,9 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 		}
 		if common.QuotaForInviter > 0 {
 			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+		}
+		if err := inviteUser(inviterId); err != nil {
+			common.SysLog(fmt.Sprintf("failed to update inviter statistics for user %d: %v", inviterId, err))
 		}
 	}
 }

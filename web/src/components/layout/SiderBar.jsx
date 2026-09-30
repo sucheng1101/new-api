@@ -56,6 +56,7 @@ const routerMap = {
   monitorStatus: '/console/monitor-status',
   monitorGroups: '/console/monitor-groups',
   ops: '/console/ops',
+  dashboardAnalytics: '/console/dashboard',
   taskPlugin: '/console/task-plugin',
 };
 
@@ -81,7 +82,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const workspaceItems = useMemo(() => {
     const items = [
       {
-        text: t('数据看板'),
+        text: t('概览'),
         itemKey: 'detail',
         to: '/detail',
         className:
@@ -171,6 +172,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('渠道管理'),
         itemKey: 'channel',
         to: '/channel',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('数据看板'),
+        itemKey: 'dashboardAnalytics',
+        to: '/dashboard',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

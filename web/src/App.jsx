@@ -195,10 +195,18 @@ function App() {
           }
         />
         <Route
+          path='/console/dashboard'
+          element={
+            <AdminRoute>
+              <Ops pageTitle='数据看板' variant='analytics' />
+            </AdminRoute>
+          }
+        />
+        <Route
           path='/console/ops'
           element={
             <AdminRoute>
-              <Ops />
+              <Ops pageTitle='运维监控' />
             </AdminRoute>
           }
         />

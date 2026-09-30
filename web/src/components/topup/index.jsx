@@ -531,10 +531,15 @@ const TopUp = () => {
       if (statusRes.data?.success) {
         setLotteryState({
           ...statusRes.data.data.status,
+          enabled: statusRes.data.data.enabled !== false,
           threshold: statusRes.data.data.threshold,
           dailyAttempts: statusRes.data.data.daily_attempts,
           inviteRegisterEnabled: statusRes.data.data.invite_register_enabled,
           inviteRechargeEnabled: statusRes.data.data.invite_recharge_enabled,
+          inviteRegisterAttempts:
+            statusRes.data.data.invite_register_attempts || 0,
+          inviteRechargeAttempts:
+            statusRes.data.data.invite_recharge_attempts || 0,
           prizes: statusRes.data.data.prizes || [],
         });
       }
@@ -1055,56 +1060,98 @@ const TopUp = () => {
           allSubscriptions={allSubscriptions}
           reloadSubscriptionSelf={getSubscriptionSelf}
         />
-        <div className='space-y-4'>
-          <Card className='!rounded-xl' title={t('每日抽奖')}>
-            <div className='text-sm text-gray-500 mb-3'>
-              {t('消费')} {renderQuota(lotteryState?.consumed_quota || 0)} /{' '}
-              {renderQuota(lotteryState?.threshold || 0)} · {t('可用次数')}{' '}
-              {Math.max(
-                0,
-                (lotteryState?.granted_attempts || 0) -
-                  (lotteryState?.used_attempts || 0),
-              )}
-            </div>
-            <LotteryWheel
-              prizes={(lotteryState?.prizes || []).slice(0, 12)}
-              targetIndex={wheelTarget}
-              spinning={lotteryLoading}
-              disabled={
-                lotteryLoading ||
-                !lotteryState ||
-                lotteryState.used_attempts >= lotteryState.granted_attempts
-              }
-              onCenterClick={drawLottery}
-            />
-            <Button
-              block
-              type='primary'
-              loading={lotteryLoading}
-              disabled={
-                !lotteryState ||
-                lotteryState.used_attempts >= lotteryState.granted_attempts
-              }
-              onClick={drawLottery}
-            >
-              {t('立即抽奖')}
-            </Button>
-            {lotteryDraws.length > 0 && (
-              <div className='text-xs text-gray-500 mt-3 text-center'>
-                {t('最近中奖')}: {lotteryDraws[0].prize_name}
+        {lotteryState?.enabled && (
+          <div className='space-y-4'>
+            <Card className='!rounded-xl' title={t('每日抽奖')}>
+              <div className='text-sm text-gray-500 mb-3'>
+                {t('消费')} {renderQuota(lotteryState?.consumed_quota || 0)} /{' '}
+                {renderQuota(lotteryState?.threshold || 0)} · {t('可用次数')}{' '}
+                {Math.max(
+                  0,
+                  (lotteryState?.granted_attempts || 0) -
+                    (lotteryState?.used_attempts || 0),
+                )}
               </div>
-            )}
-          </Card>
-          <Card className='!rounded-xl' title={t('邀请好友解锁抽奖')}>
-            <div className='text-xs text-gray-500 mb-2'>
-              {t('邀请好友注册或充值可按管理员配置解锁抽奖次数')}
-            </div>
-            <div className='flex gap-2'>
-              <input className='semi-input flex-1' value={affLink} readOnly />
-              <Button onClick={handleAffLinkClick}>{t('复制邀请链接')}</Button>
-            </div>
-          </Card>
-        </div>
+              <LotteryWheel
+                prizes={(lotteryState?.prizes || []).slice(0, 12)}
+                targetIndex={wheelTarget}
+                spinning={lotteryLoading}
+                disabled={
+                  lotteryLoading ||
+                  !lotteryState ||
+                  lotteryState.used_attempts >= lotteryState.granted_attempts
+                }
+                onCenterClick={drawLottery}
+              />
+              {(lotteryState?.prizes || []).length > 0 && (
+                <div className='mt-4 border-t border-gray-100 pt-3'>
+                  <div className='mb-2 flex items-center justify-between text-xs text-gray-500'>
+                    <span>{t('奖项概率')}</span>
+                    <span>{t('按当前有效奖池计算')}</span>
+                  </div>
+                  <div className='grid grid-cols-1 gap-1.5 sm:grid-cols-2'>
+                    {(lotteryState.prizes || []).slice(0, 12).map((prize) => (
+                      <div
+                        key={`lottery-prize-${prize.id}`}
+                        className='flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2.5 py-1.5 text-xs'
+                      >
+                        <span className='min-w-0 truncate' title={prize.name}>
+                          {prize.name}
+                        </span>
+                        <span className='shrink-0 font-medium text-gray-600'>
+                          {(
+                            Number(prize.probability_basis_points || 0) / 100
+                          ).toFixed(2)}
+                          %
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <Button
+                block
+                type='primary'
+                loading={lotteryLoading}
+                disabled={
+                  !lotteryState ||
+                  lotteryState.used_attempts >= lotteryState.granted_attempts
+                }
+                onClick={drawLottery}
+              >
+                {t('立即抽奖')}
+              </Button>
+              {lotteryDraws.length > 0 && (
+                <div className='text-xs text-gray-500 mt-3 text-center'>
+                  {t('最近中奖')}: {lotteryDraws[0].prize_name}
+                </div>
+              )}
+            </Card>
+            <Card className='!rounded-xl' title={t('邀请好友解锁抽奖')}>
+              <div className='text-xs text-gray-500 mb-2'>
+                {t('邀请好友注册或充值可按管理员配置解锁抽奖次数')}
+                {lotteryState.inviteRegisterEnabled && (
+                  <span>
+                    {' '}
+                    · {t('注册')} +{lotteryState.inviteRegisterAttempts} 次
+                  </span>
+                )}
+                {lotteryState.inviteRechargeEnabled && (
+                  <span>
+                    {' '}
+                    · {t('充值')} +{lotteryState.inviteRechargeAttempts} 次
+                  </span>
+                )}
+              </div>
+              <div className='flex gap-2'>
+                <input className='semi-input flex-1' value={affLink} readOnly />
+                <Button onClick={handleAffLinkClick}>
+                  {t('复制邀请链接')}
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );

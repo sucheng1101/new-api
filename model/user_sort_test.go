@@ -26,7 +26,7 @@ import (
 func TestUserSortClause(t *testing.T) {
 	require.Equal(t, "(quota + used_quota) asc, id asc", userSortClause("total_quota", "asc"))
 	require.Equal(t, "(quota + used_quota) desc, id desc", userSortClause("total_quota", "desc"))
-	require.Equal(t, "aff_count asc, id asc", userSortClause("aff_count", "asc"))
+	require.Equal(t, "(SELECT COUNT(*) FROM users AS invitees WHERE invitees.inviter_id = users.id AND invitees.deleted_at IS NULL) asc, id asc", userSortClause("aff_count", "asc"))
 	require.Equal(t, "id desc", userSortClause("quota", "asc"))
 	require.Equal(t, "id desc", userSortClause("total_quota", "invalid"))
 }

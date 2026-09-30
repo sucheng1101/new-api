@@ -51,6 +51,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     subscription: true,
     setting: true,
     monitorGroups: true,
+    dashboardAnalytics: true,
     ops: true,
   },
   custom: [],

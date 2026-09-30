@@ -198,7 +198,7 @@ func Register(c *gin.Context) {
 		return
 	}
 	if inviterId > 0 && model.LotteryInviteRegisterEnabled() {
-		if err := model.GrantLotteryAttempt(inviterId, 1); err != nil {
+		if err := model.GrantLotteryAttempt(inviterId, model.LotteryInviteRegisterAttempts()); err != nil {
 			common.SysLog(fmt.Sprintf("grant lottery attempt after invite registration failed: %v", err))
 		}
 	}

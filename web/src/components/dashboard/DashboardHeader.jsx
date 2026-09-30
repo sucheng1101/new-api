@@ -19,7 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Button } from '@douyinfe/semi-ui';
-import { RefreshCw, Search } from 'lucide-react';
+import { BarChart3, RefreshCw, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const DashboardHeader = ({
   getGreeting,
@@ -27,8 +28,10 @@ const DashboardHeader = ({
   showSearchModal,
   refresh,
   loading,
+  isAdminUser,
   t,
 }) => {
+  const navigate = useNavigate();
   const ICON_BUTTON_CLASS = 'text-white hover:bg-opacity-80 !rounded-full';
 
   return (
@@ -40,6 +43,17 @@ const DashboardHeader = ({
         {getGreeting}
       </h2>
       <div className='flex gap-3'>
+        {isAdminUser && (
+          <Button
+            type='tertiary'
+            icon={<BarChart3 size={16} />}
+            onClick={() => navigate('/console/dashboard')}
+            aria-label={t('打开数据看板')}
+            className='bg-violet-500 hover:bg-violet-600 text-white !rounded-full'
+          >
+            <span className='hidden sm:inline'>{t('数据看板')}</span>
+          </Button>
+        )}
         <Button
           type='tertiary'
           icon={<Search size={16} />}

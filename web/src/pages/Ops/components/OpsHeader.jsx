@@ -41,12 +41,14 @@ const OpsHeader = ({
   resetFilters,
   refresh,
   refreshing,
+  pageTitle,
+  showDimensionFilters = true,
   t,
 }) => (
   <>
     <div className='mb-4 flex items-center justify-between gap-3'>
       <Typography.Title heading={4} style={{ margin: 0 }}>
-        {t('运维监控')}
+        {t(pageTitle)}
       </Typography.Title>
       <Tooltip content={t('刷新全部数据')}>
         <Button
@@ -79,41 +81,45 @@ const OpsHeader = ({
           ))}
         </RadioGroup>
         <div className='flex flex-col gap-2 sm:flex-row sm:flex-wrap'>
-          <Select
-            size='small'
-            value={draftFilters.channelType}
-            optionList={CHANNEL_OPTIONS}
-            filter={selectFilter}
-            showClear
-            placeholder={t('渠道类型')}
-            style={{ width: 160 }}
-            onChange={(value) =>
-              setDraftFilters((current) => ({
-                ...current,
-                channelType: value,
-              }))
-            }
-          />
-          <Input
-            size='small'
-            value={draftFilters.group}
-            placeholder={t('调用分组')}
-            style={{ width: 140 }}
-            showClear
-            onChange={(value) =>
-              setDraftFilters((current) => ({ ...current, group: value }))
-            }
-          />
-          <Input
-            size='small'
-            value={draftFilters.model}
-            placeholder={t('模型名称')}
-            style={{ width: 170 }}
-            showClear
-            onChange={(value) =>
-              setDraftFilters((current) => ({ ...current, model: value }))
-            }
-          />
+          {showDimensionFilters && (
+            <>
+              <Select
+                size='small'
+                value={draftFilters.channelType}
+                optionList={CHANNEL_OPTIONS}
+                filter={selectFilter}
+                showClear
+                placeholder={t('渠道类型')}
+                style={{ width: 160 }}
+                onChange={(value) =>
+                  setDraftFilters((current) => ({
+                    ...current,
+                    channelType: value,
+                  }))
+                }
+              />
+              <Input
+                size='small'
+                value={draftFilters.group}
+                placeholder={t('调用分组')}
+                style={{ width: 140 }}
+                showClear
+                onChange={(value) =>
+                  setDraftFilters((current) => ({ ...current, group: value }))
+                }
+              />
+              <Input
+                size='small'
+                value={draftFilters.model}
+                placeholder={t('模型名称')}
+                style={{ width: 170 }}
+                showClear
+                onChange={(value) =>
+                  setDraftFilters((current) => ({ ...current, model: value }))
+                }
+              />
+            </>
+          )}
           <Button
             type='primary'
             size='small'

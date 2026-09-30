@@ -59,7 +59,12 @@ export const formatOpsTimestamp = (timestamp) => {
   return new Date(timestamp * 1000).toLocaleString();
 };
 
-export const useOpsData = () => {
+export const useOpsData = ({
+  includeOverview = true,
+  includeSystem = true,
+  includeRankings = true,
+  includeLogs = true,
+} = {}) => {
   const { t } = useTranslation();
   const [draftFilters, setDraftFilters] = useState(DEFAULT_FILTERS);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
@@ -329,29 +334,40 @@ export const useOpsData = () => {
     setLogPage(page);
   };
 
-  const refresh = async () => {
+  const refresh = async (extraRefresh) => {
     setRefreshing(true);
-    await Promise.all([
-      loadOverview({ silent: true }),
-      loadSystem({ silent: true }),
-      loadRankings({ silent: true }),
-      loadLogs({ silent: true, page: logPage }),
-    ]);
-    setRefreshing(false);
+    const requests = [];
+    if (includeOverview) requests.push(loadOverview({ silent: true }));
+    if (includeRankings) requests.push(loadRankings({ silent: true }));
+    if (includeSystem) requests.push(loadSystem({ silent: true }));
+    if (includeLogs) {
+      requests.push(loadLogs({ silent: true, page: logPage }));
+    }
+    if (extraRefresh) requests.push(extraRefresh());
+    try {
+      await Promise.all(requests);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
-    loadOverview();
-    loadRankings();
-  }, [loadOverview, loadRankings]);
+    if (includeOverview) loadOverview();
+  }, [includeOverview, loadOverview]);
 
   useEffect(() => {
+    if (includeRankings) loadRankings();
+  }, [includeRankings, loadRankings]);
+
+  useEffect(() => {
+    if (!includeSystem) return;
     loadSystem();
-  }, [loadSystem]);
+  }, [includeSystem, loadSystem]);
 
   useEffect(() => {
+    if (!includeLogs) return;
     loadLogs({ page: logPage });
-  }, [loadLogs, logPage]);
+  }, [includeLogs, loadLogs, logPage]);
 
   useEffect(() => {
     if (!detailMetric) return;
@@ -362,12 +378,19 @@ export const useOpsData = () => {
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      loadOverview({ silent: true });
-      loadSystem({ silent: true });
-      loadRankings({ silent: true });
+      if (includeOverview) loadOverview({ silent: true });
+      if (includeSystem) loadSystem({ silent: true });
+      if (includeRankings) loadRankings({ silent: true });
     }, 30000);
     return () => window.clearInterval(timer);
-  }, [loadOverview, loadSystem, loadRankings]);
+  }, [
+    includeOverview,
+    includeRankings,
+    includeSystem,
+    loadOverview,
+    loadSystem,
+    loadRankings,
+  ]);
 
   useEffect(
     () => () => {

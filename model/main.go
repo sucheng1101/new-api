@@ -96,6 +96,8 @@ func createRootAccountIfNeed() error {
 			DisplayName: "Root User",
 			AccessToken: nil,
 			Quota:       100000000,
+			CashQuota:   100000000,
+			GiftQuota:   0,
 		}
 		DB.Create(&rootUser)
 	}

@@ -52,7 +52,13 @@ func validateOptionValue(key string, value string) (string, error) {
 			return "", fmt.Errorf("%s must be between 1 and 100", key)
 		}
 		return strconv.Itoa(attempts), nil
-	case LotteryKeepAttemptsKey, LotteryInviteRegisterKey, LotteryInviteRechargeKey:
+	case LotteryInviteRegisterAttemptsKey, LotteryInviteRechargeAttemptsKey:
+		attempts, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || attempts < 0 || attempts > 100 {
+			return "", fmt.Errorf("%s must be between 0 and 100", key)
+		}
+		return strconv.Itoa(attempts), nil
+	case LotteryEnabledKey, LotteryKeepAttemptsKey, LotteryInviteRegisterKey, LotteryInviteRechargeKey:
 		keep, err := strconv.ParseBool(strings.TrimSpace(value))
 		if err != nil {
 			return "", fmt.Errorf("%s must be boolean", key)
@@ -232,10 +238,13 @@ func InitOptionMap() {
 	common.OptionMap[PromotionLevel1BasisPointsKey] = strconv.Itoa(PromotionDefaultLevel1BasisPoints)
 	common.OptionMap[PromotionLevel2BasisPointsKey] = strconv.Itoa(PromotionDefaultLevel2BasisPoints)
 	common.OptionMap[LotteryThresholdKey] = strconv.Itoa(10 * int(common.QuotaPerUnit))
+	common.OptionMap[LotteryEnabledKey] = "true"
 	common.OptionMap[LotteryDailyAttemptsKey] = "1"
 	common.OptionMap[LotteryKeepAttemptsKey] = "false"
 	common.OptionMap[LotteryInviteRegisterKey] = "false"
 	common.OptionMap[LotteryInviteRechargeKey] = "false"
+	common.OptionMap[LotteryInviteRegisterAttemptsKey] = "1"
+	common.OptionMap[LotteryInviteRechargeAttemptsKey] = "1"
 	common.OptionMap["RetryTimes"] = strconv.Itoa(common.RetryTimes)
 	common.OptionMap["DataExportInterval"] = strconv.Itoa(common.DataExportInterval)
 	common.OptionMap["DataExportDefaultTime"] = common.DataExportDefaultTime
@@ -328,6 +337,23 @@ func UpdateOption(key string, value string) error {
 	}
 	// Update OptionMap
 	return updateOptionMap(key, validatedValue)
+}
+
+// ValidateLotterySettings validates a batch before any option is persisted.
+// The controller uses this to avoid partially applying a malformed settings
+// request when several lottery options are submitted together.
+func ValidateLotterySettings(values map[string]string) error {
+	for key, value := range values {
+		switch key {
+		case LotteryEnabledKey, LotteryThresholdKey, LotteryDailyAttemptsKey,
+			LotteryKeepAttemptsKey, LotteryInviteRegisterKey, LotteryInviteRechargeKey,
+			LotteryInviteRegisterAttemptsKey, LotteryInviteRechargeAttemptsKey:
+			if _, err := validateOptionValue(key, value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func updateOptionMap(key string, value string) (err error) {
@@ -625,7 +651,7 @@ func updateOptionMap(key string, value string) (err error) {
 		common.DataExportDefaultTime = value
 	case "ChannelUsageTimezone":
 		common.ChannelUsageTimezone = validatedValue
-	case LotteryThresholdKey, LotteryDailyAttemptsKey, LotteryKeepAttemptsKey, LotteryInviteRegisterKey, LotteryInviteRechargeKey:
+	case LotteryEnabledKey, LotteryThresholdKey, LotteryDailyAttemptsKey, LotteryKeepAttemptsKey, LotteryInviteRegisterKey, LotteryInviteRechargeKey, LotteryInviteRegisterAttemptsKey, LotteryInviteRechargeAttemptsKey:
 		// Lottery settings are read dynamically by model/lottery.go.
 	case "ModelRatio":
 		err = ratio_setting.UpdateModelRatioByJSONString(value)

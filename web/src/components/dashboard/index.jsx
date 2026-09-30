@@ -59,7 +59,6 @@ const Dashboard = () => {
 
   // ========== 主要数据管理 ==========
   const dashboardData = useDashboardData(userState, userDispatch, statusState);
-
   // ========== 图表管理 ==========
   const dashboardCharts = useDashboardCharts(
     dashboardData.dataExportDefaultTime,
@@ -158,6 +157,7 @@ const Dashboard = () => {
         showSearchModal={dashboardData.showSearchModal}
         refresh={handleRefresh}
         loading={dashboardData.loading}
+        isAdminUser={dashboardData.isAdminUser}
         t={dashboardData.t}
       />
 

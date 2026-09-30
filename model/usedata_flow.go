@@ -39,19 +39,33 @@ func flowQuotaBaseQuery(startTime, endTime int64) *gorm.DB {
 
 func getSelfFlowQuotaData(startTime, endTime int64, userID int) ([]*FlowQuotaData, error) {
 	rows := make([]*FlowQuotaData, 0)
-	err := flowQuotaBaseQuery(startTime, endTime).Select(commonGroupCol+", model_name, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used").Where("user_id = ?", userID).Group(commonGroupCol + ", model_name").Order("quota DESC").Find(&rows).Error
+	err := flowQuotaBaseQuery(startTime, endTime).
+		Select(commonGroupCol+", model_name, node_name, token_id, channel_id, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used").
+		Where("user_id = ?", userID).
+		Group(commonGroupCol + ", model_name, node_name, token_id, channel_id").
+		Order("quota DESC").Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if err = fillFlowTokenNames(rows); err != nil {
+		return rows, err
+	}
+	err = fillFlowChannelNames(rows)
 	return rows, err
 }
 
 func getAdminFlowQuotaData(startTime, endTime int64, username string) ([]*FlowQuotaData, error) {
 	rows := make([]*FlowQuotaData, 0)
-	query := flowQuotaBaseQuery(startTime, endTime).Select("user_id, username, " + commonGroupCol + ", model_name, channel_id, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used")
+	query := flowQuotaBaseQuery(startTime, endTime).Select("user_id, username, node_name, token_id, " + commonGroupCol + ", model_name, channel_id, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used")
 	if username != "" {
 		query = query.Where("username = ?", username)
 	}
-	err := query.Group("user_id, username, " + commonGroupCol + ", model_name, channel_id").Order("quota DESC").Find(&rows).Error
+	err := query.Group("user_id, username, node_name, token_id, " + commonGroupCol + ", model_name, channel_id").Order("quota DESC").Find(&rows).Error
 	if err != nil {
 		return nil, err
+	}
+	if err = fillFlowTokenNames(rows); err != nil {
+		return rows, err
 	}
 	return rows, fillFlowChannelNames(rows)
 }

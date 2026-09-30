@@ -17,10 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { initVChartSemiTheme } from '@visactor/vchart-semi-theme';
 
-import { useOpsData } from '../../hooks/ops/useOpsData';
+import { toOpsParams, useOpsData } from '../../hooks/ops/useOpsData';
+import { useDashboardAnalytics } from '../../hooks/dashboard/useDashboardAnalytics';
+import FlowAnalyticsPanel from '../../components/dashboard/FlowAnalyticsPanel';
+import LotteryAnalyticsPanel from '../../components/dashboard/LotteryAnalyticsPanel';
 import OpsAlerts from './components/OpsAlerts';
 import OpsDetailModal from './components/OpsDetailModal';
 import OpsHeader from './components/OpsHeader';
@@ -30,16 +33,67 @@ import OpsSystemStatus from './components/OpsSystemStatus';
 import OpsTrendPanel from './components/OpsTrendPanel';
 import SystemEventLogPanel from './components/SystemEventLogPanel';
 
-const Ops = () => {
-  const data = useOpsData();
+const Ops = ({ pageTitle = '运维监控', variant = 'ops' }) => {
+  const isAnalytics = variant === 'analytics';
+  const data = useOpsData({
+    includeOverview: !isAnalytics,
+    includeSystem: !isAnalytics,
+    includeRankings: !isAnalytics,
+    includeLogs: !isAnalytics,
+  });
+  const analyticsInputs = useMemo(() => {
+    const params = toOpsParams(data.filters);
+    return {
+      start_timestamp: new Date(params.start_timestamp * 1000).toISOString(),
+      end_timestamp: new Date(params.end_timestamp * 1000).toISOString(),
+      username: '',
+    };
+  }, [data.filters]);
+  const analytics = useDashboardAnalytics({
+    inputs: analyticsInputs,
+    isAdminUser: true,
+  });
 
   useEffect(() => {
     initVChartSemiTheme({ isWatchingThemeSwitch: true });
   }, []);
 
+  useEffect(() => {
+    if (!isAnalytics) return;
+    analytics.loadAnalytics();
+  }, [analytics.loadAnalytics, isAnalytics]);
+
+  const refresh = () =>
+    data.refresh(isAnalytics ? analytics.loadAnalytics : undefined);
+
+  if (isAnalytics) {
+    return (
+      <div className='mt-[60px] px-2'>
+        <OpsHeader
+          {...data}
+          refresh={refresh}
+          pageTitle={pageTitle}
+          showDimensionFilters={false}
+        />
+        <FlowAnalyticsPanel
+          flowData={analytics.flowData}
+          loading={analytics.flowLoading}
+          isAdminUser
+          onRefresh={analytics.loadFlowData}
+          t={data.t}
+        />
+        <LotteryAnalyticsPanel
+          stats={analytics.lotteryStats}
+          loading={analytics.lotteryLoading}
+          t={data.t}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className='mt-[60px] px-2'>
-      <OpsHeader {...data} />
+      <OpsHeader {...data} refresh={refresh} pageTitle={pageTitle} />
       <OpsOverviewPanel {...data} />
       <OpsSystemStatus {...data} />
       <div className='grid grid-cols-1 gap-3 xl:grid-cols-12'>

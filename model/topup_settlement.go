@@ -78,7 +78,7 @@ func SettleTopUpSuccess(tradeNo, expectedProvider string, creditedQuota int, cal
 		if LotteryInviteRechargeEnabled() {
 			var invited User
 			if err := tx.Select("inviter_id").First(&invited, locked.UserId).Error; err == nil && invited.InviterId > 0 {
-				if err := GrantLotteryAttemptTx(tx, invited.InviterId, 1); err != nil {
+				if err := GrantLotteryAttemptTx(tx, invited.InviterId, LotteryInviteRechargeAttempts()); err != nil {
 					return err
 				}
 			}

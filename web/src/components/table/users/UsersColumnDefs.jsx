@@ -170,10 +170,16 @@ const renderQuotaUsage = (text, record, t) => {
   const { Paragraph } = Typography;
   const used = parseInt(record.used_quota) || 0;
   const remain = parseInt(record.quota) || 0;
+  const cash = parseInt(record.cash_quota) || 0;
+  const gift = parseInt(record.gift_quota) || 0;
+  const promotion = parseInt(record.aff_quota) || 0;
   const total = used + remain;
   const percent = total > 0 ? (remain / total) * 100 : 0;
   const popoverContent = (
-    <div className='text-xs p-2'>
+    <div className='min-w-[230px] p-2 text-xs'>
+      <div className='mb-2 font-medium text-semi-color-text-0'>
+        {t('余额构成')}
+      </div>
       <Paragraph copyable={{ content: renderQuota(used) }}>
         {t('已用额度')}: {renderQuota(used)}
       </Paragraph>
@@ -183,6 +189,27 @@ const renderQuotaUsage = (text, record, t) => {
       <Paragraph copyable={{ content: renderQuota(total) }}>
         {t('总额度')}: {renderQuota(total)}
       </Paragraph>
+      <div className='my-2 border-t border-semi-color-border' />
+      <div className='space-y-1'>
+        <div className='flex items-center justify-between gap-4'>
+          <span className='text-semi-color-text-2'>{t('现金余额')}</span>
+          <span className='font-medium'>{renderQuota(cash)}</span>
+        </div>
+        <div className='flex items-center justify-between gap-4'>
+          <span className='text-semi-color-text-2'>{t('赠送余额')}</span>
+          <span className='font-medium'>{renderQuota(gift)}</span>
+        </div>
+        <div className='flex items-center justify-between gap-4'>
+          <span className='text-semi-color-text-2'>{t('推广待转余额')}</span>
+          <span className='font-medium'>{renderQuota(promotion)}</span>
+        </div>
+      </div>
+      <div className='mt-2 text-[11px] text-semi-color-text-2'>
+        {t('当前可用余额 = 现金余额 + 赠送余额')}
+      </div>
+      <div className='text-[11px] text-semi-color-text-2'>
+        {t('推广余额需划转后才会计入可用余额')}
+      </div>
     </div>
   );
   return (
