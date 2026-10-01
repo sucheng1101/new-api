@@ -55,9 +55,7 @@ const routerMap = {
   promotion: '/console/promotion',
   monitorStatus: '/console/monitor-status',
   monitorGroups: '/console/monitor-groups',
-  dashboardModels: '/console/dashboard/models',
-  dashboardFlow: '/console/dashboard/flow',
-  dashboardUsers: '/console/dashboard/users',
+  dashboard: '/console/dashboard',
   taskPlugin: '/console/task-plugin',
 };
 
@@ -97,14 +95,9 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/token',
       },
       {
-        text: t('模型调用分析'),
-        itemKey: 'dashboardModels',
-        to: '/dashboard/models',
-      },
-      {
-        text: t('调用流向'),
-        itemKey: 'dashboardFlow',
-        to: '/dashboard/flow',
+        text: t('数据看板'),
+        itemKey: 'dashboard',
+        to: '/dashboard',
       },
       {
         text: t('使用日志'),
@@ -183,12 +176,6 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('渠道管理'),
         itemKey: 'channel',
         to: '/channel',
-        className: isAdmin() ? '' : 'tableHiddle',
-      },
-      {
-        text: t('用户分析'),
-        itemKey: 'dashboardUsers',
-        to: '/dashboard/users',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

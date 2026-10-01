@@ -209,14 +209,9 @@ export default function SettingsSidebarModulesAdmin(props) {
       modules: [
         { key: 'detail', title: t('概览'), description: t('系统数据统计') },
         {
-          key: 'dashboardModels',
-          title: t('模型调用分析'),
-          description: t('模型消耗、趋势和调用分布'),
-        },
-        {
-          key: 'dashboardFlow',
-          title: t('调用流向'),
-          description: t('模型、分组、渠道、节点和令牌流向'),
+          key: 'dashboard',
+          title: t('数据看板'),
+          description: t('请求、排行与趋势分析'),
         },
         { key: 'token', title: t('令牌管理'), description: t('API令牌管理') },
         { key: 'log', title: t('使用日志'), description: t('API使用记录') },

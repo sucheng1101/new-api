@@ -182,7 +182,7 @@ export default function FlowAnalyticsPanel({
 
   return (
     <Card
-      className='!rounded-2xl mb-4'
+      className='!rounded-lg mb-4'
       title={
         <div className='flex items-center justify-between gap-3 flex-wrap'>
           <div className='flex items-center gap-2'>

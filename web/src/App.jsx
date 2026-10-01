@@ -70,12 +70,6 @@ const About = lazy(() => import('./pages/About'));
 const UserAgreement = lazy(() => import('./pages/UserAgreement'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 
-const DASHBOARD_SECTION = {
-  models: 'models',
-  flow: 'flow',
-  users: 'users',
-};
-
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
   return <OAuth2Callback type={provider} />;
@@ -211,7 +205,9 @@ function App() {
           path='/console/dashboard'
           element={
             <PrivateRoute>
-              <Navigate to='/console/dashboard/models' replace />
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <DashboardAnalytics />
+              </Suspense>
             </PrivateRoute>
           }
         />
@@ -219,9 +215,7 @@ function App() {
           path='/console/dashboard/models'
           element={
             <PrivateRoute>
-              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
-                <DashboardAnalytics section={DASHBOARD_SECTION.models} />
-              </Suspense>
+              <Navigate to='/console/dashboard' replace />
             </PrivateRoute>
           }
         />
@@ -229,9 +223,7 @@ function App() {
           path='/console/dashboard/flow'
           element={
             <PrivateRoute>
-              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
-                <DashboardAnalytics section={DASHBOARD_SECTION.flow} />
-              </Suspense>
+              <Navigate to='/console/dashboard?section=flow' replace />
             </PrivateRoute>
           }
         />
@@ -239,9 +231,7 @@ function App() {
           path='/console/dashboard/users'
           element={
             <AdminRoute>
-              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
-                <DashboardAnalytics section={DASHBOARD_SECTION.users} />
-              </Suspense>
+              <Navigate to='/console/dashboard?section=users' replace />
             </AdminRoute>
           }
         />

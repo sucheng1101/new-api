@@ -128,6 +128,7 @@ export function getLucideIcon(key, selected = false) {
   switch (key) {
     case 'detail':
       return <LayoutDashboard {...commonProps} color={iconColor} />;
+    case 'dashboard':
     case 'dashboardAnalytics':
       return <BarChart3 {...commonProps} color={iconColor} />;
     case 'dashboardModels':

@@ -110,7 +110,7 @@ const Dashboard = () => {
             theme='light'
             type='tertiary'
             icon={<BarChart3 size={16} />}
-            onClick={() => navigate('/console/dashboard/models')}
+            onClick={() => navigate('/console/dashboard')}
           >
             {dashboardData.t('数据看板')}
           </Button>

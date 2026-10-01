@@ -28,8 +28,7 @@ export const DEFAULT_ADMIN_CONFIG = {
   console: {
     enabled: true,
     detail: true,
-    dashboardModels: true,
-    dashboardFlow: true,
+    dashboard: true,
     token: true,
     log: true,
     midjourney: true,
@@ -78,18 +77,34 @@ export const mergeAdminConfig = (savedConfig) => {
 
   merged.custom = normalizeSidebarCustomItems(savedConfig.custom);
 
+  const hasLegacyDashboardModule =
+    savedConfig?.console?.dashboardModels !== undefined ||
+    savedConfig?.console?.dashboardFlow !== undefined;
+  if (
+    savedConfig?.console?.dashboard === undefined &&
+    hasLegacyDashboardModule
+  ) {
+    merged.console.dashboard =
+      savedConfig.console.dashboardModels === true ||
+      savedConfig.console.dashboardFlow === true;
+  }
+
   if (savedConfig?.admin?.dashboardAnalytics !== undefined) {
     const visible = savedConfig.admin.dashboardAnalytics;
-    if (savedConfig?.console?.dashboardModels === undefined) {
-      merged.console.dashboardModels = visible;
-    }
-    if (savedConfig?.console?.dashboardFlow === undefined) {
-      merged.console.dashboardFlow = visible;
+    if (
+      savedConfig?.console?.dashboard === undefined &&
+      !hasLegacyDashboardModule
+    ) {
+      merged.console.dashboard = visible;
     }
     if (savedConfig?.admin?.dashboardUsers === undefined) {
       merged.admin.dashboardUsers = visible;
     }
   }
+
+  delete merged.console.dashboardModels;
+  delete merged.console.dashboardFlow;
+  delete merged.admin.dashboardAnalytics;
 
   return merged;
 };
