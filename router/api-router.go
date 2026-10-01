@@ -18,6 +18,7 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
+	apiRouter.Use(middleware.AuditRecorder())
 	{
 		registerAuthzRoutes(apiRouter)
 		apiRouter.GET("/setup", controller.GetSetup)
@@ -176,6 +177,18 @@ func SetApiRouter(router *gin.Engine) {
 			adminLotteryRoute.POST("/prizes", controller.UpsertAdminLotteryPrize)
 			adminLotteryRoute.PUT("/prizes", controller.UpsertAdminLotteryPrize)
 			adminLotteryRoute.DELETE("/prizes/:id", controller.DeleteAdminLotteryPrize)
+		}
+
+		securityRoute := apiRouter.Group("/admin/security")
+		securityRoute.Use(middleware.AdminAuth())
+		{
+			securityRoute.GET("/summary", controller.GetSecuritySummary)
+			securityRoute.GET("/events", controller.GetSecurityEvents)
+			securityRoute.GET("/ip-risks", controller.GetSecurityIPRisks)
+			securityRoute.GET("/ip-blocks", controller.GetSecurityIPBlocks)
+			securityRoute.POST("/ip-blocks", controller.CreateSecurityIPBlock)
+			securityRoute.PATCH("/ip-blocks/:id", controller.UpdateSecurityIPBlock)
+			securityRoute.DELETE("/ip-blocks/:id", controller.DeleteSecurityIPBlock)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

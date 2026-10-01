@@ -66,6 +66,7 @@ const Home = lazy(() => import('./pages/Home'));
 const Docs = lazy(() => import('./pages/Docs'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const DashboardAnalytics = lazy(() => import('./pages/DashboardAnalytics'));
+const SecurityAccess = lazy(() => import('./pages/SecurityAccess'));
 const About = lazy(() => import('./pages/About'));
 const UserAgreement = lazy(() => import('./pages/UserAgreement'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
@@ -232,6 +233,16 @@ function App() {
           element={
             <AdminRoute>
               <Navigate to='/console/dashboard?section=users' replace />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/security'
+          element={
+            <AdminRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <SecurityAccess />
+              </Suspense>
             </AdminRoute>
           }
         />

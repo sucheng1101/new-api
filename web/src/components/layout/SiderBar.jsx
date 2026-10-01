@@ -56,6 +56,7 @@ const routerMap = {
   monitorStatus: '/console/monitor-status',
   monitorGroups: '/console/monitor-groups',
   dashboard: '/console/dashboard',
+  security: '/console/security',
   taskPlugin: '/console/task-plugin',
 };
 
@@ -225,6 +226,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'setting',
         to: '/setting',
         className: isRoot() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('安全与访问'),
+        itemKey: 'security',
+        to: '/security',
+        className: isAdmin() ? '' : 'tableHiddle',
       },
     ];
 

@@ -53,6 +53,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     setting: true,
     monitorGroups: true,
     dashboardUsers: true,
+    security: true,
   },
   custom: [],
 };

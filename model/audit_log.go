@@ -48,9 +48,11 @@ type AuditLogFilter struct {
 	UserId          int
 	Username        string
 	Category        string
+	Action          string
 	TokenRef        string
 	ExcludeTokenRef string
 	RequestId       string
+	Ip              string
 	StartTimestamp  int64
 	EndTimestamp    int64
 	Success         *bool
@@ -129,6 +131,9 @@ func GetAuditLogs(filter AuditLogFilter, start, limit, viewerRole int) ([]*Audit
 	if filter.Category != "" {
 		query = query.Where("category = ?", filter.Category)
 	}
+	if filter.Action != "" {
+		query = query.Where("action = ?", filter.Action)
+	}
 	if filter.TokenRef != "" {
 		query = query.Where("token_ref = ?", filter.TokenRef)
 	}
@@ -137,6 +142,9 @@ func GetAuditLogs(filter AuditLogFilter, start, limit, viewerRole int) ([]*Audit
 	}
 	if filter.RequestId != "" {
 		query = query.Where("request_id = ?", filter.RequestId)
+	}
+	if filter.Ip != "" {
+		query = query.Where("ip = ?", filter.Ip)
 	}
 	if filter.StartTimestamp > 0 {
 		query = query.Where("created_at >= ?", filter.StartTimestamp)

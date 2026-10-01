@@ -47,7 +47,7 @@ import {
 } from '../../constants/dashboard.constants';
 
 const SummaryCard = ({ icon, label, value, loading }) => (
-  <Card className='!rounded-lg' bodyStyle={{ padding: 16 }} loading={loading}>
+  <Card className='!rounded-2xl border shadow-sm' bodyStyle={{ padding: 16 }} loading={loading}>
     <div className='flex items-center gap-3'>
       <div className='flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40'>
         {icon}
@@ -152,7 +152,7 @@ const DashboardAnalytics = () => {
     section === 'flow' ? analytics.flowLoading : dashboardData.loading;
 
   return (
-    <div className='mt-[60px] px-2'>
+    <div className='mx-auto w-full max-w-[1800px] px-3 pb-8 sm:px-6'>
       <SearchModal
         searchModalVisible={dashboardData.searchModalVisible}
         handleSearchConfirm={handleApplyFilters}
@@ -177,7 +177,7 @@ const DashboardAnalytics = () => {
         </Tag>
       </div>
 
-      <Card className='mb-3 !rounded-lg' bodyStyle={{ padding: 16 }}>
+      <Card className='mb-4 !rounded-2xl border shadow-sm' bodyStyle={{ padding: 16 }}>
         <div className='flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
           <div className='overflow-x-auto'>
             <Tabs

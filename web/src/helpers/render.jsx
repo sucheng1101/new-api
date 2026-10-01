@@ -84,6 +84,7 @@ import {
   Gauge,
   ExternalLink,
   PlugZap,
+  ShieldCheck,
 } from 'lucide-react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { normalizeLucideIconName } from './lucide';
@@ -131,6 +132,8 @@ export function getLucideIcon(key, selected = false) {
     case 'dashboard':
     case 'dashboardAnalytics':
       return <BarChart3 {...commonProps} color={iconColor} />;
+    case 'security':
+      return <ShieldCheck {...commonProps} color={iconColor} />;
     case 'dashboardModels':
       return <BarChart3 {...commonProps} color={iconColor} />;
     case 'dashboardFlow':
