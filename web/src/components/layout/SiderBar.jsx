@@ -55,8 +55,9 @@ const routerMap = {
   promotion: '/console/promotion',
   monitorStatus: '/console/monitor-status',
   monitorGroups: '/console/monitor-groups',
-  ops: '/console/ops',
-  dashboardAnalytics: '/console/dashboard',
+  dashboardModels: '/console/dashboard/models',
+  dashboardFlow: '/console/dashboard/flow',
+  dashboardUsers: '/console/dashboard/users',
   taskPlugin: '/console/task-plugin',
 };
 
@@ -94,6 +95,16 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('令牌管理'),
         itemKey: 'token',
         to: '/token',
+      },
+      {
+        text: t('模型调用分析'),
+        itemKey: 'dashboardModels',
+        to: '/dashboard/models',
+      },
+      {
+        text: t('调用流向'),
+        itemKey: 'dashboardFlow',
+        to: '/dashboard/flow',
       },
       {
         text: t('使用日志'),
@@ -175,21 +186,15 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
-        text: t('数据看板'),
-        itemKey: 'dashboardAnalytics',
-        to: '/dashboard',
+        text: t('用户分析'),
+        itemKey: 'dashboardUsers',
+        to: '/dashboard/users',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
         text: t('渠道状态'),
         itemKey: 'monitorGroups',
         to: '/monitor-groups',
-        className: isAdmin() ? '' : 'tableHiddle',
-      },
-      {
-        text: t('运维监控'),
-        itemKey: 'ops',
-        to: '/ops',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

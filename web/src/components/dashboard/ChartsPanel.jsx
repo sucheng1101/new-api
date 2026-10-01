@@ -19,10 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Button, ButtonGroup, Card, Tabs, TabPane } from '@douyinfe/semi-ui';
-import { PieChart } from 'lucide-react';
+import { PieChart, Users } from 'lucide-react';
 import { VChart } from '@visactor/react-vchart';
 
 const ChartsPanel = ({
+  mode = 'all',
   activeChartTab,
   setActiveChartTab,
   spec_line,
@@ -39,6 +40,11 @@ const ChartsPanel = ({
   hasApiInfoPanel,
   t,
 }) => {
+  const showModelCharts = mode !== 'users';
+  const showUserCharts = mode !== 'models' && isAdminUser;
+  const title = mode === 'users' ? t('用户分析') : t('模型数据分析');
+  const TitleIcon = mode === 'users' ? Users : PieChart;
+
   return (
     <Card
       {...CARD_PROPS}
@@ -46,21 +52,27 @@ const ChartsPanel = ({
       title={
         <div className='flex flex-col lg:flex-row lg:items-center lg:justify-between w-full gap-3'>
           <div className={FLEX_CENTER_GAP2}>
-            <PieChart size={16} />
-            {t('模型数据分析')}
+            <TitleIcon size={16} />
+            {title}
           </div>
           <Tabs
             type='slash'
             activeKey={activeChartTab}
             onChange={setActiveChartTab}
           >
-            <TabPane tab={<span>{t('消耗分布')}</span>} itemKey='1' />
-            <TabPane tab={<span>{t('调用趋势')}</span>} itemKey='2' />
-            <TabPane tab={<span>{t('调用次数分布')}</span>} itemKey='3' />
-            {isAdminUser && (
+            {showModelCharts && (
+              <TabPane tab={<span>{t('消耗分布')}</span>} itemKey='1' />
+            )}
+            {showModelCharts && (
+              <TabPane tab={<span>{t('调用趋势')}</span>} itemKey='2' />
+            )}
+            {showModelCharts && (
+              <TabPane tab={<span>{t('调用次数分布')}</span>} itemKey='3' />
+            )}
+            {showUserCharts && (
               <TabPane tab={<span>{t('用户排行')}</span>} itemKey='5' />
             )}
-            {isAdminUser && (
+            {showUserCharts && (
               <TabPane tab={<span>{t('用户消耗趋势')}</span>} itemKey='6' />
             )}
           </Tabs>
@@ -69,16 +81,16 @@ const ChartsPanel = ({
       bodyStyle={{ padding: 0 }}
     >
       <div className='h-96 p-2'>
-        {activeChartTab === '1' && (
+        {showModelCharts && activeChartTab === '1' && (
           <VChart spec={spec_line} option={CHART_CONFIG} />
         )}
-        {activeChartTab === '2' && (
+        {showModelCharts && activeChartTab === '2' && (
           <VChart spec={spec_model_line} option={CHART_CONFIG} />
         )}
-        {activeChartTab === '3' && (
+        {showModelCharts && activeChartTab === '3' && (
           <VChart spec={spec_pie} option={CHART_CONFIG} />
         )}
-        {activeChartTab === '5' && isAdminUser && (
+        {activeChartTab === '5' && showUserCharts && (
           <div className='h-full flex flex-col gap-2'>
             <div className='flex justify-end px-2'>
               <ButtonGroup>
@@ -104,7 +116,7 @@ const ChartsPanel = ({
             </div>
           </div>
         )}
-        {activeChartTab === '6' && isAdminUser && (
+        {activeChartTab === '6' && showUserCharts && (
           <VChart spec={spec_user_trend} option={CHART_CONFIG} />
         )}
       </div>

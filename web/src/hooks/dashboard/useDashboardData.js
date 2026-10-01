@@ -82,7 +82,6 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
   const [activeUptimeTab, setActiveUptimeTab] = useState('');
 
   // ========== 常量 ==========
-  const now = new Date();
   const isAdminUser = isAdmin();
 
   // ========== Panel enable flags ==========
@@ -173,17 +172,19 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
       const res = await API.get(url);
       const { success, message, data } = res.data;
       if (success) {
-        setQuotaData(data);
-        if (data.length === 0) {
-          data.push({
+        const rows = Array.isArray(data) ? [...data] : [];
+        if (rows.length === 0) {
+          rows.push({
             count: 0,
             model_name: '无数据',
             quota: 0,
-            created_at: now.getTime() / 1000,
+            token_used: 0,
+            created_at: Date.now() / 1000,
           });
         }
-        data.sort((a, b) => a.created_at - b.created_at);
-        return data;
+        rows.sort((a, b) => a.created_at - b.created_at);
+        setQuotaData(rows);
+        return rows;
       } else {
         showError(message);
         return [];
@@ -191,7 +192,7 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     } finally {
       setLoading(false);
     }
-  }, [inputs, dataExportDefaultTime, isAdminUser, now]);
+  }, [inputs, dataExportDefaultTime, isAdminUser]);
 
   const loadUptimeData = useCallback(async () => {
     setUptimeLoading(true);
@@ -215,6 +216,7 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
 
   const loadUserQuotaData = useCallback(async () => {
     if (!isAdminUser) return [];
+    setLoading(true);
     try {
       const { start_timestamp, end_timestamp } = inputs;
       const localStartTimestamp = Date.parse(start_timestamp) / 1000;
@@ -231,6 +233,8 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     } catch (err) {
       console.error(err);
       return [];
+    } finally {
+      setLoading(false);
     }
   }, [inputs, isAdminUser]);
 

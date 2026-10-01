@@ -72,7 +72,9 @@ import {
   CreditCard,
   Layers,
   Gift,
+  GitBranch,
   User,
+  Users,
   Settings,
   Package,
   Server,
@@ -128,6 +130,12 @@ export function getLucideIcon(key, selected = false) {
       return <LayoutDashboard {...commonProps} color={iconColor} />;
     case 'dashboardAnalytics':
       return <BarChart3 {...commonProps} color={iconColor} />;
+    case 'dashboardModels':
+      return <BarChart3 {...commonProps} color={iconColor} />;
+    case 'dashboardFlow':
+      return <GitBranch {...commonProps} color={iconColor} />;
+    case 'dashboardUsers':
+      return <Users {...commonProps} color={iconColor} />;
     case 'playground':
       return <TerminalSquare {...commonProps} color={iconColor} />;
     case 'chat':

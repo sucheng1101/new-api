@@ -18,7 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { lazy, Suspense, useContext, useMemo } from 'react';
-import { Route, Routes, useLocation, useParams } from 'react-router-dom';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import User from './pages/User';
 import { AuthRedirect, PrivateRoute, AdminRoute, RootRoute } from './helpers';
@@ -59,9 +65,16 @@ import SetupCheck from './components/layout/SetupCheck';
 const Home = lazy(() => import('./pages/Home'));
 const Docs = lazy(() => import('./pages/Docs'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const DashboardAnalytics = lazy(() => import('./pages/DashboardAnalytics'));
 const About = lazy(() => import('./pages/About'));
 const UserAgreement = lazy(() => import('./pages/UserAgreement'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+
+const DASHBOARD_SECTION = {
+  models: 'models',
+  flow: 'flow',
+  users: 'users',
+};
 
 function DynamicOAuth2Callback() {
   const { provider } = useParams();
@@ -197,8 +210,38 @@ function App() {
         <Route
           path='/console/dashboard'
           element={
+            <PrivateRoute>
+              <Navigate to='/console/dashboard/models' replace />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/dashboard/models'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <DashboardAnalytics section={DASHBOARD_SECTION.models} />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/dashboard/flow'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <DashboardAnalytics section={DASHBOARD_SECTION.flow} />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/dashboard/users'
+          element={
             <AdminRoute>
-              <Ops pageTitle='数据看板' variant='analytics' />
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <DashboardAnalytics section={DASHBOARD_SECTION.users} />
+              </Suspense>
             </AdminRoute>
           }
         />

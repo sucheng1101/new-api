@@ -28,6 +28,8 @@ export const DEFAULT_ADMIN_CONFIG = {
   console: {
     enabled: true,
     detail: true,
+    dashboardModels: true,
+    dashboardFlow: true,
     token: true,
     log: true,
     midjourney: true,
@@ -51,8 +53,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     subscription: true,
     setting: true,
     monitorGroups: true,
-    dashboardAnalytics: true,
-    ops: true,
+    dashboardUsers: true,
   },
   custom: [],
 };
@@ -76,6 +77,19 @@ export const mergeAdminConfig = (savedConfig) => {
   }
 
   merged.custom = normalizeSidebarCustomItems(savedConfig.custom);
+
+  if (savedConfig?.admin?.dashboardAnalytics !== undefined) {
+    const visible = savedConfig.admin.dashboardAnalytics;
+    if (savedConfig?.console?.dashboardModels === undefined) {
+      merged.console.dashboardModels = visible;
+    }
+    if (savedConfig?.console?.dashboardFlow === undefined) {
+      merged.console.dashboardFlow = visible;
+    }
+    if (savedConfig?.admin?.dashboardUsers === undefined) {
+      merged.admin.dashboardUsers = visible;
+    }
+  }
 
   return merged;
 };
