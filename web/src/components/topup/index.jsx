@@ -30,6 +30,7 @@ import {
   getQuotaPerUnit,
 } from '../../helpers';
 import { Modal, Toast, Card, Button } from '@douyinfe/semi-ui';
+import { CircleAlert, Gift, LockKeyhole } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
@@ -1014,7 +1015,7 @@ const TopUp = () => {
         renderQuota={renderQuota}
         onOpenHistory={handleOpenHistory}
       />
-      <div className='grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]'>
+      <div className='grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_420px]'>
         <RechargeCard
           t={t}
           enableOnlineTopUp={enableOnlineTopUp}
@@ -1060,74 +1061,107 @@ const TopUp = () => {
           allSubscriptions={allSubscriptions}
           reloadSubscriptionSelf={getSubscriptionSelf}
         />
-        {lotteryState?.enabled && (
+        {lotteryState && (
           <div className='space-y-4 lg:sticky lg:top-4'>
             <Card
-              className='!rounded-2xl border border-semi-color-border shadow-sm'
+              className='lottery-card !rounded-2xl border border-semi-color-border shadow-sm'
               title={t('每日抽奖')}
             >
-              <div className='text-sm text-gray-500 mb-3'>
-                {t('消费')} {renderQuota(lotteryState?.consumed_quota || 0)} /{' '}
-                {renderQuota(lotteryState?.threshold || 0)} · {t('可用次数')}{' '}
-                {Math.max(
-                  0,
-                  (lotteryState?.granted_attempts || 0) -
-                    (lotteryState?.used_attempts || 0),
-                )}
-              </div>
-              <LotteryWheel
-                prizes={(lotteryState?.prizes || []).slice(0, 12)}
-                targetIndex={wheelTarget}
-                spinning={lotteryLoading}
-                disabled={
-                  lotteryLoading ||
-                  !lotteryState ||
-                  lotteryState.used_attempts >= lotteryState.granted_attempts
-                }
-                onCenterClick={drawLottery}
-              />
-              {(lotteryState?.prizes || []).length > 0 && (
-                <div className='mt-4 border-t border-gray-100 pt-3'>
-                  <div className='mb-2 flex items-center justify-between text-xs text-gray-500'>
-                    <span>{t('奖项概率')}</span>
-                    <span>{t('按当前有效奖池计算')}</span>
+              {!lotteryState.enabled ? (
+                <div className='lottery-disabled-panel'>
+                  <div className='lottery-disabled-icon'>
+                    <LockKeyhole size={24} />
                   </div>
-                  <div className='grid grid-cols-1 gap-1.5 sm:grid-cols-2'>
-                    {(lotteryState.prizes || []).slice(0, 12).map((prize) => (
-                      <div
-                        key={`lottery-prize-${prize.id}`}
-                        className='flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2.5 py-1.5 text-xs'
-                      >
-                        <span className='min-w-0 truncate' title={prize.name}>
-                          {prize.name}
-                        </span>
-                        <span className='shrink-0 font-medium text-gray-600'>
-                          {(
-                            Number(prize.probability_basis_points || 0) / 100
-                          ).toFixed(2)}
-                          %
-                        </span>
+                  <div className='lottery-disabled-title'>
+                    {t('\u62bd\u5956\u6682\u672a\u5f00\u542f')}
+                  </div>
+                  <div className='lottery-disabled-text'>
+                    {t(
+                      '\u5f53\u524d\u6d3b\u52a8\u7531\u7ba1\u7406\u5458\u7edf\u4e00\u914d\u7f6e\uff0c\u5f00\u542f\u540e\u5373\u53ef\u53c2\u4e0e\u62bd\u5956\u3002',
+                    )}
+                  </div>
+                  <div className='lottery-disabled-hint'>
+                    <CircleAlert size={14} />
+                    {t(
+                      '\u5982\u9700\u5f00\u542f\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458',
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className='text-sm text-gray-500 mb-3'>
+                    {t('消费')} {renderQuota(lotteryState?.consumed_quota || 0)}{' '}
+                    / {renderQuota(lotteryState?.threshold || 0)} ·{' '}
+                    {t('可用次数')}{' '}
+                    {Math.max(
+                      0,
+                      (lotteryState?.granted_attempts || 0) -
+                        (lotteryState?.used_attempts || 0),
+                    )}
+                  </div>
+                  <LotteryWheel
+                    prizes={(lotteryState?.prizes || []).slice(0, 12)}
+                    targetIndex={wheelTarget}
+                    spinning={lotteryLoading}
+                    disabled={
+                      lotteryLoading ||
+                      !lotteryState ||
+                      lotteryState.used_attempts >=
+                        lotteryState.granted_attempts
+                    }
+                    onCenterClick={drawLottery}
+                  />
+                  {(lotteryState?.prizes || []).length > 0 && (
+                    <div className='mt-4 border-t border-gray-100 pt-3'>
+                      <div className='mb-2 flex items-center justify-between text-xs text-gray-500'>
+                        <span>{t('奖项概率')}</span>
+                        <span>{t('按当前有效奖池计算')}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <Button
-                block
-                type='primary'
-                loading={lotteryLoading}
-                disabled={
-                  !lotteryState ||
-                  lotteryState.used_attempts >= lotteryState.granted_attempts
-                }
-                onClick={drawLottery}
-              >
-                {t('立即抽奖')}
-              </Button>
-              {lotteryDraws.length > 0 && (
-                <div className='text-xs text-gray-500 mt-3 text-center'>
-                  {t('最近中奖')}: {lotteryDraws[0].prize_name}
-                </div>
+                      <div className='grid grid-cols-1 gap-1.5 sm:grid-cols-2'>
+                        {(lotteryState.prizes || [])
+                          .slice(0, 12)
+                          .map((prize) => (
+                            <div
+                              key={`lottery-prize-${prize.id}`}
+                              className='flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2.5 py-1.5 text-xs'
+                            >
+                              <span
+                                className='min-w-0 truncate'
+                                title={prize.name}
+                              >
+                                {prize.name}
+                              </span>
+                              <span className='shrink-0 font-medium text-gray-600'>
+                                {(
+                                  Number(prize.probability_basis_points || 0) /
+                                  100
+                                ).toFixed(2)}
+                                %
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                  <Button
+                    block
+                    type='primary'
+                    loading={lotteryLoading}
+                    disabled={
+                      !lotteryState ||
+                      lotteryState.used_attempts >=
+                        lotteryState.granted_attempts
+                    }
+                    onClick={drawLottery}
+                  >
+                    {t('立即抽奖')}
+                  </Button>
+                  {lotteryDraws.length > 0 && (
+                    <div className='text-xs text-gray-500 mt-3 text-center'>
+                      {t('最近中奖')}: {lotteryDraws[0].prize_name}
+                    </div>
+                  )}
+                </>
               )}
             </Card>
             <Card

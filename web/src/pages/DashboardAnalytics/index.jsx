@@ -18,14 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useCallback, useContext, useEffect, useMemo } from 'react';
-import {
-  Button,
-  Card,
-  TabPane,
-  Tabs,
-  Tag,
-  Typography,
-} from '@douyinfe/semi-ui';
+import { Button, TabPane, Tabs, Typography } from '@douyinfe/semi-ui';
 import { BarChart3, Coins, Hash, RefreshCw, Search, Timer } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 
@@ -156,15 +149,8 @@ const DashboardAnalytics = () => {
   const sectionTitle =
     visibleSections.find((item) => item.key === section)?.label ||
     dashboardData.t('数据看板');
-  const sectionDescription =
-    section === 'models'
-      ? dashboardData.t('模型数据分析')
-      : section === 'flow'
-        ? dashboardData.t('调用流向')
-        : dashboardData.t('用户分析');
-
   return (
-    <div className='mx-auto w-full max-w-[1800px] px-2 pb-8 sm:px-4'>
+    <div className='dashboard-analytics-page mx-auto w-full max-w-[1800px] px-2 pb-8 sm:px-4'>
       <SearchModal
         searchModalVisible={dashboardData.searchModalVisible}
         handleSearchConfirm={handleApplyFilters}
@@ -178,26 +164,15 @@ const DashboardAnalytics = () => {
         t={dashboardData.t}
       />
 
-      <div className='mb-4 flex flex-wrap items-end justify-between gap-3'>
+      <div className='dashboard-page-heading mb-3 flex flex-wrap items-center justify-between gap-3'>
         <div>
-          <Typography.Title heading={4} style={{ margin: 0 }}>
+          <Typography.Title heading={3} style={{ margin: 0 }}>
             {sectionTitle}
           </Typography.Title>
-          <div className='mt-1 text-sm text-semi-color-text-2'>
-            {sectionDescription}
-          </div>
         </div>
-        <Tag color={dashboardData.isAdminUser ? 'blue' : 'green'}>
-          {dashboardData.isAdminUser
-            ? dashboardData.t('全站数据')
-            : dashboardData.t('我的数据')}
-        </Tag>
       </div>
 
-      <Card
-        className='mb-4 !rounded-xl border shadow-sm'
-        bodyStyle={{ padding: 12 }}
-      >
+      <div className='dashboard-analytics-toolbar mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
         <div className='flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
           <div className='overflow-x-auto'>
             <Tabs
@@ -239,11 +214,11 @@ const DashboardAnalytics = () => {
             </Button>
           </div>
         </div>
-      </Card>
+      </div>
 
       {section === 'models' && (
         <>
-          <div className='mb-4 overflow-hidden rounded-xl border border-semi-color-border'>
+          <div className='dashboard-stat-strip mb-4 overflow-hidden rounded-lg border border-semi-color-border'>
             <div className='grid grid-cols-2 divide-x divide-y divide-semi-color-border sm:grid-cols-3 lg:grid-cols-5 lg:divide-y-0'>
               <SummaryCard
                 icon={<Hash size={16} />}

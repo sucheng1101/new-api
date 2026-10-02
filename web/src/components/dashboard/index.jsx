@@ -101,9 +101,6 @@ const Dashboard = () => {
       <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
         <div>
           <h1 className='text-2xl font-semibold'>{dashboardData.t('概览')}</h1>
-          <p className='mt-1 text-sm text-semi-color-text-2'>
-            {dashboardData.t('集中查看接入进度、账户用量和服务健康状态')}
-          </p>
         </div>
         <div className='flex flex-wrap items-center gap-2'>
           <Button

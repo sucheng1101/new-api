@@ -195,14 +195,14 @@ const SecurityAccess = () => {
 
   return (
     <div className='mx-auto w-full max-w-[1800px] px-3 pb-8 sm:px-6'>
-      <div className='mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
-        <div>
+      <div className='mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+        <div className='flex items-center gap-2'>
+          <span className='flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300'>
+            <ShieldAlert size={17} />
+          </span>
           <Typography.Title heading={3} style={{ margin: 0 }}>
             {t('安全与访问')}
           </Typography.Title>
-          <div className='mt-1 text-sm text-semi-color-text-2'>
-            {t('集中查看注册、登录、充值及管理员操作，并快速处置风险 IP。')}
-          </div>
         </div>
         <div className='flex gap-2'>
           <Button

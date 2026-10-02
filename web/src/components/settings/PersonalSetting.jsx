@@ -542,9 +542,9 @@ const PersonalSetting = () => {
   };
 
   return (
-    <div className='mt-[60px]'>
+    <div className='personal-setting-page w-full'>
       <div className='flex justify-center'>
-        <div className='w-full max-w-7xl mx-auto px-2'>
+        <div className='w-full max-w-7xl mx-auto px-2 pb-8'>
           {/* 顶部用户信息区域 */}
           <UserInfoHeader t={t} userState={userState} />
 
