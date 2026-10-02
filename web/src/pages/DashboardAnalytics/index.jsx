@@ -158,10 +158,10 @@ const DashboardAnalytics = () => {
     dashboardData.t('数据看板');
   const sectionDescription =
     section === 'models'
-      ? dashboardData.t('按模型查看请求、Token 与额度消耗')
+      ? dashboardData.t('模型数据分析')
       : section === 'flow'
-        ? dashboardData.t('查看模型、渠道、节点与令牌之间的调用流向')
-        : dashboardData.t('查看管理员用户的调用量与额度消耗');
+        ? dashboardData.t('调用流向')
+        : dashboardData.t('用户分析');
 
   return (
     <div className='mx-auto w-full max-w-[1800px] px-2 pb-8 sm:px-4'>
