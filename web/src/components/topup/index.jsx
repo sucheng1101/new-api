@@ -941,7 +941,7 @@ const TopUp = () => {
   };
 
   return (
-    <div className='w-full max-w-7xl mx-auto relative min-h-screen lg:min-h-0 mt-[60px] px-2'>
+    <div className='wallet-page relative min-h-full w-full px-2 pb-8'>
       {/* 划转模态框 */}
       <TransferModal
         t={t}
@@ -1014,7 +1014,7 @@ const TopUp = () => {
         renderQuota={renderQuota}
         onOpenHistory={handleOpenHistory}
       />
-      <div className='grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start'>
+      <div className='grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]'>
         <RechargeCard
           t={t}
           enableOnlineTopUp={enableOnlineTopUp}
@@ -1061,8 +1061,11 @@ const TopUp = () => {
           reloadSubscriptionSelf={getSubscriptionSelf}
         />
         {lotteryState?.enabled && (
-          <div className='space-y-4'>
-            <Card className='!rounded-xl' title={t('每日抽奖')}>
+          <div className='space-y-4 lg:sticky lg:top-4'>
+            <Card
+              className='!rounded-2xl border border-semi-color-border shadow-sm'
+              title={t('每日抽奖')}
+            >
               <div className='text-sm text-gray-500 mb-3'>
                 {t('消费')} {renderQuota(lotteryState?.consumed_quota || 0)} /{' '}
                 {renderQuota(lotteryState?.threshold || 0)} · {t('可用次数')}{' '}
@@ -1127,7 +1130,10 @@ const TopUp = () => {
                 </div>
               )}
             </Card>
-            <Card className='!rounded-xl' title={t('邀请好友解锁抽奖')}>
+            <Card
+              className='!rounded-2xl border border-semi-color-border shadow-sm'
+              title={t('邀请好友解锁抽奖')}
+            >
               <div className='text-xs text-gray-500 mb-2'>
                 {t('邀请好友注册或充值可按管理员配置解锁抽奖次数')}
                 {lotteryState.inviteRegisterEnabled && (
