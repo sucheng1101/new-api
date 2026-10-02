@@ -434,6 +434,8 @@ export const useDashboardCharts = (
       setTrendData(trendDataResult);
 
       const newModelColors = generateModelColors(uniqueModels, {});
+      const otherLabel = t('其他');
+      newModelColors[otherLabel] = newModelColors[otherLabel] || '#94a3b8';
       setModelColors(newModelColors);
 
       const aggregatedData = aggregateDataByTimeAndModel(
@@ -530,9 +532,14 @@ export const useDashboardCharts = (
       );
 
       // ===== 模型调用次数折线图 =====
+      const rankedTrendModels = Array.from(modelTotals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([model]) => model);
+      const topTrendModels = rankedTrendModels.slice(0, 20);
+      const otherTrendModels = new Set(rankedTrendModels.slice(20));
       let modelLineData = [];
       chartTimePoints.forEach((time) => {
-        const timeData = Array.from(uniqueModels).map((model) => {
+        const timeData = topTrendModels.map((model) => {
           const key = `${time}-${model}`;
           const aggregated = aggregatedData.get(key);
           return {
@@ -541,6 +548,18 @@ export const useDashboardCharts = (
             Count: aggregated?.count || 0,
           };
         });
+        if (otherTrendModels.size > 0) {
+          const otherCount = Array.from(otherTrendModels).reduce(
+            (sum, model) =>
+              sum + Number(aggregatedData.get(`${time}-${model}`)?.count || 0),
+            0,
+          );
+          timeData.push({
+            Time: time,
+            Model: otherLabel,
+            Count: otherCount,
+          });
+        }
         modelLineData.push(...timeData);
       });
       modelLineData.sort((a, b) => a.Time.localeCompare(b.Time));
@@ -553,10 +572,18 @@ export const useDashboardCharts = (
         'lineData',
       );
 
-      const rankData = Array.from(modelTotals.entries())
+      const allRankData = Array.from(modelTotals.entries())
         .map(([model, count]) => ({ Model: model, Count: count }))
-        .sort((a, b) => b.Count - a.Count)
-        .slice(0, 20);
+        .sort((a, b) => b.Count - a.Count);
+      const rankData = allRankData.slice(0, 20);
+      if (allRankData.length > 20) {
+        rankData.push({
+          Model: otherLabel,
+          Count: allRankData
+            .slice(20)
+            .reduce((sum, item) => sum + item.Count, 0),
+        });
+      }
       updateChartSpec(
         setSpecRankBar,
         rankData,

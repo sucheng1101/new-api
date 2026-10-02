@@ -23,88 +23,134 @@ import {
   Empty,
   Input,
   Select,
-  Table,
   Tabs,
   TabPane,
   Tag,
 } from '@douyinfe/semi-ui';
 import {
   Activity,
+  Eye,
+  EyeOff,
   GitBranch,
-  Layers3,
+  Hash,
   RefreshCw,
   Search,
   Server,
-  Users,
+  WalletCards,
 } from 'lucide-react';
 import { VChart } from '@visactor/react-vchart';
 import { renderNumber, renderQuota } from '../../helpers';
 import { CHART_CONFIG } from '../../constants/dashboard.constants';
 
-const DIMENSIONS = [
-  { key: 'model', label: '模型', icon: Layers3 },
-  { key: 'group', label: '分组', icon: GitBranch },
-  { key: 'channel', label: '渠道', icon: Server },
-  { key: 'node', label: '节点', icon: Activity },
-  { key: 'token', label: '令牌', icon: Users },
+const FLOW_STAGES = [
+  ['user', 'username'],
+  ['node', 'node_name'],
+  ['token', 'token_name'],
+  ['group', 'group'],
+  ['model', 'model_name'],
+  ['channel', 'channel_name'],
 ];
 
-const getDimensionName = (row, dimension, t) => {
-  const fallback = t('未命名');
-  if (dimension === 'model') return row.model_name || fallback;
-  if (dimension === 'group') return row.group || fallback;
-  if (dimension === 'channel')
-    return (
-      row.channel_name || (row.channel_id ? `#${row.channel_id}` : fallback)
-    );
-  if (dimension === 'node') return row.node_name || fallback;
-  return row.token_name || (row.token_id ? `#${row.token_id}` : fallback);
+const STAGE_LABELS = {
+  user: '用户',
+  node: '节点',
+  token: '令牌',
+  group: '分组',
+  model: '模型',
+  channel: '渠道',
 };
 
-const toMetricValue = (row, metric) => {
+const metricValue = (row, metric) => {
   if (metric === 'tokens') return Number(row.token_used || 0);
-  if (metric === 'count') return Number(row.count || 0);
+  if (metric === 'requests') return Number(row.count || 0);
   return Number(row.quota || 0);
 };
 
-const aggregateRows = (rows, dimension, metric, topN, showOther, t) => {
-  const grouped = new Map();
-  rows.forEach((row) => {
-    const name = getDimensionName(row, dimension, t);
-    const current = grouped.get(name) || {
-      name,
-      quota: 0,
-      tokens: 0,
-      count: 0,
-    };
-    current.quota += Number(row.quota || 0);
-    current.tokens += Number(row.token_used || 0);
-    current.count += Number(row.count || 0);
-    grouped.set(name, current);
-  });
-  const total = rows.reduce((sum, row) => sum + toMetricValue(row, metric), 0);
-  const sorted = Array.from(grouped.values()).sort(
-    (left, right) => toMetricValue(right, metric) - toMetricValue(left, metric),
-  );
-  const visible = topN === 0 ? sorted : sorted.slice(0, topN);
-  if (showOther && topN > 0 && sorted.length > topN) {
-    const other = sorted.slice(topN).reduce(
-      (result, row) => ({
-        name: t('其他'),
-        quota: result.quota + row.quota,
-        tokens: result.tokens + row.tokens,
-        count: result.count + row.count,
-      }),
-      { name: t('其他'), quota: 0, tokens: 0, count: 0 },
-    );
-    visible.push(other);
+const labelFor = (row, key, kind, t, sensitiveVisible) => {
+  if (!sensitiveVisible && ['user', 'token', 'channel'].includes(kind)) {
+    return t('已隐藏');
   }
-  return visible.map((row, index) => ({
-    ...row,
-    key: `${dimension}-${row.name}-${index}`,
-    value: toMetricValue(row, metric),
-    share: total > 0 ? (toMetricValue(row, metric) / total) * 100 : 0,
-  }));
+  const value = row[key];
+  if (value !== undefined && value !== null && String(value).trim()) {
+    return String(value);
+  }
+  if (kind === 'channel' && row.channel_id) return `#${row.channel_id}`;
+  if (kind === 'token' && row.token_id) return `#${row.token_id}`;
+  return t('未知');
+};
+
+const buildSankeySpec = (rows, stages, metric, t, sensitiveVisible) => {
+  const nodes = new Map();
+  const links = new Map();
+  rows.forEach((row) => {
+    const path = stages.map(([kind, key]) => ({
+      kind,
+      label: labelFor(row, key, kind, t, sensitiveVisible),
+    }));
+    path.forEach(({ kind, label }) => {
+      const id = `${kind}:${label}`;
+      if (!nodes.has(id)) nodes.set(id, { key: id, name: label });
+    });
+    const value = Math.max(0, metricValue(row, metric));
+    for (let index = 0; index < path.length - 1; index += 1) {
+      const source = `${path[index].kind}:${path[index].label}`;
+      const target = `${path[index + 1].kind}:${path[index + 1].label}`;
+      const key = `${source}->${target}`;
+      const current = links.get(key);
+      links.set(key, {
+        source,
+        target,
+        value: (current?.value || 0) + value,
+      });
+    }
+  });
+  return {
+    type: 'sankey',
+    data: [
+      {
+        id: 'flow',
+        values: [
+          {
+            nodes: Array.from(nodes.values()),
+            links: Array.from(links.values()),
+          },
+        ],
+      },
+    ],
+    categoryField: 'name',
+    sourceField: 'source',
+    targetField: 'target',
+    valueField: 'value',
+    nodeKey: 'key',
+    direction: 'horizontal',
+    nodeAlign: 'justify',
+    nodeGap: 14,
+    nodeWidth: 16,
+    minLinkHeight: 2,
+    minNodeHeight: 8,
+    legends: { visible: false },
+    label: {
+      visible: true,
+      position: 'outside',
+      limit: 180,
+      style: { fill: '#64748b', fontSize: 11 },
+    },
+    tooltip: {
+      mark: {
+        content: [
+          {
+            key: t('数值'),
+            value: (datum) =>
+              metric === 'quota'
+                ? renderQuota(datum?.value || 0, 2)
+                : renderNumber(datum?.value || 0),
+          },
+        ],
+      },
+    },
+    background: { fill: 'transparent' },
+    animation: false,
+  };
 };
 
 export default function FlowAnalyticsPanel({
@@ -114,288 +160,240 @@ export default function FlowAnalyticsPanel({
   onRefresh,
   t,
 }) {
-  const [dimension, setDimension] = useState('model');
   const [metric, setMetric] = useState('quota');
-  const [topN, setTopN] = useState(10);
-  const [showOther, setShowOther] = useState(true);
+  const [topN, setTopN] = useState(50);
+  const [overflowMode, setOverflowMode] = useState('aggregate');
   const [nodeFilter, setNodeFilter] = useState('');
-  const activeDimension =
-    DIMENSIONS.find((item) => item.key === dimension) || DIMENSIONS[0];
-  const nodeOptions = useMemo(() => {
-    const names = new Set(flowData.map((row) => row.node_name).filter(Boolean));
-    return Array.from(names)
-      .sort()
-      .map((name) => ({ value: name, label: name }));
-  }, [flowData]);
-  const filteredData = useMemo(
+  const [sensitiveVisible, setSensitiveVisible] = useState(true);
+  const [visibleStageKeys, setVisibleStageKeys] = useState(
+    FLOW_STAGES.map(([kind]) => kind),
+  );
+
+  const stages = useMemo(
     () =>
-      nodeFilter
-        ? flowData.filter((row) => (row.node_name || '') === nodeFilter)
-        : flowData,
-    [flowData, nodeFilter],
+      FLOW_STAGES.filter(
+        ([kind]) => isAdminUser || !['user', 'node'].includes(kind),
+      ).filter(([kind]) => visibleStageKeys.includes(kind)),
+    [isAdminUser, visibleStageKeys],
   );
-  const rows = useMemo(
-    () => aggregateRows(filteredData, dimension, metric, topN, showOther, t),
-    [dimension, filteredData, metric, showOther, t, topN],
+  const availableStages = useMemo(
+    () =>
+      FLOW_STAGES.filter(
+        ([kind]) => isAdminUser || !['user', 'node'].includes(kind),
+      ),
+    [isAdminUser],
   );
-  const sankeySpec = useMemo(() => {
-    const stages = isAdminUser
-      ? [
-          ['user', 'username'],
-          ['node', 'node_name'],
-          ['token', 'token_name'],
-          ['group', 'group'],
-          ['model', 'model_name'],
-          ['channel', 'channel_name'],
-        ]
-      : [
-          ['token', 'token_name'],
-          ['group', 'group'],
-          ['model', 'model_name'],
-          ['channel', 'channel_name'],
-        ];
-    const nodes = new Map();
-    const links = new Map();
-    const readLabel = (row, key) => {
-      const value = row[key];
-      if (value !== undefined && value !== null && String(value).trim()) {
-        return String(value);
-      }
-      return t('未知');
-    };
-
-    filteredData.forEach((row) => {
-      const path = stages.map(([kind, key]) => ({
-        kind,
-        label: readLabel(row, key),
-      }));
-      path.forEach(({ kind, label }) => {
-        const id = `${kind}:${label}`;
-        if (!nodes.has(id)) nodes.set(id, { key: id, name: label });
-      });
-      const value = Math.max(0, toMetricValue(row, metric));
-      for (let index = 0; index < path.length - 1; index += 1) {
-        const source = `${path[index].kind}:${path[index].label}`;
-        const target = `${path[index + 1].kind}:${path[index + 1].label}`;
-        const key = `${source}->${target}`;
-        links.set(key, {
-          source,
-          target,
-          value: (links.get(key)?.value || 0) + value,
-        });
-      }
-    });
-
-    return {
-      type: 'sankey',
-      data: [
+  const nodeOptions = useMemo(
+    () =>
+      Array.from(new Set(flowData.map((row) => row.node_name).filter(Boolean)))
+        .sort()
+        .map((name) => ({ value: name, label: name })),
+    [flowData],
+  );
+  const filteredData = useMemo(() => {
+    const matchingRows = flowData
+      .filter((row) => !nodeFilter || row.node_name === nodeFilter)
+      .sort((a, b) => metricValue(b, metric) - metricValue(a, metric));
+    const visibleRows = matchingRows.slice(0, topN || undefined);
+    if (
+      overflowMode === 'aggregate' &&
+      topN > 0 &&
+      matchingRows.length > topN
+    ) {
+      const other = matchingRows.slice(topN).reduce(
+        (result, row) => ({
+          ...result,
+          quota: result.quota + Number(row.quota || 0),
+          token_used: result.token_used + Number(row.token_used || 0),
+          count: result.count + Number(row.count || 0),
+        }),
         {
-          id: 'flow',
-          values: [
-            {
-              nodes: Array.from(nodes.values()),
-              links: Array.from(links.values()),
-            },
-          ],
+          username: t('其他'),
+          node_name: t('其他'),
+          token_name: t('其他'),
+          group: t('其他'),
+          model_name: t('其他'),
+          channel_name: t('其他'),
+          quota: 0,
+          token_used: 0,
+          count: 0,
         },
-      ],
-      categoryField: 'name',
-      sourceField: 'source',
-      targetField: 'target',
-      valueField: 'value',
-      nodeKey: 'key',
-      direction: 'horizontal',
-      nodeAlign: 'justify',
-      nodeGap: 14,
-      nodeWidth: 16,
-      minLinkHeight: 2,
-      minNodeHeight: 8,
-      legends: { visible: false },
-      label: {
-        visible: true,
-        position: 'outside',
-        limit: 180,
-        style: { fill: '#64748b', fontSize: 11 },
-      },
-      tooltip: {
-        mark: {
-          content: [
-            {
-              key: t('数值'),
-              value: (datum) =>
-                metric === 'quota'
-                  ? renderQuota(datum?.value || 0, 2)
-                  : renderNumber(datum?.value || 0),
-            },
-          ],
-        },
-      },
-      background: { fill: 'transparent' },
-      animation: false,
-    };
-  }, [filteredData, isAdminUser, metric, t]);
+      );
+      visibleRows.push(other);
+    }
+    return visibleRows;
+  }, [flowData, metric, nodeFilter, overflowMode, t, topN]);
   const totals = useMemo(
     () =>
-      filteredData.reduce(
+      flowData.reduce(
         (result, row) => ({
           quota: result.quota + Number(row.quota || 0),
           tokens: result.tokens + Number(row.token_used || 0),
-          count: result.count + Number(row.count || 0),
+          requests: result.requests + Number(row.count || 0),
         }),
-        { quota: 0, tokens: 0, count: 0 },
+        { quota: 0, tokens: 0, requests: 0 },
       ),
-    [filteredData],
+    [flowData],
   );
-  const columns = [
-    {
-      title: t(activeDimension.label),
-      dataIndex: 'name',
-      render: (value) => <span className='font-medium'>{value}</span>,
-    },
-    {
-      title: t('额度'),
-      dataIndex: 'quota',
-      render: (value) => renderQuota(value, 2),
-    },
-    {
-      title: t('Token'),
-      dataIndex: 'tokens',
-      render: (value) => renderNumber(value),
-    },
-    {
-      title: t('调用次数'),
-      dataIndex: 'count',
-      render: (value) => renderNumber(value),
-    },
-    {
-      title: t('占比'),
-      dataIndex: 'share',
-      render: (value) => (
-        <Tag color={value >= 50 ? 'blue' : 'grey'}>{value.toFixed(1)}%</Tag>
-      ),
-    },
+  const sankeySpec = useMemo(
+    () => buildSankeySpec(filteredData, stages, metric, t, sensitiveVisible),
+    [filteredData, metric, stages, t, sensitiveVisible],
+  );
+
+  const toggleStage = (kind) => {
+    setVisibleStageKeys((current) => {
+      if (current.includes(kind)) {
+        if (current.length <= 2) return current;
+        return current.filter((item) => item !== kind);
+      }
+      return [...current, kind];
+    });
+  };
+
+  const metricOptions = [
+    ['quota', '按额度', WalletCards],
+    ['tokens', '按 Token', Hash],
+    ['requests', '按请求', Activity],
   ];
 
   return (
-    <section className='dashboard-new-chart-card dashboard-flow-card mb-4'>
-      <header className='dashboard-new-chart-header'>
-        <div className='dashboard-new-chart-title'>
-          <span className='dashboard-new-chart-icon'>
-            <GitBranch size={15} />
-          </span>
-          <span>{t('调用流向分析')}</span>
-          {isAdminUser && <Tag color='blue'>{t('全站')}</Tag>}
+    <div className='dashboard-flow-layout'>
+      <div className='dashboard-flow-controls'>
+        <div className='dashboard-flow-control-group'>
+          <span>{t('流向宽度指标')}</span>
+          <Tabs type='button' activeKey={metric} onChange={setMetric}>
+            {metricOptions.map(([value, label, Icon]) => (
+              <TabPane
+                key={value}
+                itemKey={value}
+                tab={
+                  <span className='inline-flex items-center gap-1.5'>
+                    <Icon size={13} /> {t(label)}
+                  </span>
+                }
+              />
+            ))}
+          </Tabs>
         </div>
-        <button
-          type='button'
-          aria-label={t('刷新调用流向')}
-          className='dashboard-flow-refresh'
-          onClick={onRefresh}
-          disabled={loading}
-        >
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-        </button>
-      </header>
-      <div className='dashboard-new-chart-body p-3 sm:p-5'>
-        <div className='grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4'>
+        <div className='dashboard-flow-control-group'>
+          <span>{t('显示数量')}</span>
+          <Tabs
+            type='button'
+            activeKey={String(topN)}
+            onChange={(value) => setTopN(Number(value))}
+          >
+            {[10, 20, 50, 100].map((value) => (
+              <TabPane
+                key={value}
+                itemKey={String(value)}
+                tab={`Top ${value}`}
+              />
+            ))}
+          </Tabs>
+        </div>
+        <div className='dashboard-flow-control-group'>
+          <span>{t('溢出项目')}</span>
+          <Tabs
+            type='button'
+            activeKey={overflowMode}
+            onChange={setOverflowMode}
+          >
+            <TabPane itemKey='aggregate' tab={t('聚合其他')} />
+            <TabPane itemKey='hide' tab={t('隐藏')} />
+          </Tabs>
+        </div>
+        {isAdminUser && nodeOptions.length > 0 && (
+          <Select
+            value={nodeFilter}
+            onChange={setNodeFilter}
+            placeholder={t('全部节点')}
+            optionList={[{ value: '', label: t('全部节点') }, ...nodeOptions]}
+            style={{ minWidth: 150 }}
+            prefix={<Server size={14} />}
+          />
+        )}
+        <Input
+          prefix={<Search size={14} />}
+          value={nodeFilter}
+          onChange={setNodeFilter}
+          placeholder={t('筛选节点')}
+          style={{ width: 170 }}
+          showClear
+        />
+      </div>
+
+      <section className='dashboard-new-chart-card dashboard-flow-card'>
+        <header className='dashboard-new-chart-header dashboard-flow-card-header'>
+          <div className='dashboard-new-chart-title'>
+            <span className='dashboard-new-chart-icon'>
+              <GitBranch size={15} />
+            </span>
+            <span>{t('分流')}</span>
+            {isAdminUser && <Tag color='blue'>{t('全站')}</Tag>}
+          </div>
+          <div className='dashboard-flow-header-actions'>
+            <button
+              type='button'
+              className='dashboard-flow-icon-button'
+              onClick={() => setSensitiveVisible((value) => !value)}
+              aria-label={
+                sensitiveVisible ? t('隐藏敏感数据') : t('显示敏感数据')
+              }
+            >
+              {sensitiveVisible ? <Eye size={15} /> : <EyeOff size={15} />}
+            </button>
+            <button
+              type='button'
+              aria-label={t('刷新调用流向')}
+              className='dashboard-flow-icon-button'
+              onClick={onRefresh}
+              disabled={loading}
+            >
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </header>
+        <div className='dashboard-flow-stage-bar'>
+          {availableStages.map(([kind]) => (
+            <Checkbox
+              key={kind}
+              checked={visibleStageKeys.includes(kind)}
+              onChange={() => toggleStage(kind)}
+            >
+              {t(STAGE_LABELS[kind])}
+            </Checkbox>
+          ))}
+        </div>
+        <div className='dashboard-flow-metrics'>
           {[
             [t('额度'), renderQuota(totals.quota, 2)],
             [t('Token'), renderNumber(totals.tokens)],
-            [t('调用次数'), renderNumber(totals.count)],
+            [t('请求次数'), renderNumber(totals.requests)],
           ].map(([label, value]) => (
             <div key={label} className='dashboard-flow-summary'>
               <div className='text-xs text-semi-color-text-2'>{label}</div>
-              <div className='text-lg font-semibold mt-1'>{value}</div>
+              <div className='mt-1 text-lg font-semibold'>{value}</div>
             </div>
           ))}
         </div>
-        <div className='flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-3'>
-          <Tabs type='button' activeKey={dimension} onChange={setDimension}>
-            {DIMENSIONS.map((item) => (
-              <TabPane key={item.key} itemKey={item.key} tab={t(item.label)} />
-            ))}
-          </Tabs>
-          <Tabs type='button' activeKey={metric} onChange={setMetric}>
-            <TabPane itemKey='quota' tab={t('按额度')} />
-            <TabPane itemKey='tokens' tab={t('按Token')} />
-            <TabPane itemKey='count' tab={t('按调用次数')} />
-          </Tabs>
-        </div>
-        <div className='flex flex-wrap items-center gap-2 mb-4'>
-          {isAdminUser && nodeOptions.length > 0 && (
-            <Select
-              value={nodeFilter}
-              onChange={setNodeFilter}
-              placeholder={t('全部节点')}
-              optionList={[{ value: '', label: t('全部节点') }, ...nodeOptions]}
-              style={{ minWidth: 150 }}
-              prefix={<Server size={14} />}
-            />
+        <div className='flow-sankey-chart dashboard-flow-chart'>
+          {loading ? (
+            <div className='dashboard-chart-placeholder' aria-busy='true'>
+              <div className='dashboard-chart-placeholder-bar' />
+              <div className='dashboard-chart-placeholder-bars' />
+            </div>
+          ) : filteredData.length > 0 && stages.length >= 2 ? (
+            <VChart spec={sankeySpec} option={CHART_CONFIG} />
+          ) : (
+            <Empty description={t('当前时间范围暂无调用流向数据')} />
           )}
-          <Select
-            value={topN}
-            onChange={setTopN}
-            optionList={[5, 10, 15, 20, 0].map((value) => ({
-              value,
-              label: value === 0 ? t('全部') : `Top ${value}`,
-            }))}
-            style={{ width: 110 }}
-          />
-          <Checkbox
-            checked={showOther}
-            onChange={(event) => setShowOther(event.target.checked)}
-          >
-            {t('聚合其他')}
-          </Checkbox>
-          <Input
-            prefix={<Search size={14} />}
-            value={dimension === 'node' ? nodeFilter : ''}
-            onChange={(value) => dimension === 'node' && setNodeFilter(value)}
-            placeholder={t('筛选节点')}
-            style={{ width: 180 }}
-            showClear
-          />
         </div>
-        {rows.length > 0 ? (
-          <>
-            <div className='flow-sankey-chart'>
-              <VChart spec={sankeySpec} option={CHART_CONFIG} />
-            </div>
-            <div className='space-y-2 mb-4'>
-              {rows.slice(0, 8).map((row) => (
-                <div
-                  key={`bar-${row.key}`}
-                  className='flex items-center gap-2 text-xs'
-                >
-                  <span className='w-28 truncate' title={row.name}>
-                    {row.name}
-                  </span>
-                  <div className='flex-1 h-2 bg-gray-100 rounded overflow-hidden'>
-                    <div
-                      className='h-full bg-blue-500 rounded'
-                      style={{
-                        width: `${Math.min(100, Math.max(0, row.share))}%`,
-                      }}
-                    />
-                  </div>
-                  <span className='w-14 text-right text-gray-500'>
-                    {row.share.toFixed(1)}%
-                  </span>
-                </div>
-              ))}
-            </div>
-            <Table
-              columns={columns}
-              dataSource={rows}
-              rowKey='key'
-              pagination={false}
-              scroll={{ x: 620 }}
-            />
-          </>
-        ) : (
-          <Empty description={t('当前时间范围暂无调用流向数据')} />
+        {overflowMode === 'hide' && flowData.length > filteredData.length && (
+          <div className='dashboard-flow-overflow-note'>
+            {t('已隐藏超出显示数量的项目')}
+          </div>
         )}
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

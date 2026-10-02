@@ -174,16 +174,12 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
       const { success, message, data } = res.data;
       if (success) {
         const rows = Array.isArray(data) ? [...data] : [];
-        if (rows.length === 0) {
-          rows.push({
-            count: 0,
-            model_name: '无数据',
-            quota: 0,
-            token_used: 0,
-            created_at: Date.now() / 1000,
-          });
-        }
-        rows.sort((a, b) => a.created_at - b.created_at);
+        // Keep the API response authoritative.  The official dashboard treats
+        // an empty range as an empty state instead of inserting a synthetic
+        // model row, which otherwise renders a misleading "no data" series.
+        rows.sort(
+          (a, b) => Number(a.created_at || 0) - Number(b.created_at || 0),
+        );
         setQuotaData(rows);
         return rows;
       } else {
@@ -215,29 +211,35 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     }
   }, [activeUptimeTab]);
 
-  const loadUserQuotaData = useCallback(async () => {
-    if (!isAdminUser) return [];
-    setLoading(true);
-    try {
-      const { start_timestamp, end_timestamp } = inputs;
-      const localStartTimestamp = Date.parse(start_timestamp) / 1000;
-      const localEndTimestamp = Date.parse(end_timestamp) / 1000;
-      const url = `/api/data/users?start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
-      const res = await API.get(url);
-      const { success, message, data } = res.data;
-      if (success) {
-        return data || [];
-      } else {
-        showError(message);
+  const loadUserQuotaData = useCallback(
+    async (rangeOverrides = {}) => {
+      if (!isAdminUser) return [];
+      setLoading(true);
+      try {
+        const { start_timestamp, end_timestamp } = {
+          ...inputs,
+          ...rangeOverrides,
+        };
+        const localStartTimestamp = Date.parse(start_timestamp) / 1000;
+        const localEndTimestamp = Date.parse(end_timestamp) / 1000;
+        const url = `/api/data/users?start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}`;
+        const res = await API.get(url);
+        const { success, message, data } = res.data;
+        if (success) {
+          return data || [];
+        } else {
+          showError(message);
+          return [];
+        }
+      } catch (err) {
+        console.error(err);
         return [];
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error(err);
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, [inputs, isAdminUser]);
+    },
+    [inputs, isAdminUser],
+  );
 
   const getUserData = useCallback(async () => {
     let res = await API.get(`/api/user/self`);

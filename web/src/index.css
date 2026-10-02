@@ -1911,6 +1911,74 @@ body[theme-mode='dark'] .promotion-hero {
 .dashboard-new-chart-canvas-tall {
   height: 360px;
 }
+.dashboard-chart-placeholder,
+.dashboard-chart-empty {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  align-items: center;
+  justify-content: center;
+}
+.dashboard-chart-placeholder {
+  position: relative;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px;
+  opacity: 0.65;
+}
+.dashboard-chart-placeholder-bar {
+  width: 55%;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--semi-color-fill-1);
+}
+.dashboard-chart-placeholder-bars {
+  display: flex;
+  width: min(78%, 520px);
+  height: 180px;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 14px 18px 0;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.dashboard-chart-placeholder-bars span {
+  flex: 1;
+  min-width: 8px;
+  border-radius: 5px 5px 0 0;
+  background: var(--semi-color-primary-light-hover);
+  animation: dashboard-placeholder-pulse 1.3s ease-in-out infinite alternate;
+}
+.dashboard-chart-placeholder-bars span:nth-child(2n) {
+  animation-delay: 0.15s;
+}
+.dashboard-chart-placeholder-bars span:nth-child(3n) {
+  animation-delay: 0.3s;
+}
+.dashboard-chart-empty {
+  flex-direction: column;
+  gap: 10px;
+  color: var(--semi-color-text-2);
+  font-size: 12px;
+}
+.dashboard-chart-empty-icon {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--semi-color-text-2);
+  background: var(--semi-color-fill-0);
+}
+@keyframes dashboard-placeholder-pulse {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
 .flow-sankey-chart {
   height: 560px;
   margin: 0 -4px 16px;
@@ -1943,6 +2011,94 @@ body[theme-mode='dark'] .promotion-hero {
   border-radius: 9px;
   background: var(--semi-color-bg-0);
 }
+.dashboard-flow-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dashboard-flow-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+.dashboard-flow-control-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.dashboard-flow-control-group > span {
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.dashboard-flow-control-group .semi-tabs {
+  margin: 0;
+}
+.dashboard-flow-control-group .semi-tabs-tab-button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 7px !important;
+  font-size: 11px;
+}
+.dashboard-flow-card-header {
+  min-height: 52px;
+}
+.dashboard-flow-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dashboard-flow-icon-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--semi-color-text-2);
+  background: transparent;
+  cursor: pointer;
+}
+.dashboard-flow-icon-button:hover {
+  color: var(--semi-color-text-0);
+  background: var(--semi-color-fill-0);
+}
+.dashboard-flow-icon-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.dashboard-flow-stage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--semi-color-border);
+  color: var(--semi-color-text-1);
+  font-size: 12px;
+}
+.dashboard-flow-stage-bar .semi-checkbox-content {
+  font-size: 11px;
+}
+.dashboard-flow-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 14px 0;
+}
+.dashboard-flow-chart {
+  height: 560px;
+  margin: 0;
+  border-bottom: 0;
+}
+.dashboard-flow-overflow-note {
+  padding: 0 14px 12px;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+}
 
 /* Lottery remains a discoverable wallet feature even while disabled. */
 .lottery-card .semi-card-body {
@@ -1973,9 +2129,34 @@ body[theme-mode='dark'] .promotion-hero {
   .dashboard-new-chart-canvas-tall {
     height: 300px;
   }
+  .dashboard-chart-placeholder,
+  .dashboard-chart-empty {
+    min-height: 220px;
+  }
   .flow-sankey-chart {
     height: 420px;
     margin-inline: -8px;
+  }
+  .dashboard-flow-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .dashboard-flow-control-group {
+    width: 100%;
+  }
+  .dashboard-flow-control-group .semi-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .dashboard-flow-metrics {
+    gap: 6px;
+    padding-inline: 10px;
+  }
+  .dashboard-flow-summary {
+    padding: 8px;
+  }
+  .dashboard-flow-chart {
+    height: 420px;
   }
   .lottery-card .semi-card-body {
     padding: 14px 12px 18px;

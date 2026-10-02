@@ -83,6 +83,8 @@ const DashboardAnalytics = () => {
     isAdminUser: dashboardData.isAdminUser,
   });
   const [userTopLimit, setUserTopLimit] = React.useState(10);
+  const [userRangeDays, setUserRangeDays] = React.useState(1);
+  const [userChartData, setUserChartData] = React.useState([]);
   const usersSectionVisible =
     dashboardData.isAdminUser &&
     (sidebarLoading || isModuleVisible('admin', 'dashboardUsers'));
@@ -102,23 +104,31 @@ const DashboardAnalytics = () => {
 
   const loadModelData = useCallback(async () => {
     const data = await dashboardData.loadQuotaData();
-    if (data && data.length > 0) {
-      dashboardCharts.updateChartData(data);
-    }
+    dashboardCharts.updateChartData(data || []);
   }, [dashboardCharts.updateChartData, dashboardData.loadQuotaData]);
 
   const loadUserData = useCallback(
     async (
       limit = userTopLimit,
       granularity = dashboardData.dataExportDefaultTime,
+      rangeDays = userRangeDays,
     ) => {
-      const data = await dashboardData.loadUserQuotaData();
-      dashboardCharts.updateUserChartData(data || [], limit, granularity);
+      const end = Math.floor(Date.now() / 1000);
+      const start = end - Number(rangeDays || 1) * 86400;
+      const data = await dashboardData.loadUserQuotaData({
+        start_timestamp: new Date(start * 1000).toISOString(),
+        end_timestamp: new Date(end * 1000).toISOString(),
+      });
+      const rows = data || [];
+      setUserChartData(rows);
+      dashboardCharts.updateUserChartData(rows, limit, granularity);
+      return rows;
     },
     [
       dashboardCharts.updateUserChartData,
       dashboardData.dataExportDefaultTime,
       dashboardData.loadUserQuotaData,
+      userRangeDays,
       userTopLimit,
     ],
   );
@@ -299,6 +309,8 @@ const DashboardAnalytics = () => {
             setUserRankMetric={dashboardCharts.setUserRankMetric}
             spec_user_trend={dashboardCharts.spec_user_trend}
             isAdminUser={dashboardData.isAdminUser}
+            loading={dashboardData.loading}
+            hasData={dashboardData.quotaData.length > 0}
             CARD_PROPS={CARD_PROPS}
             CHART_CONFIG={CHART_CONFIG}
             FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
@@ -312,6 +324,30 @@ const DashboardAnalytics = () => {
         <>
           <div className='dashboard-user-controls mb-3 flex flex-wrap items-center gap-2'>
             <span className='text-xs font-medium text-semi-color-text-2'>
+              {dashboardData.t('时间范围')}
+            </span>
+            <Tabs
+              type='button'
+              activeKey={String(userRangeDays)}
+              onChange={(value) => {
+                const days = Number(value);
+                setUserRangeDays(days);
+                loadUserData(
+                  userTopLimit,
+                  dashboardData.dataExportDefaultTime,
+                  days,
+                );
+              }}
+            >
+              {[1, 7, 14, 29].map((days) => (
+                <TabPane
+                  key={days}
+                  itemKey={String(days)}
+                  tab={dashboardData.t(`${days} 天`)}
+                />
+              ))}
+            </Tabs>
+            <span className='text-xs font-medium text-semi-color-text-2'>
               {dashboardData.t('Top Users')}
             </span>
             <Tabs
@@ -320,7 +356,11 @@ const DashboardAnalytics = () => {
               onChange={(value) => {
                 const limit = Number(value);
                 setUserTopLimit(limit);
-                loadUserData(limit);
+                loadUserData(
+                  limit,
+                  dashboardData.dataExportDefaultTime,
+                  userRangeDays,
+                );
               }}
             >
               {[5, 10, 20, 50].map((limit) => (
@@ -342,7 +382,7 @@ const DashboardAnalytics = () => {
                   value,
                   'data_export_default_time',
                 );
-                loadUserData(userTopLimit, value);
+                loadUserData(userTopLimit, value, userRangeDays);
               }}
             >
               {dashboardData.timeOptions.map((option) => (
@@ -368,6 +408,8 @@ const DashboardAnalytics = () => {
             setUserRankMetric={dashboardCharts.setUserRankMetric}
             spec_user_trend={dashboardCharts.spec_user_trend}
             isAdminUser
+            loading={dashboardData.loading}
+            hasData={userChartData.length > 0}
             CARD_PROPS={CARD_PROPS}
             CHART_CONFIG={CHART_CONFIG}
             FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}

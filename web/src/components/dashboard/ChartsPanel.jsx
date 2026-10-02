@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useMemo, useState } from 'react';
-import { Button, ButtonGroup, Tabs, TabPane } from '@douyinfe/semi-ui';
+import { Tabs, TabPane } from '@douyinfe/semi-ui';
 import { Activity, PieChart, Users, WalletCards } from 'lucide-react';
 import { VChart } from '@visactor/react-vchart';
 
@@ -57,6 +57,32 @@ const ChartCanvas = ({ spec, option }) => {
   return <VChart spec={prepared} option={option} />;
 };
 
+const ChartLoading = () => (
+  <div className='dashboard-chart-placeholder' aria-busy='true'>
+    <div className='dashboard-chart-placeholder-bar' />
+    <div className='dashboard-chart-placeholder-bars'>
+      {[32, 54, 42, 78, 62, 88, 48, 70, 40, 64, 52, 82].map((height, index) => (
+        <span key={index} style={{ height: `${height}%` }} />
+      ))}
+    </div>
+  </div>
+);
+
+const ChartEmpty = ({ label }) => (
+  <div className='dashboard-chart-empty'>
+    <span className='dashboard-chart-empty-icon'>
+      <Activity size={18} />
+    </span>
+    <span>{label}</span>
+  </div>
+);
+
+const ChartContent = ({ spec, option, loading, hasData, t }) => {
+  if (loading) return <ChartLoading />;
+  if (!hasData) return <ChartEmpty label={t('暂无数据')} />;
+  return <ChartCanvas spec={spec} option={option} />;
+};
+
 const ChartsPanel = ({
   mode = 'all',
   activeChartTab,
@@ -67,10 +93,10 @@ const ChartsPanel = ({
   spec_pie,
   spec_rank_bar,
   spec_user_rank,
-  userRankMetric,
-  setUserRankMetric,
   spec_user_trend,
   isAdminUser,
+  loading = false,
+  hasData = true,
   CHART_CONFIG,
   t,
 }) => {
@@ -78,7 +104,6 @@ const ChartsPanel = ({
   const showUserCharts = mode !== 'models' && isAdminUser;
   const [consumptionChartType, setConsumptionChartType] = useState('bar');
   const modelTab = ['3', '4'].includes(activeChartTab) ? activeChartTab : '2';
-  const userTab = activeChartTab === '6' ? '6' : '5';
 
   if (showModelCharts) {
     return (
@@ -99,9 +124,12 @@ const ChartsPanel = ({
           }
         >
           <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartCanvas
+            <ChartContent
               spec={consumptionChartType === 'area' ? spec_area : spec_line}
               option={CHART_CONFIG}
+              loading={loading}
+              hasData={hasData}
+              t={t}
             />
           </div>
         </ChartFrame>
@@ -129,7 +157,7 @@ const ChartsPanel = ({
           }
         >
           <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartCanvas
+            <ChartContent
               spec={
                 modelTab === '3'
                   ? spec_pie
@@ -138,6 +166,9 @@ const ChartsPanel = ({
                     : spec_model_line
               }
               option={CHART_CONFIG}
+              loading={loading}
+              hasData={hasData}
+              t={t}
             />
           </div>
         </ChartFrame>
@@ -152,47 +183,30 @@ const ChartsPanel = ({
           icon={Users}
           title={t('用户消耗排行')}
           total={spec_user_rank?.title?.subtext}
-          actions={
-            <ButtonGroup>
-              {[
-                ['quota', t('额度消耗')],
-                ['tokens', t('Token 消耗')],
-                ['count', t('调用次数')],
-              ].map(([value, label]) => (
-                <Button
-                  key={value}
-                  size='small'
-                  type={userRankMetric === value ? 'primary' : 'tertiary'}
-                  theme={userRankMetric === value ? 'solid' : 'light'}
-                  onClick={() => setUserRankMetric(value)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </ButtonGroup>
-          }
         >
           <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartCanvas spec={spec_user_rank} option={CHART_CONFIG} />
+            <ChartContent
+              spec={spec_user_rank}
+              option={CHART_CONFIG}
+              loading={loading}
+              hasData={hasData}
+              t={t}
+            />
           </div>
         </ChartFrame>
         <ChartFrame
           icon={Activity}
           title={t('用户消耗趋势')}
           total={spec_user_trend?.title?.subtext}
-          actions={
-            <Tabs
-              type='button'
-              activeKey={userTab}
-              onChange={setActiveChartTab}
-            >
-              <TabPane itemKey='5' tab={t('排行')} />
-              <TabPane itemKey='6' tab={t('趋势')} />
-            </Tabs>
-          }
         >
           <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartCanvas spec={spec_user_trend} option={CHART_CONFIG} />
+            <ChartContent
+              spec={spec_user_trend}
+              option={CHART_CONFIG}
+              loading={loading}
+              hasData={hasData}
+              t={t}
+            />
           </div>
         </ChartFrame>
       </div>

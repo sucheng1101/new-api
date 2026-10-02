@@ -1148,13 +1148,19 @@ export function convertUSDToCurrency(usdAmount, digits = 2) {
 }
 
 export function renderQuota(quota, digits = 2) {
-  let quotaPerUnit = localStorage.getItem('quota_per_unit');
+  const rawQuotaPerUnit = parseFloat(
+    localStorage.getItem('quota_per_unit') || '',
+  );
+  const quotaPerUnit =
+    Number.isFinite(rawQuotaPerUnit) && rawQuotaPerUnit > 0
+      ? rawQuotaPerUnit
+      : 1;
   const quotaDisplayType = localStorage.getItem('quota_display_type') || 'USD';
-  quotaPerUnit = parseFloat(quotaPerUnit);
+  const numericQuota = Number(quota || 0);
   if (quotaDisplayType === 'TOKENS') {
-    return renderNumber(quota);
+    return renderNumber(numericQuota);
   }
-  const resultUSD = quota / quotaPerUnit;
+  const resultUSD = numericQuota / quotaPerUnit;
   let symbol = '$';
   let value = resultUSD;
   if (quotaDisplayType === 'CNY') {
@@ -1183,7 +1189,7 @@ export function renderQuota(quota, digits = 2) {
     symbol = symbolCustom;
   }
   const fixedResult = value.toFixed(digits);
-  if (parseFloat(fixedResult) === 0 && quota > 0 && value > 0) {
+  if (parseFloat(fixedResult) === 0 && numericQuota > 0 && value > 0) {
     const minValue = Math.pow(10, -digits);
     return symbol + minValue.toFixed(digits);
   }

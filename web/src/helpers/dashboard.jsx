@@ -264,10 +264,14 @@ export const processRawData = (
   const showYear = isDataCrossYear(data.map((item) => item.created_at));
 
   data.forEach((item) => {
-    result.uniqueModels.add(item.model_name);
-    result.totalTokens += item.token_used;
-    result.totalQuota += item.quota;
-    result.totalTimes += item.count;
+    const model = item.model_name || 'Unknown';
+    const tokenUsed = Number(item.token_used || 0);
+    const quota = Number(item.quota || 0);
+    const count = Number(item.count || 0);
+    result.uniqueModels.add(model);
+    result.totalTokens += tokenUsed;
+    result.totalQuota += quota;
+    result.totalTimes += count;
 
     const timeKey = timestamp2string1(
       item.created_at,
@@ -284,9 +288,9 @@ export const processRawData = (
       result.timeTokensMap,
       result.timeCountMap,
     );
-    updateMapValue(result.timeQuotaMap, timeKey, item.quota);
-    updateMapValue(result.timeTokensMap, timeKey, item.token_used);
-    updateMapValue(result.timeCountMap, timeKey, item.count);
+    updateMapValue(result.timeQuotaMap, timeKey, quota);
+    updateMapValue(result.timeTokensMap, timeKey, tokenUsed);
+    updateMapValue(result.timeCountMap, timeKey, count);
   });
 
   result.timePoints.sort();
@@ -340,7 +344,7 @@ export const aggregateDataByTimeAndModel = (data, dataExportDefaultTime) => {
       dataExportDefaultTime,
       showYear,
     );
-    const modelKey = item.model_name;
+    const modelKey = item.model_name || 'Unknown';
     const key = `${timeKey}-${modelKey}`;
 
     if (!aggregatedData.has(key)) {
@@ -353,8 +357,8 @@ export const aggregateDataByTimeAndModel = (data, dataExportDefaultTime) => {
     }
 
     const existing = aggregatedData.get(key);
-    existing.quota += item.quota;
-    existing.count += item.count;
+    existing.quota += Number(item.quota || 0);
+    existing.count += Number(item.count || 0);
   });
 
   return aggregatedData;
@@ -369,7 +373,7 @@ export const generateChartTimePoints = (
     new Set([...aggregatedData.values()].map((d) => d.time)),
   );
 
-  if (chartTimePoints.length < DEFAULTS.MAX_TREND_POINTS) {
+  if (chartTimePoints.length < DEFAULTS.MAX_TREND_POINTS && data.length > 0) {
     const lastTime = Math.max(...data.map((item) => item.created_at));
     const interval = getTimeInterval(dataExportDefaultTime, true);
 
@@ -392,12 +396,13 @@ export const generateChartTimePoints = (
 export const processUserData = (data, dataExportDefaultTime, limit = 10) => {
   const userTotals = new Map();
   data.forEach((item) => {
-    const prev = userTotals.get(item.username) || {
+    const username = item.username || 'unknown';
+    const prev = userTotals.get(username) || {
       quota: 0,
       tokenUsed: 0,
       count: 0,
     };
-    userTotals.set(item.username, {
+    userTotals.set(username, {
       quota: prev.quota + Number(item.quota || 0),
       tokenUsed: prev.tokenUsed + Number(item.token_used || 0),
       count: prev.count + Number(item.count || 0),
@@ -429,11 +434,14 @@ export const processUserData = (data, dataExportDefaultTime, limit = 10) => {
       showYear,
     );
     allTimePoints.add(timeKey);
-    const user = topUserSet.has(item.username) ? item.username : null;
+    const username = item.username || 'unknown';
+    const user = topUserSet.has(username) ? username : null;
     if (!user) return;
     const key = `${timeKey}-${user}`;
     const prev = timeUserMap.get(key) || { quota: 0 };
-    timeUserMap.set(key, { quota: prev.quota + item.quota });
+    timeUserMap.set(key, {
+      quota: prev.quota + Number(item.quota || 0),
+    });
   });
 
   const sortedTimePoints = Array.from(allTimePoints).sort();
