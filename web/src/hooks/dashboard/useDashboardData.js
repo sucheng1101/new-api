@@ -62,7 +62,8 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
   const [modelColors, setModelColors] = useState({});
 
   // ========== 图表状态 ==========
-  const [activeChartTab, setActiveChartTab] = useState('1');
+  // Match the latest NewAPI dashboard default: model call trend.
+  const [activeChartTab, setActiveChartTab] = useState('2');
 
   // ========== 趋势数据 ==========
   const [trendData, setTrendData] = useState({

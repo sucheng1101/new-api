@@ -195,8 +195,26 @@ export const useDashboardCharts = (
     },
   });
 
+  // NewAPI keeps quota distribution as a paired bar/area view.  Keep both
+  // specs in state so switching the view only changes the renderer and does
+  // not trigger another data request.
+  const [spec_area, setSpecArea] = useState({
+    type: 'area',
+    data: [{ id: 'areaData', values: [] }],
+    xField: 'Time',
+    yField: 'Usage',
+    seriesField: 'Model',
+    stack: false,
+    legends: { visible: true, selectMode: 'single' },
+    area: { style: { fillOpacity: 0.12, curveType: 'monotone' } },
+    line: { style: { lineWidth: 2, curveType: 'monotone' } },
+    point: { visible: false },
+    title: { visible: true, text: t('模型消耗分布') },
+    color: { specified: modelColorMap },
+  });
+
   const [spec_model_line, setSpecModelLine] = useState({
-    type: 'line',
+    type: 'area',
     data: [
       {
         id: 'lineData',
@@ -206,10 +224,8 @@ export const useDashboardCharts = (
     xField: 'Time',
     yField: 'Count',
     seriesField: 'Model',
-    legends: {
-      visible: true,
-      selectMode: 'single',
-    },
+    stack: false,
+    legends: { visible: true, selectMode: 'single' },
     title: {
       visible: true,
       text: t('调用趋势'),
@@ -251,6 +267,21 @@ export const useDashboardCharts = (
     color: {
       specified: modelColorMap,
     },
+    area: { style: { fillOpacity: 0.08, curveType: 'monotone' } },
+    line: { style: { lineWidth: 2, curveType: 'monotone' } },
+    point: { visible: false },
+  });
+
+  const [spec_rank_bar, setSpecRankBar] = useState({
+    type: 'bar',
+    data: [{ id: 'rankData', values: [] }],
+    xField: 'Model',
+    yField: 'Count',
+    seriesField: 'Model',
+    legends: { visible: false },
+    title: { visible: true, text: t('模型调用次数排行'), subtext: '' },
+    bar: { state: { hover: { stroke: '#000', lineWidth: 1 } } },
+    color: { specified: modelColorMap },
   });
 
   // ========== Admin: 用户消耗排行 ==========
@@ -411,8 +442,10 @@ export const useDashboardCharts = (
       );
 
       const modelTotals = new Map();
+      const modelQuotaTotals = new Map();
       for (let [_, value] of aggregatedData) {
         updateMapValue(modelTotals, value.model, value.count);
+        updateMapValue(modelQuotaTotals, value.model, value.quota);
       }
 
       const newPieData = Array.from(modelTotals)
@@ -468,6 +501,34 @@ export const useDashboardCharts = (
         'barData',
       );
 
+      const rankedQuotaModels = Array.from(modelQuotaTotals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([model]) => model);
+      const topQuotaModels = new Set(rankedQuotaModels);
+      const areaBuckets = new Map();
+      newLineData.forEach((item) => {
+        const model = topQuotaModels.has(item.Model) ? item.Model : t('其他');
+        const key = `${item.Time}\\u0000${model}`;
+        const previous = areaBuckets.get(key) || {
+          Time: item.Time,
+          Model: model,
+          rawQuota: 0,
+          Usage: 0,
+          TimeSum: item.TimeSum,
+        };
+        previous.rawQuota += Number(item.rawQuota || 0);
+        previous.Usage += Number(item.Usage || 0);
+        areaBuckets.set(key, previous);
+      });
+      updateChartSpec(
+        setSpecArea,
+        Array.from(areaBuckets.values()),
+        `${t('总计')}: ${renderQuota(totalQuota, 2)}`,
+        newModelColors,
+        'areaData',
+      );
+
       // ===== 模型调用次数折线图 =====
       let modelLineData = [];
       chartTimePoints.forEach((time) => {
@@ -492,6 +553,18 @@ export const useDashboardCharts = (
         'lineData',
       );
 
+      const rankData = Array.from(modelTotals.entries())
+        .map(([model, count]) => ({ Model: model, Count: count }))
+        .sort((a, b) => b.Count - a.Count)
+        .slice(0, 20);
+      updateChartSpec(
+        setSpecRankBar,
+        rankData,
+        `${t('总计')}: ${renderNumber(totalTimes)}`,
+        newModelColors,
+        'rankData',
+      );
+
       setPieData(newPieData);
       setLineData(newLineData);
       setConsumeQuota(totalQuota);
@@ -514,11 +587,11 @@ export const useDashboardCharts = (
 
   // ========== 用户维度图表数据处理 ==========
   const updateUserChartData = useCallback(
-    (data) => {
+    (data, userLimit = 10, granularity = dataExportDefaultTime) => {
       const { rankingData, trendData: userTrend } = processUserData(
         data,
-        dataExportDefaultTime,
-        10,
+        granularity,
+        userLimit,
       );
 
       setUserRankingData(rankingData);
@@ -594,7 +667,9 @@ export const useDashboardCharts = (
   return {
     spec_pie,
     spec_line,
+    spec_area,
     spec_model_line,
+    spec_rank_bar,
     spec_user_rank,
     userRankMetric,
     setUserRankMetric,

@@ -77,6 +77,7 @@ const DashboardAnalytics = () => {
     inputs: dashboardData.inputs,
     isAdminUser: dashboardData.isAdminUser,
   });
+  const [userTopLimit, setUserTopLimit] = React.useState(10);
   const usersSectionVisible =
     dashboardData.isAdminUser &&
     (sidebarLoading || isModuleVisible('admin', 'dashboardUsers'));
@@ -94,10 +95,21 @@ const DashboardAnalytics = () => {
     }
   }, [dashboardCharts.updateChartData, dashboardData.loadQuotaData]);
 
-  const loadUserData = useCallback(async () => {
-    const data = await dashboardData.loadUserQuotaData();
-    dashboardCharts.updateUserChartData(data || []);
-  }, [dashboardCharts.updateUserChartData, dashboardData.loadUserQuotaData]);
+  const loadUserData = useCallback(
+    async (
+      limit = userTopLimit,
+      granularity = dashboardData.dataExportDefaultTime,
+    ) => {
+      const data = await dashboardData.loadUserQuotaData();
+      dashboardCharts.updateUserChartData(data || [], limit, granularity);
+    },
+    [
+      dashboardCharts.updateUserChartData,
+      dashboardData.dataExportDefaultTime,
+      dashboardData.loadUserQuotaData,
+      userTopLimit,
+    ],
+  );
 
   const loadSectionData = useCallback(async () => {
     if (section === 'flow') {
@@ -120,8 +132,8 @@ const DashboardAnalytics = () => {
   useEffect(() => {
     if (section === 'users') {
       dashboardData.setActiveChartTab('5');
-    } else if (!['1', '2', '3'].includes(dashboardData.activeChartTab)) {
-      dashboardData.setActiveChartTab('1');
+    } else if (!['2', '3', '4'].includes(dashboardData.activeChartTab)) {
+      dashboardData.setActiveChartTab('2');
     }
     loadSectionData();
     // Each route owns its first load; filter changes load only after confirmation.
@@ -262,8 +274,10 @@ const DashboardAnalytics = () => {
             activeChartTab={dashboardData.activeChartTab}
             setActiveChartTab={dashboardData.setActiveChartTab}
             spec_line={dashboardCharts.spec_line}
+            spec_area={dashboardCharts.spec_area}
             spec_model_line={dashboardCharts.spec_model_line}
             spec_pie={dashboardCharts.spec_pie}
+            spec_rank_bar={dashboardCharts.spec_rank_bar}
             spec_user_rank={dashboardCharts.spec_user_rank}
             userRankMetric={dashboardCharts.userRankMetric}
             setUserRankMetric={dashboardCharts.setUserRankMetric}
@@ -279,24 +293,72 @@ const DashboardAnalytics = () => {
       )}
 
       {section === 'users' && dashboardData.isAdminUser && (
-        <ChartsPanel
-          mode='users'
-          activeChartTab={dashboardData.activeChartTab}
-          setActiveChartTab={dashboardData.setActiveChartTab}
-          spec_line={dashboardCharts.spec_line}
-          spec_model_line={dashboardCharts.spec_model_line}
-          spec_pie={dashboardCharts.spec_pie}
-          spec_user_rank={dashboardCharts.spec_user_rank}
-          userRankMetric={dashboardCharts.userRankMetric}
-          setUserRankMetric={dashboardCharts.setUserRankMetric}
-          spec_user_trend={dashboardCharts.spec_user_trend}
-          isAdminUser
-          CARD_PROPS={CARD_PROPS}
-          CHART_CONFIG={CHART_CONFIG}
-          FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-          hasApiInfoPanel={false}
-          t={dashboardData.t}
-        />
+        <>
+          <div className='dashboard-user-controls mb-3 flex flex-wrap items-center gap-2'>
+            <span className='text-xs font-medium text-semi-color-text-2'>
+              {dashboardData.t('Top Users')}
+            </span>
+            <Tabs
+              type='button'
+              activeKey={String(userTopLimit)}
+              onChange={(value) => {
+                const limit = Number(value);
+                setUserTopLimit(limit);
+                loadUserData(limit);
+              }}
+            >
+              {[5, 10, 20, 50].map((limit) => (
+                <TabPane
+                  key={limit}
+                  itemKey={String(limit)}
+                  tab={dashboardData.t(`Top ${limit}`)}
+                />
+              ))}
+            </Tabs>
+            <span className='text-xs font-medium text-semi-color-text-2'>
+              {dashboardData.t('Time granularity')}
+            </span>
+            <Tabs
+              type='button'
+              activeKey={dashboardData.dataExportDefaultTime}
+              onChange={(value) => {
+                dashboardData.handleInputChange(
+                  value,
+                  'data_export_default_time',
+                );
+                loadUserData(userTopLimit, value);
+              }}
+            >
+              {dashboardData.timeOptions.map((option) => (
+                <TabPane
+                  key={option.value}
+                  itemKey={option.value}
+                  tab={option.label}
+                />
+              ))}
+            </Tabs>
+          </div>
+          <ChartsPanel
+            mode='users'
+            activeChartTab={dashboardData.activeChartTab}
+            setActiveChartTab={dashboardData.setActiveChartTab}
+            spec_line={dashboardCharts.spec_line}
+            spec_area={dashboardCharts.spec_area}
+            spec_model_line={dashboardCharts.spec_model_line}
+            spec_pie={dashboardCharts.spec_pie}
+            spec_rank_bar={dashboardCharts.spec_rank_bar}
+            spec_user_rank={dashboardCharts.spec_user_rank}
+            userRankMetric={dashboardCharts.userRankMetric}
+            setUserRankMetric={dashboardCharts.setUserRankMetric}
+            spec_user_trend={dashboardCharts.spec_user_trend}
+            isAdminUser
+            CARD_PROPS={CARD_PROPS}
+            CHART_CONFIG={CHART_CONFIG}
+            FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+            hasApiInfoPanel={false}
+            t={dashboardData.t}
+          />
+        </>
       )}
 
       {section === 'flow' && (

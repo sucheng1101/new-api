@@ -17,15 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Button, ButtonGroup, Tabs, TabPane } from '@douyinfe/semi-ui';
-import {
-  Activity,
-  BarChart3,
-  PieChart,
-  Users,
-  WalletCards,
-} from 'lucide-react';
+import { Activity, PieChart, Users, WalletCards } from 'lucide-react';
 import { VChart } from '@visactor/react-vchart';
 
 const chartSpec = (spec) => {
@@ -68,8 +62,10 @@ const ChartsPanel = ({
   activeChartTab,
   setActiveChartTab,
   spec_line,
+  spec_area,
   spec_model_line,
   spec_pie,
+  spec_rank_bar,
   spec_user_rank,
   userRankMetric,
   setUserRankMetric,
@@ -80,7 +76,8 @@ const ChartsPanel = ({
 }) => {
   const showModelCharts = mode !== 'users';
   const showUserCharts = mode !== 'models' && isAdminUser;
-  const modelTab = activeChartTab === '3' ? '3' : '2';
+  const [consumptionChartType, setConsumptionChartType] = useState('bar');
+  const modelTab = ['3', '4'].includes(activeChartTab) ? activeChartTab : '2';
   const userTab = activeChartTab === '6' ? '6' : '5';
 
   if (showModelCharts) {
@@ -91,14 +88,21 @@ const ChartsPanel = ({
           title={t('消耗分布')}
           total={spec_line?.title?.subtext}
           actions={
-            <div className='dashboard-chart-mode-hint'>
-              <BarChart3 size={14} />
-              <span>{t('消耗趋势')}</span>
-            </div>
+            <Tabs
+              type='button'
+              activeKey={consumptionChartType}
+              onChange={setConsumptionChartType}
+            >
+              <TabPane itemKey='bar' tab={t('柱状图')} />
+              <TabPane itemKey='area' tab={t('面积图')} />
+            </Tabs>
           }
         >
           <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartCanvas spec={spec_line} option={CHART_CONFIG} />
+            <ChartCanvas
+              spec={consumptionChartType === 'area' ? spec_area : spec_line}
+              option={CHART_CONFIG}
+            />
           </div>
         </ChartFrame>
 
@@ -108,7 +112,9 @@ const ChartsPanel = ({
           total={
             modelTab === '3'
               ? spec_pie?.title?.subtext
-              : spec_model_line?.title?.subtext
+              : modelTab === '4'
+                ? spec_rank_bar?.title?.subtext
+                : spec_model_line?.title?.subtext
           }
           actions={
             <Tabs
@@ -118,12 +124,19 @@ const ChartsPanel = ({
             >
               <TabPane itemKey='2' tab={t('调用趋势')} />
               <TabPane itemKey='3' tab={t('调用次数占比')} />
+              <TabPane itemKey='4' tab={t('调用次数排行')} />
             </Tabs>
           }
         >
           <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
             <ChartCanvas
-              spec={modelTab === '3' ? spec_pie : spec_model_line}
+              spec={
+                modelTab === '3'
+                  ? spec_pie
+                  : modelTab === '4'
+                    ? spec_rank_bar
+                    : spec_model_line
+              }
               option={CHART_CONFIG}
             />
           </div>

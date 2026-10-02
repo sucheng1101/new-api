@@ -1836,10 +1836,36 @@ body[theme-mode='dark'] .promotion-hero {
   height: 360px;
 }
 .flow-sankey-chart {
-  height: 380px;
+  height: 560px;
   margin: 0 -4px 16px;
   padding: 4px 0;
   border-bottom: 1px solid var(--semi-color-border);
+}
+.dashboard-flow-refresh {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--semi-color-text-2);
+  background: transparent;
+  cursor: pointer;
+}
+.dashboard-flow-refresh:hover {
+  color: var(--semi-color-text-0);
+  background: var(--semi-color-fill-0);
+}
+.dashboard-flow-refresh:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.dashboard-flow-summary {
+  padding: 10px 12px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 9px;
+  background: var(--semi-color-bg-0);
 }
 
 /* Lottery remains a discoverable wallet feature even while disabled. */
@@ -1872,7 +1898,7 @@ body[theme-mode='dark'] .promotion-hero {
     height: 300px;
   }
   .flow-sankey-chart {
-    height: 320px;
+    height: 420px;
     margin-inline: -8px;
   }
   .lottery-card .semi-card-body {

@@ -20,7 +20,6 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useMemo, useState } from 'react';
 import {
   Checkbox,
-  Card,
   Empty,
   Input,
   Select,
@@ -247,7 +246,6 @@ export default function FlowAnalyticsPanel({
       ),
     [filteredData],
   );
-  const Icon = activeDimension.icon;
   const columns = [
     {
       title: t(activeDimension.label),
@@ -279,126 +277,125 @@ export default function FlowAnalyticsPanel({
   ];
 
   return (
-    <Card
-      className='dashboard-flow-card !rounded-lg border mb-4'
-      title={
-        <div className='flex items-center justify-between gap-3 flex-wrap'>
-          <div className='flex items-center gap-2'>
-            <Icon size={17} />
-            <span>{t('调用流向分析')}</span>
-            {isAdminUser && <Tag color='blue'>{t('全站')}</Tag>}
-          </div>
-          <button
-            type='button'
-            aria-label={t('刷新调用流向')}
-            className='p-1 rounded hover:bg-gray-100'
-            onClick={onRefresh}
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          </button>
+    <section className='dashboard-new-chart-card dashboard-flow-card mb-4'>
+      <header className='dashboard-new-chart-header'>
+        <div className='dashboard-new-chart-title'>
+          <span className='dashboard-new-chart-icon'>
+            <GitBranch size={15} />
+          </span>
+          <span>{t('调用流向分析')}</span>
+          {isAdminUser && <Tag color='blue'>{t('全站')}</Tag>}
         </div>
-      }
-      bodyStyle={{ padding: 16 }}
-    >
-      <div className='grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4'>
-        {[
-          [t('额度'), renderQuota(totals.quota, 2)],
-          [t('Token'), renderNumber(totals.tokens)],
-          [t('调用次数'), renderNumber(totals.count)],
-        ].map(([label, value]) => (
-          <div key={label} className='border rounded-lg p-3'>
-            <div className='text-xs text-gray-500'>{label}</div>
-            <div className='text-lg font-semibold mt-1'>{value}</div>
-          </div>
-        ))}
-      </div>
-      <div className='flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-3'>
-        <Tabs type='button' activeKey={dimension} onChange={setDimension}>
-          {DIMENSIONS.map((item) => (
-            <TabPane key={item.key} itemKey={item.key} tab={t(item.label)} />
-          ))}
-        </Tabs>
-        <Tabs type='button' activeKey={metric} onChange={setMetric}>
-          <TabPane itemKey='quota' tab={t('按额度')} />
-          <TabPane itemKey='tokens' tab={t('按Token')} />
-          <TabPane itemKey='count' tab={t('按调用次数')} />
-        </Tabs>
-      </div>
-      <div className='flex flex-wrap items-center gap-2 mb-4'>
-        {isAdminUser && nodeOptions.length > 0 && (
-          <Select
-            value={nodeFilter}
-            onChange={setNodeFilter}
-            placeholder={t('全部节点')}
-            optionList={[{ value: '', label: t('全部节点') }, ...nodeOptions]}
-            style={{ minWidth: 150 }}
-            prefix={<Server size={14} />}
-          />
-        )}
-        <Select
-          value={topN}
-          onChange={setTopN}
-          optionList={[5, 10, 15, 20, 0].map((value) => ({
-            value,
-            label: value === 0 ? t('全部') : `Top ${value}`,
-          }))}
-          style={{ width: 110 }}
-        />
-        <Checkbox
-          checked={showOther}
-          onChange={(event) => setShowOther(event.target.checked)}
+        <button
+          type='button'
+          aria-label={t('刷新调用流向')}
+          className='dashboard-flow-refresh'
+          onClick={onRefresh}
+          disabled={loading}
         >
-          {t('聚合其他')}
-        </Checkbox>
-        <Input
-          prefix={<Search size={14} />}
-          value={dimension === 'node' ? nodeFilter : ''}
-          onChange={(value) => dimension === 'node' && setNodeFilter(value)}
-          placeholder={t('筛选节点')}
-          style={{ width: 180 }}
-          showClear
-        />
-      </div>
-      {rows.length > 0 ? (
-        <>
-          <div className='flow-sankey-chart'>
-            <VChart spec={sankeySpec} option={CHART_CONFIG} />
-          </div>
-          <div className='space-y-2 mb-4'>
-            {rows.slice(0, 8).map((row) => (
-              <div
-                key={`bar-${row.key}`}
-                className='flex items-center gap-2 text-xs'
-              >
-                <span className='w-28 truncate' title={row.name}>
-                  {row.name}
-                </span>
-                <div className='flex-1 h-2 bg-gray-100 rounded overflow-hidden'>
-                  <div
-                    className='h-full bg-blue-500 rounded'
-                    style={{
-                      width: `${Math.min(100, Math.max(0, row.share))}%`,
-                    }}
-                  />
-                </div>
-                <span className='w-14 text-right text-gray-500'>
-                  {row.share.toFixed(1)}%
-                </span>
-              </div>
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </header>
+      <div className='dashboard-new-chart-body p-3 sm:p-5'>
+        <div className='grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4'>
+          {[
+            [t('额度'), renderQuota(totals.quota, 2)],
+            [t('Token'), renderNumber(totals.tokens)],
+            [t('调用次数'), renderNumber(totals.count)],
+          ].map(([label, value]) => (
+            <div key={label} className='dashboard-flow-summary'>
+              <div className='text-xs text-semi-color-text-2'>{label}</div>
+              <div className='text-lg font-semibold mt-1'>{value}</div>
+            </div>
+          ))}
+        </div>
+        <div className='flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-3'>
+          <Tabs type='button' activeKey={dimension} onChange={setDimension}>
+            {DIMENSIONS.map((item) => (
+              <TabPane key={item.key} itemKey={item.key} tab={t(item.label)} />
             ))}
-          </div>
-          <Table
-            columns={columns}
-            dataSource={rows}
-            rowKey='key'
-            pagination={false}
-            scroll={{ x: 620 }}
+          </Tabs>
+          <Tabs type='button' activeKey={metric} onChange={setMetric}>
+            <TabPane itemKey='quota' tab={t('按额度')} />
+            <TabPane itemKey='tokens' tab={t('按Token')} />
+            <TabPane itemKey='count' tab={t('按调用次数')} />
+          </Tabs>
+        </div>
+        <div className='flex flex-wrap items-center gap-2 mb-4'>
+          {isAdminUser && nodeOptions.length > 0 && (
+            <Select
+              value={nodeFilter}
+              onChange={setNodeFilter}
+              placeholder={t('全部节点')}
+              optionList={[{ value: '', label: t('全部节点') }, ...nodeOptions]}
+              style={{ minWidth: 150 }}
+              prefix={<Server size={14} />}
+            />
+          )}
+          <Select
+            value={topN}
+            onChange={setTopN}
+            optionList={[5, 10, 15, 20, 0].map((value) => ({
+              value,
+              label: value === 0 ? t('全部') : `Top ${value}`,
+            }))}
+            style={{ width: 110 }}
           />
-        </>
-      ) : (
-        <Empty description={t('当前时间范围暂无调用流向数据')} />
-      )}
-    </Card>
+          <Checkbox
+            checked={showOther}
+            onChange={(event) => setShowOther(event.target.checked)}
+          >
+            {t('聚合其他')}
+          </Checkbox>
+          <Input
+            prefix={<Search size={14} />}
+            value={dimension === 'node' ? nodeFilter : ''}
+            onChange={(value) => dimension === 'node' && setNodeFilter(value)}
+            placeholder={t('筛选节点')}
+            style={{ width: 180 }}
+            showClear
+          />
+        </div>
+        {rows.length > 0 ? (
+          <>
+            <div className='flow-sankey-chart'>
+              <VChart spec={sankeySpec} option={CHART_CONFIG} />
+            </div>
+            <div className='space-y-2 mb-4'>
+              {rows.slice(0, 8).map((row) => (
+                <div
+                  key={`bar-${row.key}`}
+                  className='flex items-center gap-2 text-xs'
+                >
+                  <span className='w-28 truncate' title={row.name}>
+                    {row.name}
+                  </span>
+                  <div className='flex-1 h-2 bg-gray-100 rounded overflow-hidden'>
+                    <div
+                      className='h-full bg-blue-500 rounded'
+                      style={{
+                        width: `${Math.min(100, Math.max(0, row.share))}%`,
+                      }}
+                    />
+                  </div>
+                  <span className='w-14 text-right text-gray-500'>
+                    {row.share.toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+            <Table
+              columns={columns}
+              dataSource={rows}
+              rowKey='key'
+              pagination={false}
+              scroll={{ x: 620 }}
+            />
+          </>
+        ) : (
+          <Empty description={t('当前时间范围暂无调用流向数据')} />
+        )}
+      </div>
+    </section>
   );
 }

@@ -94,6 +94,15 @@ const PageLayout = () => {
     : '0';
 
   const isConsoleRoute = location.pathname.startsWith('/console');
+  // HeaderBar is fixed outside of the normal document flow.  Most console
+  // pages render their content directly and therefore need the global offset
+  // here.  Full-screen console surfaces already own their viewport offset and
+  // must stay excluded to avoid a double spacer.
+  const consoleOwnsHeaderOffset =
+    location.pathname === '/console/playground' ||
+    location.pathname.startsWith('/console/chat') ||
+    location.pathname.startsWith('/console/external/');
+  const shouldOffsetForHeader = isConsoleRoute && !consoleOwnsHeaderOffset;
   const showSider = isConsoleRoute && (!isMobile || drawerOpen);
 
   useEffect(() => {
@@ -200,7 +209,7 @@ const PageLayout = () => {
           overflow: isMobile ? 'visible' : 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          paddingTop: shouldUseContentShell && isConsoleRoute ? '64px' : '0',
+          paddingTop: shouldOffsetForHeader ? 'var(--topbar-height)' : '0',
           boxSizing: 'border-box',
         }}
       >
