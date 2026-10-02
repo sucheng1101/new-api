@@ -29,7 +29,7 @@ import { useMonitorStatusData } from '../../hooks/monitor-status/useMonitorStatu
 const GroupStatus = () => {
   const data = useMonitorStatusData();
   return (
-    <div className='mt-[60px] px-2'>
+    <div className='px-2'>
       <MonitorStatusToolbar {...data} />
       {data.loading ? (
         <div className='flex justify-center py-16'>

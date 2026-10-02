@@ -69,6 +69,7 @@ const PageLayout = () => {
   const shouldInnerPadding =
     location.pathname.includes('/console') &&
     !location.pathname.startsWith('/console/chat') &&
+    !location.pathname.startsWith('/console/external/') &&
     location.pathname !== '/console/playground';
 
   const flatConsolePages = [

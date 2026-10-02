@@ -226,7 +226,7 @@ const Promotion = () => {
   ];
 
   return (
-    <div className='promotion-page w-full max-w-7xl mx-auto mt-[60px] px-3 pb-10'>
+    <div className='promotion-page mx-auto w-full max-w-7xl px-3 pb-10'>
       <section className='promotion-hero'>
         <div className='promotion-hero-row'>
           <div className='promotion-hero-intro'>

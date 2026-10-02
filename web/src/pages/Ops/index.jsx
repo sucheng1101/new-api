@@ -68,7 +68,7 @@ const Ops = ({ pageTitle = '运维监控', variant = 'ops' }) => {
 
   if (isAnalytics) {
     return (
-      <div className='mt-[60px] px-2'>
+      <div className='px-2'>
         <OpsHeader
           {...data}
           refresh={refresh}
@@ -92,7 +92,7 @@ const Ops = ({ pageTitle = '运维监控', variant = 'ops' }) => {
   }
 
   return (
-    <div className='mt-[60px] px-2'>
+    <div className='px-2'>
       <OpsHeader {...data} refresh={refresh} pageTitle={pageTitle} />
       <OpsOverviewPanel {...data} />
       <OpsSystemStatus {...data} />

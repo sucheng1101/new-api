@@ -21,7 +21,7 @@ import React from 'react';
 import MonitorGroupsPage from '../../components/table/monitor-groups';
 
 const MonitorGroup = () => (
-  <div className='mt-[60px] px-2'>
+  <div className='px-2'>
     <MonitorGroupsPage />
   </div>
 );
