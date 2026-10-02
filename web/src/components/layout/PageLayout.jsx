@@ -71,6 +71,25 @@ const PageLayout = () => {
     !location.pathname.startsWith('/console/chat') &&
     location.pathname !== '/console/playground';
 
+  const flatConsolePages = [
+    '/console/token',
+    '/console/log',
+    '/console/channel',
+    '/console/redemption',
+    '/console/user',
+    '/console/task-plugin',
+    '/console/setting',
+  ];
+  const shouldUseContentShell =
+    shouldInnerPadding && !flatConsolePages.includes(location.pathname);
+  const contentPadding = shouldInnerPadding
+    ? shouldUseContentShell
+      ? isMobile
+        ? '8px'
+        : '24px'
+      : '0'
+    : '0';
+
   const isConsoleRoute = location.pathname.startsWith('/console');
   const showSider = isConsoleRoute && (!isMobile || drawerOpen);
 
@@ -191,6 +210,7 @@ const PageLayout = () => {
               top: '64px',
               zIndex: 99,
               border: 'none',
+              borderRight: '1px solid var(--semi-color-border)',
               paddingRight: '0',
               width: 'var(--sidebar-current-width)',
             }}
@@ -221,15 +241,15 @@ const PageLayout = () => {
               minHeight: 0,
               overflowY: isMobile ? 'visible' : 'auto',
               WebkitOverflowScrolling: 'touch',
-              padding: shouldInnerPadding ? (isMobile ? '8px' : '24px') : '0',
-              background: shouldInnerPadding
+              padding: contentPadding,
+              background: shouldUseContentShell
                 ? 'var(--semi-color-bg-1)'
                 : 'transparent',
               position: 'relative',
             }}
           >
             <ErrorBoundary>
-              {shouldInnerPadding ? (
+              {shouldUseContentShell ? (
                 <div className='console-content-shell'>
                   <App />
                 </div>
