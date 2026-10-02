@@ -112,7 +112,9 @@ describe('TaskPlugin page JSX bindings', () => {
       'utf8',
     );
 
-    expect(source).toContain("className='mt-[60px] px-2 task-plugin-page'");
+    expect(source).toContain(
+      "className='console-flat-page px-2 task-plugin-page'",
+    );
     expect(source).toContain(
       "import CardPro from '../../components/common/ui/CardPro';",
     );

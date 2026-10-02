@@ -1732,3 +1732,156 @@ body[theme-mode='dark'] .promotion-hero {
 .dashboard-overview-page .semi-card-header {
   border-bottom-color: var(--semi-color-border);
 }
+
+/* Keep management pages flush with the fixed console header. The navigation
+   owns the top offset; individual pages should not add another 60px spacer. */
+.console-flat-page {
+  width: 100%;
+  min-height: 100%;
+}
+
+/* NewAPI dashboard card rhythm, adapted to the existing Semi/VChart stack. */
+.dashboard-overview-page .semi-card {
+  border-radius: 16px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+.dashboard-overview-page .semi-card-header {
+  min-height: 48px;
+}
+.dashboard-chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dashboard-new-chart-card {
+  overflow: hidden;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 10px;
+  background: var(--semi-color-bg-0);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.025);
+}
+.dashboard-new-chart-header {
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+.dashboard-new-chart-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--semi-color-text-0);
+  font-size: 13px;
+  font-weight: 650;
+}
+.dashboard-new-chart-icon {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--semi-color-primary);
+  background: var(--semi-color-primary-light-default);
+}
+.dashboard-new-chart-total {
+  overflow: hidden;
+  max-width: 260px;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dashboard-new-chart-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+}
+.dashboard-new-chart-actions .semi-tabs {
+  margin: 0;
+}
+.dashboard-new-chart-actions .semi-tabs-tab-button {
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 7px !important;
+  font-size: 11px;
+}
+.dashboard-new-chart-actions .semi-tabs-tab-active .semi-tabs-tab-button {
+  background: var(--semi-color-fill-0);
+  box-shadow: inset 0 0 0 1px var(--semi-color-border);
+}
+.dashboard-chart-mode-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--semi-color-text-2);
+  font-size: 11px;
+}
+.dashboard-new-chart-body {
+  min-height: 0;
+}
+.dashboard-new-chart-canvas {
+  width: 100%;
+  min-height: 280px;
+  padding: 6px;
+}
+.dashboard-new-chart-canvas-tall {
+  height: 360px;
+}
+.flow-sankey-chart {
+  height: 380px;
+  margin: 0 -4px 16px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+
+/* Lottery remains a discoverable wallet feature even while disabled. */
+.lottery-card .semi-card-body {
+  padding: 18px 20px 22px;
+}
+.lottery-card .lottery-wheel-wrap {
+  width: min(100%, 360px);
+  margin-top: 18px;
+}
+.lottery-card .lottery-wheel-empty {
+  width: min(100%, 360px);
+  height: min(100%, 360px);
+}
+.lottery-disabled-panel {
+  min-height: 360px;
+}
+
+@media (max-width: 767px) {
+  .dashboard-new-chart-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .dashboard-new-chart-actions {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+  .dashboard-new-chart-canvas-tall {
+    height: 300px;
+  }
+  .flow-sankey-chart {
+    height: 320px;
+    margin-inline: -8px;
+  }
+  .lottery-card .semi-card-body {
+    padding: 14px 12px 18px;
+  }
+  .lottery-card .lottery-wheel-wrap {
+    width: min(100%, 300px);
+  }
+  .lottery-disabled-panel {
+    min-height: 280px;
+  }
+}

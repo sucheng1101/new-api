@@ -17,10 +17,51 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
-import { Button, ButtonGroup, Card, Tabs, TabPane } from '@douyinfe/semi-ui';
-import { PieChart, Users } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Button, ButtonGroup, Tabs, TabPane } from '@douyinfe/semi-ui';
+import {
+  Activity,
+  BarChart3,
+  PieChart,
+  Users,
+  WalletCards,
+} from 'lucide-react';
 import { VChart } from '@visactor/react-vchart';
+
+const chartSpec = (spec) => {
+  if (!spec) return null;
+  return {
+    ...spec,
+    title: { ...(spec.title || {}), visible: false },
+    background: 'transparent',
+  };
+};
+
+const ChartFrame = ({ icon: Icon, title, total, actions, children }) => (
+  <section className='dashboard-new-chart-card'>
+    <header className='dashboard-new-chart-header'>
+      <div className='dashboard-new-chart-title'>
+        <span className='dashboard-new-chart-icon'>
+          <Icon size={15} />
+        </span>
+        <span>{title}</span>
+        {total ? (
+          <span className='dashboard-new-chart-total'>{total}</span>
+        ) : null}
+      </div>
+      {actions ? (
+        <div className='dashboard-new-chart-actions'>{actions}</div>
+      ) : null}
+    </header>
+    <div className='dashboard-new-chart-body'>{children}</div>
+  </section>
+);
+
+const ChartCanvas = ({ spec, option }) => {
+  const prepared = useMemo(() => chartSpec(spec), [spec]);
+  if (!prepared) return null;
+  return <VChart spec={prepared} option={option} />;
+};
 
 const ChartsPanel = ({
   mode = 'all',
@@ -34,94 +75,118 @@ const ChartsPanel = ({
   setUserRankMetric,
   spec_user_trend,
   isAdminUser,
-  CARD_PROPS,
   CHART_CONFIG,
-  FLEX_CENTER_GAP2,
-  hasApiInfoPanel,
   t,
 }) => {
   const showModelCharts = mode !== 'users';
   const showUserCharts = mode !== 'models' && isAdminUser;
-  const title = mode === 'users' ? t('用户分析') : t('模型数据分析');
-  const TitleIcon = mode === 'users' ? Users : PieChart;
+  const modelTab = activeChartTab === '3' ? '3' : '2';
+  const userTab = activeChartTab === '6' ? '6' : '5';
 
-  return (
-    <Card
-      {...CARD_PROPS}
-      className={`dashboard-chart-card !rounded-lg border ${hasApiInfoPanel ? 'lg:col-span-3' : ''}`}
-      title={
-        <div className='flex flex-col lg:flex-row lg:items-center lg:justify-between w-full gap-3'>
-          <div className={FLEX_CENTER_GAP2}>
-            <TitleIcon size={16} />
-            {title}
-          </div>
-          <Tabs
-            type='slash'
-            activeKey={activeChartTab}
-            onChange={setActiveChartTab}
-          >
-            {showModelCharts && (
-              <TabPane tab={<span>{t('消耗分布')}</span>} itemKey='1' />
-            )}
-            {showModelCharts && (
-              <TabPane tab={<span>{t('调用趋势')}</span>} itemKey='2' />
-            )}
-            {showModelCharts && (
-              <TabPane tab={<span>{t('调用次数分布')}</span>} itemKey='3' />
-            )}
-            {showUserCharts && (
-              <TabPane tab={<span>{t('用户排行')}</span>} itemKey='5' />
-            )}
-            {showUserCharts && (
-              <TabPane tab={<span>{t('用户消耗趋势')}</span>} itemKey='6' />
-            )}
-          </Tabs>
-        </div>
-      }
-      bodyStyle={{ padding: 0 }}
-    >
-      <div className='h-[360px] p-2 sm:h-96'>
-        {showModelCharts && activeChartTab === '1' && (
-          <VChart spec={spec_line} option={CHART_CONFIG} />
-        )}
-        {showModelCharts && activeChartTab === '2' && (
-          <VChart spec={spec_model_line} option={CHART_CONFIG} />
-        )}
-        {showModelCharts && activeChartTab === '3' && (
-          <VChart spec={spec_pie} option={CHART_CONFIG} />
-        )}
-        {activeChartTab === '5' && showUserCharts && (
-          <div className='h-full flex flex-col gap-2'>
-            <div className='flex justify-end px-2'>
-              <ButtonGroup>
-                {[
-                  ['quota', t('额度消耗')],
-                  ['tokens', t('Token 消耗')],
-                  ['count', t('调用次数')],
-                ].map(([value, label]) => (
-                  <Button
-                    key={value}
-                    size='small'
-                    type={userRankMetric === value ? 'primary' : 'tertiary'}
-                    theme={userRankMetric === value ? 'solid' : 'light'}
-                    onClick={() => setUserRankMetric(value)}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </ButtonGroup>
+  if (showModelCharts) {
+    return (
+      <div className='dashboard-chart-stack'>
+        <ChartFrame
+          icon={WalletCards}
+          title={t('消耗分布')}
+          total={spec_line?.title?.subtext}
+          actions={
+            <div className='dashboard-chart-mode-hint'>
+              <BarChart3 size={14} />
+              <span>{t('消耗趋势')}</span>
             </div>
-            <div className='flex-1 min-h-0'>
-              <VChart spec={spec_user_rank} option={CHART_CONFIG} />
-            </div>
+          }
+        >
+          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
+            <ChartCanvas spec={spec_line} option={CHART_CONFIG} />
           </div>
-        )}
-        {activeChartTab === '6' && showUserCharts && (
-          <VChart spec={spec_user_trend} option={CHART_CONFIG} />
-        )}
+        </ChartFrame>
+
+        <ChartFrame
+          icon={PieChart}
+          title={t('模型调用分析')}
+          total={
+            modelTab === '3'
+              ? spec_pie?.title?.subtext
+              : spec_model_line?.title?.subtext
+          }
+          actions={
+            <Tabs
+              type='button'
+              activeKey={modelTab}
+              onChange={setActiveChartTab}
+            >
+              <TabPane itemKey='2' tab={t('调用趋势')} />
+              <TabPane itemKey='3' tab={t('调用次数占比')} />
+            </Tabs>
+          }
+        >
+          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
+            <ChartCanvas
+              spec={modelTab === '3' ? spec_pie : spec_model_line}
+              option={CHART_CONFIG}
+            />
+          </div>
+        </ChartFrame>
       </div>
-    </Card>
-  );
+    );
+  }
+
+  if (showUserCharts) {
+    return (
+      <div className='dashboard-chart-stack'>
+        <ChartFrame
+          icon={Users}
+          title={t('用户消耗排行')}
+          total={spec_user_rank?.title?.subtext}
+          actions={
+            <ButtonGroup>
+              {[
+                ['quota', t('额度消耗')],
+                ['tokens', t('Token 消耗')],
+                ['count', t('调用次数')],
+              ].map(([value, label]) => (
+                <Button
+                  key={value}
+                  size='small'
+                  type={userRankMetric === value ? 'primary' : 'tertiary'}
+                  theme={userRankMetric === value ? 'solid' : 'light'}
+                  onClick={() => setUserRankMetric(value)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </ButtonGroup>
+          }
+        >
+          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
+            <ChartCanvas spec={spec_user_rank} option={CHART_CONFIG} />
+          </div>
+        </ChartFrame>
+        <ChartFrame
+          icon={Activity}
+          title={t('用户消耗趋势')}
+          total={spec_user_trend?.title?.subtext}
+          actions={
+            <Tabs
+              type='button'
+              activeKey={userTab}
+              onChange={setActiveChartTab}
+            >
+              <TabPane itemKey='5' tab={t('排行')} />
+              <TabPane itemKey='6' tab={t('趋势')} />
+            </Tabs>
+          }
+        >
+          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
+            <ChartCanvas spec={spec_user_trend} option={CHART_CONFIG} />
+          </div>
+        </ChartFrame>
+      </div>
+    );
+  }
+
+  return null;
 };
 
 export default ChartsPanel;

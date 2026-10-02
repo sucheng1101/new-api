@@ -89,8 +89,8 @@ const PageLayout = () => {
         ? '8px'
         : '24px'
       : isMobile
-        ? '5px'
-        : '24px'
+        ? '2px 0 8px'
+        : '0 8px 16px'
     : '0';
 
   const isConsoleRoute = location.pathname.startsWith('/console');

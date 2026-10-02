@@ -268,7 +268,7 @@ export default function TaskPlugin() {
   };
 
   return (
-    <div className='mt-[60px] px-2 task-plugin-page'>
+    <div className='console-flat-page px-2 task-plugin-page'>
       <CardPro
         type='type3'
         className='task-plugin-card-pro'

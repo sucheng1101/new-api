@@ -38,7 +38,9 @@ import {
   Server,
   Users,
 } from 'lucide-react';
+import { VChart } from '@visactor/react-vchart';
 import { renderNumber, renderQuota } from '../../helpers';
+import { CHART_CONFIG } from '../../constants/dashboard.constants';
 
 const DIMENSIONS = [
   { key: 'model', label: '模型', icon: Layers3 },
@@ -137,6 +139,102 @@ export default function FlowAnalyticsPanel({
     () => aggregateRows(filteredData, dimension, metric, topN, showOther, t),
     [dimension, filteredData, metric, showOther, t, topN],
   );
+  const sankeySpec = useMemo(() => {
+    const stages = isAdminUser
+      ? [
+          ['user', 'username'],
+          ['node', 'node_name'],
+          ['token', 'token_name'],
+          ['group', 'group'],
+          ['model', 'model_name'],
+          ['channel', 'channel_name'],
+        ]
+      : [
+          ['token', 'token_name'],
+          ['group', 'group'],
+          ['model', 'model_name'],
+          ['channel', 'channel_name'],
+        ];
+    const nodes = new Map();
+    const links = new Map();
+    const readLabel = (row, key) => {
+      const value = row[key];
+      if (value !== undefined && value !== null && String(value).trim()) {
+        return String(value);
+      }
+      return t('未知');
+    };
+
+    filteredData.forEach((row) => {
+      const path = stages.map(([kind, key]) => ({
+        kind,
+        label: readLabel(row, key),
+      }));
+      path.forEach(({ kind, label }) => {
+        const id = `${kind}:${label}`;
+        if (!nodes.has(id)) nodes.set(id, { key: id, name: label });
+      });
+      const value = Math.max(0, toMetricValue(row, metric));
+      for (let index = 0; index < path.length - 1; index += 1) {
+        const source = `${path[index].kind}:${path[index].label}`;
+        const target = `${path[index + 1].kind}:${path[index + 1].label}`;
+        const key = `${source}->${target}`;
+        links.set(key, {
+          source,
+          target,
+          value: (links.get(key)?.value || 0) + value,
+        });
+      }
+    });
+
+    return {
+      type: 'sankey',
+      data: [
+        {
+          id: 'flow',
+          values: [
+            {
+              nodes: Array.from(nodes.values()),
+              links: Array.from(links.values()),
+            },
+          ],
+        },
+      ],
+      categoryField: 'name',
+      sourceField: 'source',
+      targetField: 'target',
+      valueField: 'value',
+      nodeKey: 'key',
+      direction: 'horizontal',
+      nodeAlign: 'justify',
+      nodeGap: 14,
+      nodeWidth: 16,
+      minLinkHeight: 2,
+      minNodeHeight: 8,
+      legends: { visible: false },
+      label: {
+        visible: true,
+        position: 'outside',
+        limit: 180,
+        style: { fill: '#64748b', fontSize: 11 },
+      },
+      tooltip: {
+        mark: {
+          content: [
+            {
+              key: t('数值'),
+              value: (datum) =>
+                metric === 'quota'
+                  ? renderQuota(datum?.value || 0, 2)
+                  : renderNumber(datum?.value || 0),
+            },
+          ],
+        },
+      },
+      background: { fill: 'transparent' },
+      animation: false,
+    };
+  }, [filteredData, isAdminUser, metric, t]);
   const totals = useMemo(
     () =>
       filteredData.reduce(
@@ -264,6 +362,9 @@ export default function FlowAnalyticsPanel({
       </div>
       {rows.length > 0 ? (
         <>
+          <div className='flow-sankey-chart'>
+            <VChart spec={sankeySpec} option={CHART_CONFIG} />
+          </div>
           <div className='space-y-2 mb-4'>
             {rows.slice(0, 8).map((row) => (
               <div

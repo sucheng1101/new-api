@@ -95,6 +95,11 @@ const Dashboard = () => {
     dashboardData.apiInfoEnabled ||
     dashboardData.announcementsEnabled ||
     dashboardData.faqEnabled;
+  const showPerformancePanel = dashboardData.isAdminUser;
+  const showContentPanels =
+    showPerformancePanel ||
+    showLeftContentPanels ||
+    dashboardData.uptimeEnabled;
 
   return (
     <div className='h-full'>
@@ -136,22 +141,22 @@ const Dashboard = () => {
         t={dashboardData.t}
       />
 
-      {dashboardData.isAdminUser && (
-        <div className='mb-4'>
-          <PerformanceHealthPanel enabled t={dashboardData.t} />
-        </div>
-      )}
-
-      {(showLeftContentPanels || dashboardData.uptimeEnabled) && (
+      {showContentPanels && (
         <div
           className={`grid grid-cols-1 gap-4 ${
-            showLeftContentPanels && dashboardData.uptimeEnabled
+            (showLeftContentPanels || showPerformancePanel) &&
+            dashboardData.uptimeEnabled
               ? 'xl:grid-cols-[minmax(0,1fr)_360px]'
               : ''
           }`}
         >
-          {showLeftContentPanels && (
+          {(showLeftContentPanels || showPerformancePanel) && (
             <div className='grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2'>
+              {showPerformancePanel && (
+                <div className='lg:col-span-2'>
+                  <PerformanceHealthPanel enabled t={dashboardData.t} />
+                </div>
+              )}
               {dashboardData.apiInfoEnabled && (
                 <ApiInfoPanel
                   apiInfoData={apiInfoData}
