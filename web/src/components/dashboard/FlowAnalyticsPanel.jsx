@@ -18,13 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useMemo, useState } from 'react';
-import { Empty, Input, Select, Tabs, TabPane, Tag } from '@douyinfe/semi-ui';
+import { Empty, Input, Select, Tag } from '@douyinfe/semi-ui';
 import {
   Activity,
+  ChevronRight,
   Eye,
   EyeOff,
   GitBranch,
   Hash,
+  Info,
   RefreshCw,
   Search,
   Server,
@@ -51,6 +53,28 @@ const STAGE_LABELS = {
   model: '模型',
   channel: '渠道',
 };
+
+const FlowToggleGroup = ({ options, value, onChange, ariaLabel }) => (
+  <div
+    className='dashboard-official-flow-toggle-list'
+    role='tablist'
+    aria-label={ariaLabel}
+  >
+    {options.map((option) => (
+      <button
+        key={option.value}
+        type='button'
+        role='tab'
+        aria-selected={value === option.value}
+        className={`dashboard-official-flow-toggle${value === option.value ? ' is-active' : ''}`}
+        onClick={() => onChange(option.value)}
+      >
+        {option.icon ? <option.icon size={13} aria-hidden='true' /> : null}
+        {option.label}
+      </button>
+    ))}
+  </div>
+);
 
 const metricValue = (row, metric) => {
   if (metric === 'tokens') return Number(row.token_used || 0);
@@ -240,47 +264,51 @@ export default function FlowAnalyticsPanel({
     <div className='dashboard-official-flow-layout'>
       <div className='dashboard-official-flow-controls'>
         <div className='dashboard-official-flow-control-group'>
-          <span>{t('流向宽度指标')}</span>
-          <Tabs type='button' activeKey={metric} onChange={setMetric}>
-            {metricOptions.map(([value, label, Icon]) => (
-              <TabPane
-                key={value}
-                itemKey={value}
-                tab={
-                  <span className='inline-flex items-center gap-1.5'>
-                    <Icon size={13} /> {t(label)}
-                  </span>
-                }
-              />
-            ))}
-          </Tabs>
+          <div className='dashboard-official-flow-control-label'>
+            <span>{t('流向宽度指标')}</span>
+            <button
+              type='button'
+              className='dashboard-official-help-button'
+              title={t('选择计算流向宽度的指标')}
+              aria-label={t('流向宽度指标')}
+            >
+              <Info size={13} />
+            </button>
+          </div>
+          <FlowToggleGroup
+            value={metric}
+            onChange={setMetric}
+            ariaLabel={t('流向宽度指标')}
+            options={metricOptions.map(([value, label, icon]) => ({
+              value,
+              label: t(label),
+              icon,
+            }))}
+          />
         </div>
         <div className='dashboard-official-flow-control-group'>
           <span>{t('显示数量')}</span>
-          <Tabs
-            type='button'
-            activeKey={String(topN)}
+          <FlowToggleGroup
+            value={String(topN)}
             onChange={(value) => setTopN(Number(value))}
-          >
-            {[10, 20, 50, 100].map((value) => (
-              <TabPane
-                key={value}
-                itemKey={String(value)}
-                tab={`Top ${value}`}
-              />
-            ))}
-          </Tabs>
+            ariaLabel={t('显示数量')}
+            options={[10, 20, 50, 100].map((value) => ({
+              value: String(value),
+              label: `Top ${value}`,
+            }))}
+          />
         </div>
         <div className='dashboard-official-flow-control-group'>
           <span>{t('溢出项目')}</span>
-          <Tabs
-            type='button'
-            activeKey={overflowMode}
+          <FlowToggleGroup
+            value={overflowMode}
             onChange={setOverflowMode}
-          >
-            <TabPane itemKey='aggregate' tab={t('聚合其他')} />
-            <TabPane itemKey='hide' tab={t('隐藏')} />
-          </Tabs>
+            ariaLabel={t('溢出项目')}
+            options={[
+              { value: 'aggregate', label: t('聚合其他') },
+              { value: 'hide', label: t('隐藏') },
+            ]}
+          />
         </div>
         {isAdminUser && nodeOptions.length > 0 && (
           <Select
@@ -313,16 +341,32 @@ export default function FlowAnalyticsPanel({
           </div>
           <div className='dashboard-official-flow-header-actions'>
             <div className='dashboard-official-flow-stage-toggles'>
+              <button
+                type='button'
+                className='dashboard-official-icon-button dashboard-official-flow-info'
+                title={t('点击阶段按钮显示或隐藏对应列')}
+                aria-label={t('显示或隐藏流向列')}
+              >
+                <Info size={14} />
+              </button>
               {availableStages.map(([kind]) => (
-                <button
-                  key={kind}
-                  type='button'
-                  className={`dashboard-official-stage-toggle ${visibleStageKeys.includes(kind) ? 'is-active' : ''}`}
-                  onClick={() => toggleStage(kind)}
-                  aria-pressed={visibleStageKeys.includes(kind)}
-                >
-                  {t(STAGE_LABELS[kind])}
-                </button>
+                <React.Fragment key={kind}>
+                  {kind !== availableStages[0][0] && (
+                    <ChevronRight
+                      className='dashboard-official-flow-chevron'
+                      size={13}
+                    />
+                  )}
+                  <button
+                    type='button'
+                    className={`dashboard-official-stage-toggle ${visibleStageKeys.includes(kind) ? 'is-active' : ''}`}
+                    onClick={() => toggleStage(kind)}
+                    aria-pressed={visibleStageKeys.includes(kind)}
+                  >
+                    {!visibleStageKeys.includes(kind) && <EyeOff size={11} />}
+                    {t(STAGE_LABELS[kind])}
+                  </button>
+                </React.Fragment>
               ))}
             </div>
             <button

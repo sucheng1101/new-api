@@ -411,7 +411,12 @@ body.sidebar-collapsed .sidebar-promotion-hint {
 /* ==================== Official NewAPI dashboard surface ==================== */
 .dashboard-official-page {
   width: 100%;
-  min-height: 100%;
+  min-height: calc(100vh - var(--topbar-height) - 16px);
+  box-sizing: border-box;
+  overflow: visible;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 16px;
+  background: var(--semi-color-bg-0);
   padding: 16px 16px 24px;
   color: var(--semi-color-text-0);
 }
@@ -453,6 +458,40 @@ body.sidebar-collapsed .sidebar-promotion-hint {
 
 .dashboard-official-section-tabs {
   overflow-x: auto;
+}
+
+.dashboard-official-tab-list {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: center;
+  gap: 2px;
+}
+
+.dashboard-official-tab-button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--semi-color-text-2);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.dashboard-official-tab-button:hover,
+.dashboard-official-tab-button.is-active {
+  color: var(--semi-color-primary);
+  background: var(--semi-color-primary-light-default);
+  box-shadow: none;
 }
 
 .dashboard-official-section-tabs .semi-tabs,
@@ -501,7 +540,7 @@ body.sidebar-collapsed .sidebar-promotion-hint {
 
 .dashboard-official-stat-card {
   min-width: 0;
-  min-height: 104px;
+  min-height: 112px;
   padding: 14px 18px;
   border-right: 1px solid var(--semi-color-border);
 }
@@ -666,6 +705,33 @@ body.sidebar-collapsed .sidebar-promotion-hint {
   border: 1px solid var(--semi-color-border);
   border-radius: 8px;
   background: var(--semi-color-fill-0);
+}
+
+.dashboard-official-segment-button {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--semi-color-text-2);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.dashboard-official-segment-button:hover,
+.dashboard-official-segment-button.is-active {
+  color: var(--semi-color-text-0);
+  background: var(--semi-color-bg-0);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .dashboard-official-segmented .semi-tabs {
@@ -891,10 +957,68 @@ body.sidebar-collapsed .sidebar-promotion-hint {
   gap: 5px;
 }
 
+.dashboard-official-flow-control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .dashboard-official-flow-control-group > span {
   color: var(--semi-color-text-2);
   font-size: 11px;
   font-weight: 600;
+}
+
+.dashboard-official-help-button {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--semi-color-text-3);
+  background: transparent;
+  cursor: help;
+}
+
+.dashboard-official-help-button:hover {
+  color: var(--semi-color-text-0);
+  background: var(--semi-color-fill-0);
+}
+
+.dashboard-official-flow-toggle-list {
+  display: inline-flex;
+  min-width: max-content;
+  overflow-x: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.dashboard-official-flow-toggle {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--semi-color-text-2);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.dashboard-official-flow-toggle:hover,
+.dashboard-official-flow-toggle.is-active {
+  color: var(--semi-color-primary);
+  background: var(--semi-color-primary-light-default);
+  box-shadow: none;
 }
 
 .dashboard-official-flow-control-group .semi-tabs {
@@ -926,6 +1050,15 @@ body.sidebar-collapsed .sidebar-promotion-hint {
   align-items: center;
   gap: 4px;
   overflow-x: auto;
+}
+
+.dashboard-official-flow-info {
+  flex: 0 0 auto;
+}
+
+.dashboard-official-flow-chevron {
+  flex: 0 0 auto;
+  color: var(--semi-color-text-3);
 }
 
 .dashboard-official-stage-toggle,
@@ -974,6 +1107,12 @@ body.sidebar-collapsed .sidebar-promotion-hint {
   padding: 8px;
 }
 
+@media (min-width: 1536px) {
+  .dashboard-official-flow-chart {
+    height: 760px;
+  }
+}
+
 .dashboard-official-flow-overflow-note {
   padding: 0 18px 12px;
   color: var(--semi-color-text-2);
@@ -1001,6 +1140,15 @@ body.sidebar-collapsed .sidebar-promotion-hint {
 
   .dashboard-official-section-actions {
     justify-content: flex-start;
+  }
+
+  .dashboard-official-section-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .dashboard-official-tab-list {
+    width: max-content;
   }
 
   .dashboard-official-stat-strip {
@@ -1049,6 +1197,11 @@ body.sidebar-collapsed .sidebar-promotion-hint {
     flex-direction: column;
   }
 
+  .dashboard-official-user-controls .dashboard-official-tab-list {
+    width: 100%;
+    overflow-x: auto;
+  }
+
   .dashboard-official-user-controls .semi-tabs {
     width: 100%;
     overflow-x: auto;
@@ -1068,6 +1221,10 @@ body.sidebar-collapsed .sidebar-promotion-hint {
     overflow-x: auto;
   }
 
+  .dashboard-official-flow-toggle-list {
+    width: 100%;
+  }
+
   .dashboard-official-flow-header-actions {
     width: 100%;
     justify-content: space-between;
@@ -1078,7 +1235,7 @@ body.sidebar-collapsed .sidebar-promotion-hint {
   }
 
   .dashboard-official-flow-chart {
-    height: 460px;
+    height: 560px;
     padding: 4px;
   }
 

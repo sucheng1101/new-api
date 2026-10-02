@@ -18,9 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useMemo } from 'react';
-import { Tabs, TabPane } from '@douyinfe/semi-ui';
 import {
   Activity,
+  AreaChart,
   BarChart3,
   PieChart,
   Users,
@@ -72,11 +72,25 @@ const ChartCanvas = ({ spec, option, loading, hasData, t }) => {
   return <VChart spec={prepared} option={option} />;
 };
 
-const SegmentTabs = ({ activeKey, onChange, children, ariaLabel }) => (
-  <div className='dashboard-official-segmented' aria-label={ariaLabel}>
-    <Tabs type='button' activeKey={activeKey} onChange={onChange}>
-      {children}
-    </Tabs>
+const SegmentTabs = ({ activeKey, onChange, options, ariaLabel }) => (
+  <div
+    className='dashboard-official-segmented'
+    aria-label={ariaLabel}
+    role='tablist'
+  >
+    {options.map((option) => (
+      <button
+        key={option.value}
+        type='button'
+        role='tab'
+        aria-selected={activeKey === option.value}
+        className={`dashboard-official-segment-button${activeKey === option.value ? ' is-active' : ''}`}
+        onClick={() => onChange(option.value)}
+      >
+        {option.icon ? <option.icon size={13} aria-hidden='true' /> : null}
+        {option.label}
+      </button>
+    ))}
   </div>
 );
 
@@ -178,26 +192,11 @@ const ChartsPanel = ({
             activeKey={consumptionChartType}
             onChange={setConsumptionChartType}
             ariaLabel={t('消耗分布图表')}
-          >
-            <TabPane
-              itemKey='bar'
-              tab={
-                <>
-                  <BarChart3 size={13} />
-                  {t('柱状图')}
-                </>
-              }
-            />
-            <TabPane
-              itemKey='area'
-              tab={
-                <>
-                  <Activity size={13} />
-                  {t('面积图')}
-                </>
-              }
-            />
-          </SegmentTabs>
+            options={[
+              { value: 'bar', icon: BarChart3, label: t('柱状图') },
+              { value: 'area', icon: AreaChart, label: t('面积图') },
+            ]}
+          />
         }
       >
         <ChartBody>
@@ -221,11 +220,12 @@ const ChartsPanel = ({
             activeKey={modelChartTab}
             onChange={setModelChartTab}
             ariaLabel={t('模型调用分析图表')}
-          >
-            <TabPane itemKey='2' tab={t('调用趋势')} />
-            <TabPane itemKey='3' tab={t('调用次数占比')} />
-            <TabPane itemKey='4' tab={t('调用次数排行')} />
-          </SegmentTabs>
+            options={[
+              { value: '2', label: t('调用趋势') },
+              { value: '3', label: t('调用次数占比') },
+              { value: '4', label: t('调用次数排行') },
+            ]}
+          />
         }
       >
         <ChartBody>

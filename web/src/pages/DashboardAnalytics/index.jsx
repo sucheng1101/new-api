@@ -24,7 +24,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { Button, Modal, Select, TabPane, Tabs } from '@douyinfe/semi-ui';
+import { Button, Modal, Select } from '@douyinfe/semi-ui';
 import { BarChart3, Coins, Filter, Hash, Settings2, Timer } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -71,6 +71,34 @@ const SummaryCard = ({
         <div className='dashboard-official-stat-description'>{description}</div>
       </>
     )}
+  </div>
+);
+
+const DashboardTabList = ({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+  compact = false,
+}) => (
+  <div
+    className={`dashboard-official-tab-list${compact ? ' dashboard-official-tab-list-compact' : ''}`}
+    role='tablist'
+    aria-label={ariaLabel}
+  >
+    {options.map((option) => (
+      <button
+        key={option.value}
+        type='button'
+        role='tab'
+        aria-selected={value === option.value}
+        className={`dashboard-official-tab-button${value === option.value ? ' is-active' : ''}`}
+        onClick={() => onChange(option.value)}
+      >
+        {option.icon ? <option.icon size={13} aria-hidden='true' /> : null}
+        {option.label}
+      </button>
+    ))}
   </div>
 );
 
@@ -268,9 +296,12 @@ const DashboardAnalytics = () => {
 
       <div className='dashboard-official-section-toolbar'>
         <div className='dashboard-official-section-tabs'>
-          <Tabs
-            type='button'
-            activeKey={section}
+          <DashboardTabList
+            value={section}
+            options={visibleSections.map((item) => ({
+              value: item.key,
+              label: item.label,
+            }))}
             onChange={(key) =>
               navigate(
                 key === 'models'
@@ -278,11 +309,8 @@ const DashboardAnalytics = () => {
                   : `/console/dashboard/${key}`,
               )
             }
-          >
-            {visibleSections.map((item) => (
-              <TabPane key={item.key} itemKey={item.key} tab={item.label} />
-            ))}
-          </Tabs>
+            ariaLabel={dashboardData.t('数据看板')}
+          />
         </div>
         <div className='dashboard-official-section-actions'>
           {section === 'models' && (
@@ -377,9 +405,12 @@ const DashboardAnalytics = () => {
       {section === 'users' && dashboardData.isAdminUser && (
         <>
           <div className='dashboard-official-user-controls'>
-            <Tabs
-              type='button'
-              activeKey={String(userRangeDays)}
+            <DashboardTabList
+              value={String(userRangeDays)}
+              options={[1, 7, 14, 29].map((days) => ({
+                value: String(days),
+                label: dashboardData.t(`${days} 天`),
+              }))}
               onChange={(value) => {
                 const days = Number(value);
                 setUserRangeDays(days);
@@ -389,18 +420,14 @@ const DashboardAnalytics = () => {
                   days,
                 );
               }}
-            >
-              {[1, 7, 14, 29].map((days) => (
-                <TabPane
-                  key={days}
-                  itemKey={String(days)}
-                  tab={dashboardData.t(`${days} 天`)}
-                />
-              ))}
-            </Tabs>
-            <Tabs
-              type='button'
-              activeKey={dashboardData.dataExportDefaultTime}
+              ariaLabel={dashboardData.t('时间范围')}
+            />
+            <DashboardTabList
+              value={dashboardData.dataExportDefaultTime}
+              options={dashboardData.timeOptions.map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
               onChange={(value) => {
                 dashboardData.handleInputChange(
                   value,
@@ -408,18 +435,14 @@ const DashboardAnalytics = () => {
                 );
                 loadUserData(userTopLimit, value, userRangeDays);
               }}
-            >
-              {dashboardData.timeOptions.map((option) => (
-                <TabPane
-                  key={option.value}
-                  itemKey={option.value}
-                  tab={option.label}
-                />
-              ))}
-            </Tabs>
-            <Tabs
-              type='button'
-              activeKey={String(userTopLimit)}
+              ariaLabel={dashboardData.t('时间粒度')}
+            />
+            <DashboardTabList
+              value={String(userTopLimit)}
+              options={[5, 10, 20, 50].map((limit) => ({
+                value: String(limit),
+                label: `Top ${limit}`,
+              }))}
               onChange={(value) => {
                 const limit = Number(value);
                 setUserTopLimit(limit);
@@ -429,12 +452,8 @@ const DashboardAnalytics = () => {
                   userRangeDays,
                 );
               }}
-            >
-              <TabPane itemKey='5' tab='Top 5' />
-              <TabPane itemKey='10' tab='Top 10' />
-              <TabPane itemKey='20' tab='Top 20' />
-              <TabPane itemKey='50' tab='Top 50' />
-            </Tabs>
+              ariaLabel={dashboardData.t('Top 用户')}
+            />
           </div>
           <ChartsPanel
             mode='users'
