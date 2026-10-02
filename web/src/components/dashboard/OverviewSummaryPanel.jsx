@@ -23,8 +23,12 @@ import { Activity, ArrowRight, Flame, ShieldCheck, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { API, renderNumber, renderQuota } from '../../helpers';
+import UsageHeatmap, { aggregateUsageByDate } from './UsageHeatmap';
 
 const BUCKET_COUNT = 12;
+const DAY_SECONDS = 24 * 60 * 60;
+const MAX_RANGE_SECONDS = 30 * DAY_SECONDS;
+const YEAR_SECONDS = 365 * DAY_SECONDS;
 
 const MiniBars = ({ values }) => {
   const max = Math.max(...values, 1);
@@ -41,6 +45,27 @@ const MiniBars = ({ values }) => {
   );
 };
 
+const loadYearRows = async (start, end) => {
+  const requests = [];
+  let cursor = start;
+  while (cursor < end) {
+    const segmentEnd = Math.min(end, cursor + MAX_RANGE_SECONDS - 1);
+    requests.push(
+      API.get(
+        `/api/data/self/?start_timestamp=${cursor}&end_timestamp=${segmentEnd}&default_time=hour`,
+      ),
+    );
+    cursor = segmentEnd + 1;
+  }
+
+  const results = await Promise.allSettled(requests);
+  return results.flatMap((result) =>
+    result.status === 'fulfilled' && result.value.data?.success
+      ? result.value.data.data || []
+      : [],
+  );
+};
+
 const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
@@ -51,14 +76,13 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
     const load = async () => {
       setLoading(true);
       const end = Math.floor(Date.now() / 1000);
-      const start = end - 86400;
+      const start = end - YEAR_SECONDS;
       try {
-        const response = await API.get(
-          `/api/data/self/?start_timestamp=${start}&end_timestamp=${end}&default_time=hour`,
-        );
-        if (active && response.data?.success) {
-          setRows(response.data.data || []);
-        }
+        const nextRows = await loadYearRows(start, end);
+        if (active) setRows(nextRows);
+      } catch (error) {
+        console.error(error);
+        if (active) setRows([]);
       } finally {
         if (active) setLoading(false);
       }
@@ -71,15 +95,17 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
 
   const summary = useMemo(() => {
     const end = Math.floor(Date.now() / 1000);
-    const start = end - 86400;
+    const start = end - DAY_SECONDS;
     const usageBuckets = Array.from({ length: BUCKET_COUNT }, () => 0);
     const requestBuckets = Array.from({ length: BUCKET_COUNT }, () => 0);
     let usage = 0;
     let requests = 0;
+
     rows.forEach((row) => {
+      const timestamp = Number(row.created_at || start);
+      if (timestamp < start || timestamp > end) return;
       const quota = Number(row.quota || 0);
       const count = Number(row.count || 0);
-      const timestamp = Number(row.created_at || start);
       const ratio = Math.max(
         0,
         Math.min(0.9999, (timestamp - start) / (end - start)),
@@ -134,6 +160,7 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
       values: summary.usageBuckets,
     },
   ];
+  const heatmapData = useMemo(() => aggregateUsageByDate(rows), [rows]);
 
   return (
     <Card
@@ -181,6 +208,7 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
               );
             })}
           </div>
+          <UsageHeatmap data={heatmapData} loading={loading} t={t} />
         </div>
 
         <div className='flex flex-col justify-between gap-4 border-t border-semi-color-border bg-gradient-to-br from-blue-50 to-emerald-50 p-4 dark:from-blue-950/30 dark:to-emerald-950/20 sm:p-5 xl:border-l xl:border-t-0'>

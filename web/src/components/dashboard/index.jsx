@@ -116,6 +116,12 @@ const Dashboard = () => {
           >
             {dashboardData.t('数据看板')}
           </Button>
+          <OverviewSetupGuide
+            user={userState?.user}
+            apiInfo={apiInfoData}
+            isAdminUser={dashboardData.isAdminUser}
+            t={dashboardData.t}
+          />
           <Button
             theme='light'
             type='primary'
@@ -127,13 +133,6 @@ const Dashboard = () => {
           </Button>
         </div>
       </div>
-
-      <OverviewSetupGuide
-        user={userState?.user}
-        apiInfo={apiInfoData}
-        isAdminUser={dashboardData.isAdminUser}
-        t={dashboardData.t}
-      />
 
       <OverviewSummaryPanel
         user={userState?.user}

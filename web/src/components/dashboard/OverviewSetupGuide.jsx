@@ -18,14 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Progress, Skeleton, Tag } from '@douyinfe/semi-ui';
+import { Button, Modal, Progress, Skeleton, Tag } from '@douyinfe/semi-ui';
 import {
   ArrowRight,
   BookOpen,
   Check,
-  ChevronDown,
-  ChevronUp,
-  Circle,
   Copy,
   CreditCard,
   FileText,
@@ -40,13 +37,14 @@ import { useNavigate } from 'react-router-dom';
 import { API, copy, showError, showSuccess } from '../../helpers';
 import { fetchTokenKey } from '../../helpers/token';
 
-const STORAGE_KEY = 'dashboard_overview_setup_guide_expanded';
+const NEW_USER_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 
-const getSavedExpanded = () => {
-  const value = localStorage.getItem(STORAGE_KEY);
-  if (value === 'expanded') return true;
-  if (value === 'collapsed') return false;
-  return null;
+const getUserId = (user) => user?.id ?? user?.ID ?? user?.user_id;
+
+const getCreatedAtSeconds = (user) => {
+  const raw = Number(user?.created_at || 0);
+  if (!raw) return 0;
+  return raw > 10 ** 12 ? Math.floor(raw / 1000) : raw;
 };
 
 const normalizeEndpoint = (sourceUrl) => {
@@ -67,21 +65,8 @@ const buildCurlCommand = ({ endpoint, apiKey, model }) =>
     `  -d '{"model":"${model}","messages":[{"role":"user","content":"Say hello in one sentence."}]}'`,
   ].join('\n');
 
-const ActionItem = ({ action, compact = false, onClick }) => {
+const ActionItem = ({ action, onClick }) => {
   const Icon = action.icon;
-  if (compact) {
-    return (
-      <Button
-        size='small'
-        theme='light'
-        type='tertiary'
-        icon={<Icon size={14} />}
-        onClick={onClick}
-      >
-        {action.title}
-      </Button>
-    );
-  }
   return (
     <button
       type='button'
@@ -109,13 +94,26 @@ const ActionItem = ({ action, compact = false, onClick }) => {
 
 const OverviewSetupGuide = ({ user, apiInfo = [], isAdminUser, t }) => {
   const navigate = useNavigate();
+  const userId = getUserId(user);
+  const storageKey = userId ? `dashboard_overview_setup_guide_${userId}` : null;
+  const createdAt = getCreatedAtSeconds(user);
+  const accountAge = Math.floor(Date.now() / 1000) - createdAt;
+  const isNewUser =
+    createdAt > 0 && accountAge >= 0 && accountAge <= NEW_USER_WINDOW_SECONDS;
+  const [visible, setVisible] = useState(false);
   const [tokens, setTokens] = useState([]);
   const [models, setModels] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [copying, setCopying] = useState(false);
-  const [manualExpanded, setManualExpanded] = useState(getSavedExpanded);
 
   useEffect(() => {
+    if (!storageKey) return;
+    const hasSeen = localStorage.getItem(storageKey);
+    if (!hasSeen && isNewUser) setVisible(true);
+  }, [isNewUser, storageKey]);
+
+  useEffect(() => {
+    if (!visible) return undefined;
     let active = true;
     const load = async () => {
       setLoading(true);
@@ -143,7 +141,7 @@ const OverviewSetupGuide = ({ user, apiInfo = [], isAdminUser, t }) => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [visible]);
 
   const preferredToken = useMemo(
     () => tokens.find((item) => item.status === 1) || tokens[0] || null,
@@ -180,8 +178,6 @@ const OverviewSetupGuide = ({ user, apiInfo = [], isAdminUser, t }) => {
   );
   const completed = steps.filter((item) => item.completed).length;
   const setupComplete = completed === steps.length;
-  const expanded = manualExpanded ?? (!loading && !setupComplete);
-
   const quickActions = useMemo(
     () =>
       [
@@ -213,15 +209,14 @@ const OverviewSetupGuide = ({ user, apiInfo = [], isAdminUser, t }) => {
       ].filter((item) => !item.adminOnly || isAdminUser),
     [isAdminUser, t],
   );
-
   const endpoint = normalizeEndpoint(apiInfo[0]?.url);
   const model = models[0] || 'gpt-4o-mini';
   const displayKey = preferredToken ? 'sk-••••••••••••' : 'sk-...';
   const curlPreview = buildCurlCommand({ endpoint, apiKey: displayKey, model });
 
-  const setExpanded = (value) => {
-    setManualExpanded(value);
-    localStorage.setItem(STORAGE_KEY, value ? 'expanded' : 'collapsed');
+  const closeGuide = () => {
+    setVisible(false);
+    if (storageKey) localStorage.setItem(storageKey, 'seen');
   };
 
   const copyReadyRequest = async () => {
@@ -246,248 +241,192 @@ const OverviewSetupGuide = ({ user, apiInfo = [], isAdminUser, t }) => {
     }
   };
 
-  if (loading) {
-    return (
-      <Card className='!mb-4 !rounded-2xl'>
-        <Skeleton
-          active
-          placeholder={<Skeleton.Paragraph rows={5} />}
-          loading
-        />
-      </Card>
-    );
-  }
-
-  if (!expanded) {
-    return (
-      <Card
-        className='!mb-4 !rounded-2xl overflow-hidden'
-        bodyStyle={{ padding: 16 }}
+  return (
+    <>
+      <Button
+        size='small'
+        theme='light'
+        type='tertiary'
+        icon={<BookOpen size={15} />}
+        onClick={() => setVisible(true)}
       >
-        <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
-          <div className='flex min-w-0 items-center gap-3'>
-            <span className='flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-semi-color-border bg-semi-color-bg-0'>
-              {setupComplete ? (
-                <Check size={18} className='text-green-500' />
-              ) : (
-                <Circle size={18} />
-              )}
-            </span>
-            <div className='min-w-0 flex-1'>
-              <div className='flex flex-wrap items-center gap-2'>
-                <span className='font-semibold'>{t('上手引导')}</span>
-                <Tag color={setupComplete ? 'green' : 'blue'}>
-                  {t('完成进度 {{completed}}/{{total}}', {
-                    completed,
-                    total: steps.length,
-                  })}
-                </Tag>
+        <span className='hidden sm:inline'>{t('上手引导')}</span>
+      </Button>
+
+      <Modal
+        visible={visible}
+        title={t('快速开始')}
+        width={920}
+        centered
+        keepDOM={false}
+        onCancel={closeGuide}
+        footer={
+          <div className='flex w-full items-center justify-between gap-2'>
+            <Tag color={setupComplete ? 'green' : 'blue'}>
+              {t('完成进度 {{completed}}/{{total}}', {
+                completed,
+                total: steps.length,
+              })}
+            </Tag>
+            <Button type='primary' onClick={closeGuide}>
+              {setupComplete ? t('完成') : t('关闭')}
+            </Button>
+          </div>
+        }
+      >
+        <div className='space-y-4'>
+          <div className='rounded-2xl bg-gradient-to-br from-blue-50 via-semi-color-bg-1 to-violet-50 p-4 dark:from-blue-950/30 dark:to-violet-950/30 sm:p-5'>
+            <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+              <div>
+                <div className='text-xs font-medium uppercase tracking-wider text-semi-color-text-2'>
+                  {t('上手引导')}
+                </div>
+                <h2 className='mt-1 text-xl font-semibold sm:text-2xl'>
+                  {t('几分钟内开始使用 API 网关')}
+                </h2>
+                <p className='mt-1 text-sm text-semi-color-text-2'>
+                  {t('集中完成令牌、余额、路由和服务状态检查。')}
+                </p>
               </div>
               <Progress
                 percent={Math.round((completed / steps.length) * 100)}
-                showInfo={false}
+                showInfo
                 size='small'
-                className='mt-2 max-w-sm'
+                className='w-full sm:w-40'
               />
             </div>
           </div>
-          <div className='flex flex-wrap items-center gap-2'>
+
+          {loading ? (
+            <Skeleton active placeholder={<Skeleton.Paragraph rows={8} />} />
+          ) : (
+            <div className='grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]'>
+              <div className='space-y-2 rounded-2xl border border-semi-color-border bg-semi-color-bg-0 p-2'>
+                {steps.map((step, index) => {
+                  const Icon = step.icon;
+                  return (
+                    <button
+                      type='button'
+                      key={step.path}
+                      onClick={() => navigate(step.path)}
+                      className='flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition hover:border-semi-color-border hover:bg-semi-color-fill-0'
+                    >
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                          step.completed
+                            ? 'border-green-200 bg-green-50 text-green-600 dark:bg-green-950/30'
+                            : 'border-semi-color-border bg-semi-color-bg-0'
+                        }`}
+                      >
+                        {step.completed ? (
+                          <Check size={15} />
+                        ) : (
+                          <span className='text-xs'>{index + 1}</span>
+                        )}
+                      </span>
+                      <span className='flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-semi-color-fill-0'>
+                        <Icon size={15} />
+                      </span>
+                      <span className='min-w-0 flex-1'>
+                        <span className='block text-sm font-medium'>
+                          {step.title}
+                        </span>
+                        <span className='mt-0.5 block text-xs text-semi-color-text-2'>
+                          {step.description}
+                        </span>
+                      </span>
+                      <ArrowRight
+                        size={15}
+                        className='shrink-0 text-semi-color-text-2'
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className='rounded-2xl border border-semi-color-border bg-semi-color-bg-0 p-3 shadow-sm'>
+                <div className='flex items-center justify-between gap-2 border-b border-semi-color-border pb-3'>
+                  <div className='flex min-w-0 items-center gap-2'>
+                    <TerminalSquare
+                      size={17}
+                      className='shrink-0 text-semi-color-primary'
+                    />
+                    <div className='min-w-0'>
+                      <div className='truncate text-sm font-medium'>
+                        {t('第一个 API 请求')}
+                      </div>
+                      <div className='truncate text-xs text-semi-color-text-2'>
+                        {preferredToken?.name || t('尚未创建 API 令牌')}
+                      </div>
+                    </div>
+                  </div>
+                  {preferredToken ? (
+                    <Button
+                      size='small'
+                      theme='light'
+                      type='tertiary'
+                      icon={<Copy size={14} />}
+                      loading={copying}
+                      onClick={copyReadyRequest}
+                    >
+                      {t('复制')}
+                    </Button>
+                  ) : (
+                    <Button
+                      size='small'
+                      onClick={() => navigate('/console/token')}
+                    >
+                      {t('创建令牌')}
+                    </Button>
+                  )}
+                </div>
+                <pre className='my-3 max-h-44 overflow-auto rounded-xl bg-gray-950 p-3 text-[11px] leading-5 text-gray-200'>
+                  <code>{curlPreview}</code>
+                </pre>
+                <div className='grid gap-2'>
+                  {[
+                    [
+                      RadioTower,
+                      t('路由状态'),
+                      apiInfo.length > 0 ? t('在线') : t('当前域名'),
+                    ],
+                    [
+                      ShieldCheck,
+                      t('认证状态'),
+                      preferredToken ? t('已配置') : t('需要令牌'),
+                    ],
+                    [Timer, t('当前模型'), model],
+                  ].map(([SignalIcon, label, value]) => (
+                    <div
+                      key={label}
+                      className='flex items-center justify-between gap-3 rounded-lg bg-semi-color-fill-0 px-3 py-2 text-xs'
+                    >
+                      <span className='flex min-w-0 items-center gap-2 font-medium'>
+                        <SignalIcon size={14} className='shrink-0' />
+                        <span className='truncate'>{label}</span>
+                      </span>
+                      <span className='max-w-[55%] truncate text-semi-color-text-2'>
+                        {value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
             {quickActions.map((action) => (
               <ActionItem
                 key={action.path}
                 action={action}
-                compact
                 onClick={() => navigate(action.path)}
               />
             ))}
-            <Button
-              size='small'
-              theme='light'
-              type='primary'
-              icon={<ChevronDown size={14} />}
-              onClick={() => setExpanded(true)}
-            >
-              {t('展开引导')}
-            </Button>
           </div>
         </div>
-      </Card>
-    );
-  }
-
-  return (
-    <div className='mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]'>
-      <Card className='!rounded-2xl overflow-hidden' bodyStyle={{ padding: 0 }}>
-        <div className='relative overflow-hidden bg-gradient-to-br from-blue-50 via-semi-color-bg-1 to-violet-50 p-4 dark:from-blue-950/30 dark:to-violet-950/30 sm:p-5'>
-          <div className='mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-            <div>
-              <div className='text-xs font-medium uppercase tracking-wider text-semi-color-text-2'>
-                {t('快速开始')}
-              </div>
-              <h2 className='mt-1 text-xl font-semibold sm:text-2xl'>
-                {t('几分钟内开始使用 API 网关')}
-              </h2>
-              <p className='mt-1 text-sm text-semi-color-text-2'>
-                {t('集中完成令牌、余额、路由和服务状态检查。')}
-              </p>
-            </div>
-            <div className='flex flex-wrap gap-2'>
-              <Button
-                size='small'
-                theme='light'
-                type='tertiary'
-                icon={<ChevronUp size={14} />}
-                onClick={() => setExpanded(false)}
-              >
-                {t('收起引导')}
-              </Button>
-              <Button
-                size='small'
-                type='primary'
-                icon={<KeyRound size={14} />}
-                onClick={() => navigate('/console/token')}
-              >
-                {t('创建 API 令牌')}
-              </Button>
-            </div>
-          </div>
-
-          <div className='grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]'>
-            <div className='space-y-2 rounded-2xl border border-semi-color-border bg-semi-color-bg-0 p-2'>
-              {steps.map((step, index) => {
-                const Icon = step.icon;
-                return (
-                  <button
-                    type='button'
-                    key={step.path}
-                    onClick={() => navigate(step.path)}
-                    className='flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition hover:border-semi-color-border hover:bg-semi-color-fill-0'
-                  >
-                    <span
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
-                        step.completed
-                          ? 'border-green-200 bg-green-50 text-green-600 dark:bg-green-950/30'
-                          : 'border-semi-color-border bg-semi-color-bg-0'
-                      }`}
-                    >
-                      {step.completed ? (
-                        <Check size={15} />
-                      ) : (
-                        <span className='text-xs'>{index + 1}</span>
-                      )}
-                    </span>
-                    <span className='flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-semi-color-fill-0'>
-                      <Icon size={15} />
-                    </span>
-                    <span className='min-w-0 flex-1'>
-                      <span className='block text-sm font-medium'>
-                        {step.title}
-                      </span>
-                      <span className='mt-0.5 block text-xs text-semi-color-text-2'>
-                        {step.description}
-                      </span>
-                    </span>
-                    <ArrowRight
-                      size={15}
-                      className='shrink-0 text-semi-color-text-2'
-                    />
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className='rounded-2xl border border-semi-color-border bg-semi-color-bg-0 p-3 shadow-sm'>
-              <div className='flex items-center justify-between gap-2 border-b border-semi-color-border pb-3'>
-                <div className='flex min-w-0 items-center gap-2'>
-                  <TerminalSquare
-                    size={17}
-                    className='shrink-0 text-semi-color-primary'
-                  />
-                  <div className='min-w-0'>
-                    <div className='truncate text-sm font-medium'>
-                      {t('第一个 API 请求')}
-                    </div>
-                    <div className='truncate text-xs text-semi-color-text-2'>
-                      {preferredToken?.name || t('尚未创建 API 令牌')}
-                    </div>
-                  </div>
-                </div>
-                {preferredToken ? (
-                  <Button
-                    size='small'
-                    theme='light'
-                    type='tertiary'
-                    icon={<Copy size={14} />}
-                    loading={copying}
-                    onClick={copyReadyRequest}
-                  >
-                    {t('复制')}
-                  </Button>
-                ) : (
-                  <Button
-                    size='small'
-                    onClick={() => navigate('/console/token')}
-                  >
-                    {t('创建令牌')}
-                  </Button>
-                )}
-              </div>
-              <pre className='my-3 max-h-44 overflow-auto rounded-xl bg-gray-950 p-3 text-[11px] leading-5 text-gray-200'>
-                <code>{curlPreview}</code>
-              </pre>
-              <div className='grid gap-2'>
-                {[
-                  [
-                    RadioTower,
-                    t('路由状态'),
-                    apiInfo.length > 0 ? t('在线') : t('当前域名'),
-                  ],
-                  [
-                    ShieldCheck,
-                    t('认证状态'),
-                    preferredToken ? t('已配置') : t('需要令牌'),
-                  ],
-                  [Timer, t('当前模型'), model],
-                ].map(([SignalIcon, label, value]) => (
-                  <div
-                    key={label}
-                    className='flex items-center justify-between gap-3 rounded-lg bg-semi-color-fill-0 px-3 py-2 text-xs'
-                  >
-                    <span className='flex min-w-0 items-center gap-2 font-medium'>
-                      <SignalIcon size={14} className='shrink-0' />
-                      <span className='truncate'>{label}</span>
-                    </span>
-                    <span className='max-w-[55%] truncate text-semi-color-text-2'>
-                      {value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <Card
-        className='!rounded-2xl'
-        title={t('推荐操作')}
-        headerExtraContent={
-          <Tag color={setupComplete ? 'green' : 'blue'}>
-            {completed}/{steps.length}
-          </Tag>
-        }
-      >
-        <div className='space-y-2'>
-          {quickActions.map((action) => (
-            <ActionItem
-              key={action.path}
-              action={action}
-              onClick={() => navigate(action.path)}
-            />
-          ))}
-        </div>
-      </Card>
-    </div>
+      </Modal>
+    </>
   );
 };
 
