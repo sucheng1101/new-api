@@ -87,7 +87,9 @@ const PageLayout = () => {
       ? isMobile
         ? '8px'
         : '24px'
-      : '0'
+      : isMobile
+        ? '5px'
+        : '24px'
     : '0';
 
   const isConsoleRoute = location.pathname.startsWith('/console');
@@ -197,7 +199,7 @@ const PageLayout = () => {
           overflow: isMobile ? 'visible' : 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          paddingTop: isConsoleRoute ? '64px' : '0',
+          paddingTop: shouldUseContentShell && isConsoleRoute ? '64px' : '0',
           boxSizing: 'border-box',
         }}
       >
