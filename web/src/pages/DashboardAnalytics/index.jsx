@@ -47,17 +47,20 @@ import {
 } from '../../constants/dashboard.constants';
 
 const SummaryCard = ({ icon, label, value, loading }) => (
-  <Card className='!rounded-2xl border shadow-sm' bodyStyle={{ padding: 16 }} loading={loading}>
-    <div className='flex items-center gap-3'>
-      <div className='flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40'>
+  <div className='min-w-0 px-3 py-3 sm:px-5 sm:py-4'>
+    <div className='flex items-center gap-2 text-xs font-medium text-semi-color-text-2'>
+      <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600 dark:bg-blue-950/40'>
         {icon}
-      </div>
-      <div className='min-w-0'>
-        <div className='text-xs text-semi-color-text-2'>{label}</div>
-        <div className='mt-1 truncate text-xl font-semibold'>{value}</div>
-      </div>
+      </span>
+      <span className='truncate'>{label}</span>
     </div>
-  </Card>
+    <div
+      className='mt-2 truncate text-xl font-semibold'
+      title={loading ? '' : String(value)}
+    >
+      {loading ? '—' : value}
+    </div>
+  </div>
 );
 
 const DashboardAnalytics = () => {
@@ -150,9 +153,18 @@ const DashboardAnalytics = () => {
 
   const loading =
     section === 'flow' ? analytics.flowLoading : dashboardData.loading;
+  const sectionTitle =
+    visibleSections.find((item) => item.key === section)?.label ||
+    dashboardData.t('数据看板');
+  const sectionDescription =
+    section === 'models'
+      ? dashboardData.t('按模型查看请求、Token 与额度消耗')
+      : section === 'flow'
+        ? dashboardData.t('查看模型、渠道、节点与令牌之间的调用流向')
+        : dashboardData.t('查看管理员用户的调用量与额度消耗');
 
   return (
-    <div className='mx-auto w-full max-w-[1800px] px-3 pb-8 sm:px-6'>
+    <div className='mx-auto w-full max-w-[1800px] px-2 pb-8 sm:px-4'>
       <SearchModal
         searchModalVisible={dashboardData.searchModalVisible}
         handleSearchConfirm={handleApplyFilters}
@@ -166,10 +178,15 @@ const DashboardAnalytics = () => {
         t={dashboardData.t}
       />
 
-      <div className='mb-4 flex items-center justify-between gap-3'>
-        <Typography.Title heading={4} style={{ margin: 0 }}>
-          {dashboardData.t('数据看板')}
-        </Typography.Title>
+      <div className='mb-4 flex flex-wrap items-end justify-between gap-3'>
+        <div>
+          <Typography.Title heading={4} style={{ margin: 0 }}>
+            {sectionTitle}
+          </Typography.Title>
+          <div className='mt-1 text-sm text-semi-color-text-2'>
+            {sectionDescription}
+          </div>
+        </div>
         <Tag color={dashboardData.isAdminUser ? 'blue' : 'green'}>
           {dashboardData.isAdminUser
             ? dashboardData.t('全站数据')
@@ -177,7 +194,10 @@ const DashboardAnalytics = () => {
         </Tag>
       </div>
 
-      <Card className='mb-4 !rounded-2xl border shadow-sm' bodyStyle={{ padding: 16 }}>
+      <Card
+        className='mb-4 !rounded-xl border shadow-sm'
+        bodyStyle={{ padding: 12 }}
+      >
         <div className='flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
           <div className='overflow-x-auto'>
             <Tabs
@@ -223,37 +243,39 @@ const DashboardAnalytics = () => {
 
       {section === 'models' && (
         <>
-          <div className='mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5'>
-            <SummaryCard
-              icon={<Hash size={18} />}
-              label={dashboardData.t('调用次数')}
-              value={renderNumber(dashboardData.times)}
-              loading={dashboardData.loading}
-            />
-            <SummaryCard
-              icon={<Coins size={18} />}
-              label={dashboardData.t('额度消耗')}
-              value={renderQuota(dashboardData.consumeQuota, 2)}
-              loading={dashboardData.loading}
-            />
-            <SummaryCard
-              icon={<BarChart3 size={18} />}
-              label={dashboardData.t('Token 消耗')}
-              value={renderNumber(dashboardData.consumeTokens)}
-              loading={dashboardData.loading}
-            />
-            <SummaryCard
-              icon={<Timer size={18} />}
-              label={dashboardData.t('平均 RPM')}
-              value={dashboardData.performanceMetrics.avgRPM}
-              loading={dashboardData.loading}
-            />
-            <SummaryCard
-              icon={<Timer size={18} />}
-              label={dashboardData.t('平均 TPM')}
-              value={dashboardData.performanceMetrics.avgTPM}
-              loading={dashboardData.loading}
-            />
+          <div className='mb-4 overflow-hidden rounded-xl border border-semi-color-border'>
+            <div className='grid grid-cols-2 divide-x divide-y divide-semi-color-border sm:grid-cols-3 lg:grid-cols-5 lg:divide-y-0'>
+              <SummaryCard
+                icon={<Hash size={16} />}
+                label={dashboardData.t('调用次数')}
+                value={renderNumber(dashboardData.times)}
+                loading={dashboardData.loading}
+              />
+              <SummaryCard
+                icon={<Coins size={16} />}
+                label={dashboardData.t('额度消耗')}
+                value={renderQuota(dashboardData.consumeQuota, 2)}
+                loading={dashboardData.loading}
+              />
+              <SummaryCard
+                icon={<BarChart3 size={16} />}
+                label={dashboardData.t('Token 消耗')}
+                value={renderNumber(dashboardData.consumeTokens)}
+                loading={dashboardData.loading}
+              />
+              <SummaryCard
+                icon={<Timer size={16} />}
+                label={dashboardData.t('平均 RPM')}
+                value={dashboardData.performanceMetrics.avgRPM}
+                loading={dashboardData.loading}
+              />
+              <SummaryCard
+                icon={<Timer size={16} />}
+                label={dashboardData.t('平均 TPM')}
+                value={dashboardData.performanceMetrics.avgTPM}
+                loading={dashboardData.loading}
+              />
+            </div>
           </div>
           {dashboardData.isAdminUser && (
             <div className='mb-4'>

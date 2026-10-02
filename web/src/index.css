@@ -15,6 +15,7 @@
 
 /* ==================== 全局基础样式 ==================== */
 :root {
+  --topbar-height: 64px;
   --sidebar-width: 180px;
   --sidebar-width-collapsed: 60px;
   --sidebar-current-width: var(--sidebar-width);
@@ -44,8 +45,22 @@ body {
 }
 
 .app-sider {
-  height: calc(100vh - 64px);
-  height: calc(100dvh - 64px);
+  height: calc(100vh - var(--topbar-height));
+  height: calc(100dvh - var(--topbar-height));
+  background: var(--semi-color-bg-1);
+  border-right: 1px solid var(--semi-color-border);
+  box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
+}
+
+.console-content-shell {
+  min-height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 18px;
+  background: var(--semi-color-bg-0);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 code {
@@ -317,6 +332,12 @@ body.sidebar-collapsed .sidebar-promotion-hint {
 }
 
 @media (max-width: 767px) {
+  .console-content-shell {
+    padding: 2px;
+    border-radius: 12px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+  }
+
   .sidebar-container {
     background: var(--semi-color-bg-1);
     border-right: 1px solid var(--semi-color-border);

@@ -173,9 +173,13 @@ const PageLayout = () => {
       </Header>
       <Layout
         style={{
-          overflow: isMobile ? 'visible' : 'auto',
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflow: isMobile ? 'visible' : 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          paddingTop: isConsoleRoute ? '64px' : '0',
+          boxSizing: 'border-box',
         }}
       >
         {showSider && (
@@ -206,6 +210,7 @@ const PageLayout = () => {
                 ? 'var(--sidebar-current-width)'
                 : '0',
             flex: '1 1 auto',
+            minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -213,14 +218,24 @@ const PageLayout = () => {
           <Content
             style={{
               flex: '1 0 auto',
-              overflowY: isMobile ? 'visible' : 'hidden',
+              minHeight: 0,
+              overflowY: isMobile ? 'visible' : 'auto',
               WebkitOverflowScrolling: 'touch',
-              padding: shouldInnerPadding ? (isMobile ? '5px' : '24px') : '0',
+              padding: shouldInnerPadding ? (isMobile ? '8px' : '24px') : '0',
+              background: shouldInnerPadding
+                ? 'var(--semi-color-bg-1)'
+                : 'transparent',
               position: 'relative',
             }}
           >
             <ErrorBoundary>
-              <App />
+              {shouldInnerPadding ? (
+                <div className='console-content-shell'>
+                  <App />
+                </div>
+              ) : (
+                <App />
+              )}
             </ErrorBoundary>
           </Content>
           {!shouldHideFooter && (
