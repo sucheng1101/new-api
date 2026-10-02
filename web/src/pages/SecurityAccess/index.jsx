@@ -3,7 +3,6 @@ import {
   Button,
   Card,
   Form,
-  Input,
   Modal,
   Skeleton,
   Switch,
@@ -24,6 +23,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
 
 const formatTime = (value) => {
@@ -32,17 +32,21 @@ const formatTime = (value) => {
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
 };
 
+const TONE_CLASSES = {
+  blue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/30',
+  cyan: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-950/30',
+  violet: 'bg-violet-50 text-violet-600 dark:bg-violet-950/30',
+  green: 'bg-green-50 text-green-600 dark:bg-green-950/30',
+  orange: 'bg-orange-50 text-orange-600 dark:bg-orange-950/30',
+  red: 'bg-red-50 text-red-600 dark:bg-red-950/30',
+};
+
 const MetricCard = ({ icon, label, value, tone = 'blue', loading }) => (
   <Card className='!rounded-2xl border-0 shadow-sm' bodyStyle={{ padding: 18 }}>
     <div className='flex items-center gap-3'>
-      <div className={`rounded-xl p-2.5 ${{
-        blue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/30',
-        cyan: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-950/30',
-        violet: 'bg-violet-50 text-violet-600 dark:bg-violet-950/30',
-        green: 'bg-green-50 text-green-600 dark:bg-green-950/30',
-        orange: 'bg-orange-50 text-orange-600 dark:bg-orange-950/30',
-        red: 'bg-red-50 text-red-600 dark:bg-red-950/30',
-      }[tone] || 'bg-blue-50 text-blue-600 dark:bg-blue-950/30'}`}>
+      <div
+        className={`rounded-xl p-2.5 ${TONE_CLASSES[tone] || TONE_CLASSES.blue}`}
+      >
         {icon}
       </div>
       <div className='min-w-0'>
@@ -58,6 +62,7 @@ const MetricCard = ({ icon, label, value, tone = 'blue', loading }) => (
 );
 
 const SecurityAccess = () => {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState(null);
   const [risks, setRisks] = useState([]);
   const [events, setEvents] = useState([]);
@@ -75,8 +80,12 @@ const SecurityAccess = () => {
       const [summaryRes, riskRes, eventRes, blockRes] = await Promise.all([
         API.get('/api/admin/security/summary'),
         API.get('/api/admin/security/ip-risks', { params: { limit: 8 } }),
-        API.get('/api/admin/security/events', { params: { p: eventsPage, page_size: 8 } }),
-        API.get('/api/admin/security/ip-blocks', { params: { p: blocksPage, page_size: 8 } }),
+        API.get('/api/admin/security/events', {
+          params: { p: eventsPage, page_size: 8 },
+        }),
+        API.get('/api/admin/security/ip-blocks', {
+          params: { p: blocksPage, page_size: 8 },
+        }),
       ]);
       if (summaryRes.data?.success) setSummary(summaryRes.data.data || {});
       if (riskRes.data?.success) setRisks(riskRes.data.data || []);
@@ -89,11 +98,13 @@ const SecurityAccess = () => {
         setBlocksTotal(blockRes.data.data?.total || 0);
       }
     } catch (error) {
-      Toast.error(error?.response?.data?.message || '安全数据加载失败');
+      Toast.error(
+        error?.response?.data?.message || t('Security data failed to load'),
+      );
     } finally {
       setLoading(false);
     }
-  }, [blocksPage, eventsPage]);
+  }, [blocksPage, eventsPage, t]);
 
   useEffect(() => {
     load();
@@ -102,34 +113,43 @@ const SecurityAccess = () => {
   const createBlock = async (values) => {
     try {
       const response = await API.post('/api/admin/security/ip-blocks', values);
-      if (!response.data?.success) throw new Error(response.data?.message || '操作失败');
-      Toast.success('IP 已加入黑名单');
+      if (!response.data?.success)
+        throw new Error(response.data?.message || t('Operation failed'));
+      Toast.success(t('IP added to blocklist'));
       setModalVisible(false);
       await load();
     } catch (error) {
-      Toast.error(error?.response?.data?.message || error.message || '操作失败');
+      Toast.error(
+        error?.response?.data?.message ||
+          error.message ||
+          t('Operation failed'),
+      );
     }
   };
 
   const updateBlock = async (record, enabled) => {
     try {
-      await API.patch(`/api/admin/security/ip-blocks/${record.id}`, { enabled });
+      await API.patch(`/api/admin/security/ip-blocks/${record.id}`, {
+        enabled,
+      });
       await load();
     } catch (error) {
-      Toast.error(error?.response?.data?.message || '状态更新失败');
+      Toast.error(error?.response?.data?.message || t('Status update failed'));
     }
   };
 
   const deleteBlock = (record) => {
     Modal.confirm({
-      title: '移除 IP 黑名单',
-      content: `确定移除 ${record.address} 吗？`,
+      title: t('Remove IP block'),
+      content: t('Remove {{address}} from the blocklist?', {
+        address: record.address,
+      }),
       onOk: async () => {
         try {
           await API.delete(`/api/admin/security/ip-blocks/${record.id}`);
           await load();
         } catch (error) {
-          Toast.error(error?.response?.data?.message || '删除失败');
+          Toast.error(error?.response?.data?.message || t('Delete failed'));
         }
       },
     });
@@ -137,37 +157,100 @@ const SecurityAccess = () => {
 
   const metricItems = useMemo(
     () => [
-      { label: '审计事件', value: summary?.audit_events, icon: <History size={18} />, tone: 'blue' },
-      { label: '活跃 IP', value: summary?.distinct_ips, icon: <Globe2 size={18} />, tone: 'cyan' },
-      { label: '注册事件', value: summary?.registrations, icon: <UserRound size={18} />, tone: 'violet' },
-      { label: '登录事件', value: summary?.logins, icon: <CheckCircle2 size={18} />, tone: 'green' },
-      { label: '钱包操作', value: summary?.wallet_actions, icon: <Activity size={18} />, tone: 'orange' },
-      { label: '封禁 IP', value: summary?.active_blocks, icon: <Ban size={18} />, tone: 'red' },
+      {
+        label: t('Audit events'),
+        value: summary?.audit_events,
+        icon: <History size={18} />,
+        tone: 'blue',
+      },
+      {
+        label: t('Active IPs'),
+        value: summary?.distinct_ips,
+        icon: <Globe2 size={18} />,
+        tone: 'cyan',
+      },
+      {
+        label: t('Registration events'),
+        value: summary?.registrations,
+        icon: <UserRound size={18} />,
+        tone: 'violet',
+      },
+      {
+        label: t('Login events'),
+        value: summary?.logins,
+        icon: <CheckCircle2 size={18} />,
+        tone: 'green',
+      },
+      {
+        label: t('Wallet actions'),
+        value: summary?.wallet_actions,
+        icon: <Activity size={18} />,
+        tone: 'orange',
+      },
+      {
+        label: t('Blocked IPs'),
+        value: summary?.active_blocks,
+        icon: <Ban size={18} />,
+        tone: 'red',
+      },
     ],
-    [summary],
+    [summary, t],
   );
 
   return (
     <div className='mx-auto w-full max-w-[1800px] px-3 pb-8 sm:px-6'>
       <div className='mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
         <div>
-          <Typography.Title heading={3} style={{ margin: 0 }}>安全与访问</Typography.Title>
-          <div className='mt-1 text-sm text-semi-color-text-2'>集中查看注册、登录、充值及管理员操作，并快速处置风险 IP。</div>
+          <Typography.Title heading={3} style={{ margin: 0 }}>
+            {t('Security & Access')}
+          </Typography.Title>
+          <div className='mt-1 text-sm text-semi-color-text-2'>
+            {t(
+              'Review registrations, logins, wallet actions, and administrator activity, then respond to risky IPs.',
+            )}
+          </div>
         </div>
         <div className='flex gap-2'>
-          <Button theme='light' icon={<RefreshCw size={15} />} loading={loading} onClick={load}>刷新</Button>
-          <Button type='primary' icon={<Plus size={15} />} onClick={() => setModalVisible(true)}>拉黑 IP</Button>
+          <Button
+            theme='light'
+            icon={<RefreshCw size={15} />}
+            loading={loading}
+            onClick={load}
+          >
+            {t('Refresh')}
+          </Button>
+          <Button
+            type='primary'
+            icon={<Plus size={15} />}
+            onClick={() => setModalVisible(true)}
+          >
+            {t('Block IP')}
+          </Button>
         </div>
       </div>
 
       <div className='mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6'>
-        {metricItems.map((item) => <MetricCard key={item.label} {...item} loading={loading && !summary} />)}
+        {metricItems.map((item) => (
+          <MetricCard
+            key={item.label}
+            {...item}
+            loading={loading && !summary}
+          />
+        ))}
       </div>
 
       <div className='grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]'>
-        <Card className='!rounded-2xl border-0 shadow-sm' bodyStyle={{ padding: 0 }}>
+        <Card
+          className='!rounded-2xl border-0 shadow-sm'
+          bodyStyle={{ padding: 0 }}
+        >
           <div className='flex items-center justify-between border-b border-semi-color-border px-5 py-4'>
-            <div><div className='font-semibold'>异常 IP</div><div className='mt-1 text-xs text-semi-color-text-2'>同一 IP 关联多个用户的风险聚合</div></div>
+            <div>
+              <div className='font-semibold'>{t('Risky IPs')}</div>
+              <div className='mt-1 text-xs text-semi-color-text-2'>
+                {t('IPs associated with multiple users')}
+              </div>
+            </div>
             <ShieldAlert className='text-orange-500' size={20} />
           </div>
           <Table
@@ -176,61 +259,182 @@ const SecurityAccess = () => {
             loading={loading}
             dataSource={risks}
             rowKey='address'
-            empty='暂无异常 IP'
+            empty={t('No risky IPs')}
             columns={[
-              { title: 'IP 地址', dataIndex: 'address', render: (value) => <span className='font-mono text-xs'>{value}</span> },
-              { title: '用户数', dataIndex: 'user_count', render: (value) => <Tag color='orange'>{value}</Tag> },
-              { title: '事件数', dataIndex: 'event_count' },
-              { title: '最近活动', dataIndex: 'last_seen', render: formatTime },
+              {
+                title: t('IP address'),
+                dataIndex: 'address',
+                render: (value) => (
+                  <span className='font-mono text-xs'>{value}</span>
+                ),
+              },
+              {
+                title: t('Users'),
+                dataIndex: 'user_count',
+                render: (value) => <Tag color='orange'>{value}</Tag>,
+              },
+              { title: t('Events'), dataIndex: 'event_count' },
+              {
+                title: t('Last activity'),
+                dataIndex: 'last_seen',
+                render: formatTime,
+              },
             ]}
           />
         </Card>
 
-        <Card className='!rounded-2xl border-0 shadow-sm' bodyStyle={{ padding: 0 }}>
-          <div className='border-b border-semi-color-border px-5 py-4'><div className='font-semibold'>最近操作</div><div className='mt-1 text-xs text-semi-color-text-2'>仅记录操作元数据，不保存密码、Token 或请求正文</div></div>
+        <Card
+          className='!rounded-2xl border-0 shadow-sm'
+          bodyStyle={{ padding: 0 }}
+        >
+          <div className='border-b border-semi-color-border px-5 py-4'>
+            <div className='font-semibold'>{t('Recent activity')}</div>
+            <div className='mt-1 text-xs text-semi-color-text-2'>
+              {t(
+                'Only metadata is stored; passwords, tokens, and request bodies are excluded.',
+              )}
+            </div>
+          </div>
           <Table
             size='small'
-            pagination={{ currentPage: eventsPage, pageSize: 8, total: eventsTotal, onPageChange: setEventsPage }}
+            pagination={{
+              currentPage: eventsPage,
+              pageSize: 8,
+              total: eventsTotal,
+              onPageChange: setEventsPage,
+            }}
             loading={loading}
             dataSource={events}
             rowKey='event_id'
-            empty='暂无审计事件'
+            empty={t('No audit events')}
             scroll={{ x: 720 }}
             columns={[
-              { title: '时间', dataIndex: 'created_at', render: formatTime },
-              { title: '用户', dataIndex: 'username', render: (value) => value || '系统' },
-              { title: '动作', dataIndex: 'action', render: (value) => <Tag>{value}</Tag> },
-              { title: 'IP', dataIndex: 'ip', render: (value) => <span className='font-mono text-xs'>{value || '-'}</span> },
-              { title: '结果', dataIndex: 'success', render: (value) => <Tag color={value ? 'green' : 'red'}>{value ? '成功' : '失败'}</Tag> },
+              { title: t('Time'), dataIndex: 'created_at', render: formatTime },
+              {
+                title: t('User'),
+                dataIndex: 'username',
+                render: (value) => value || t('System'),
+              },
+              {
+                title: t('Action'),
+                dataIndex: 'action',
+                render: (value) => <Tag>{value}</Tag>,
+              },
+              {
+                title: 'IP',
+                dataIndex: 'ip',
+                render: (value) => (
+                  <span className='font-mono text-xs'>{value || '-'}</span>
+                ),
+              },
+              {
+                title: t('Result'),
+                dataIndex: 'success',
+                render: (value) => (
+                  <Tag color={value ? 'green' : 'red'}>
+                    {value ? t('Success') : t('Failed')}
+                  </Tag>
+                ),
+              },
             ]}
           />
         </Card>
       </div>
 
-      <Card className='mt-5 !rounded-2xl border-0 shadow-sm' bodyStyle={{ padding: 0 }}>
-        <div className='flex items-center justify-between border-b border-semi-color-border px-5 py-4'><div><div className='font-semibold'>IP 黑名单</div><div className='mt-1 text-xs text-semi-color-text-2'>规则立即生效于 API 和控制台入口</div></div><Ban size={20} className='text-red-500' /></div>
+      <Card
+        className='mt-5 !rounded-2xl border-0 shadow-sm'
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className='flex items-center justify-between border-b border-semi-color-border px-5 py-4'>
+          <div>
+            <div className='font-semibold'>{t('IP blocklist')}</div>
+            <div className='mt-1 text-xs text-semi-color-text-2'>
+              {t('Rules apply immediately to API and console entry points.')}
+            </div>
+          </div>
+          <Ban size={20} className='text-red-500' />
+        </div>
         <Table
           size='small'
-          pagination={{ currentPage: blocksPage, pageSize: 8, total: blocksTotal, onPageChange: setBlocksPage }}
+          pagination={{
+            currentPage: blocksPage,
+            pageSize: 8,
+            total: blocksTotal,
+            onPageChange: setBlocksPage,
+          }}
           loading={loading}
           dataSource={blocks}
           rowKey='id'
-          empty='暂无 IP 黑名单'
+          empty={t('No blocked IPs')}
           columns={[
-            { title: 'IP 地址', dataIndex: 'address', render: (value) => <span className='font-mono'>{value}</span> },
-            { title: '原因', dataIndex: 'reason', render: (value) => value || '-' },
-            { title: '状态', dataIndex: 'enabled', render: (value, record) => <Switch checked={value} onChange={(checked) => updateBlock(record, checked)} /> },
-            { title: '创建时间', dataIndex: 'created_at', render: formatTime },
-            { title: '操作', render: (_, record) => <Button type='danger' theme='borderless' icon={<Trash2 size={15} />} onClick={() => deleteBlock(record)}>移除</Button> },
+            {
+              title: t('IP address'),
+              dataIndex: 'address',
+              render: (value) => <span className='font-mono'>{value}</span>,
+            },
+            {
+              title: t('Reason'),
+              dataIndex: 'reason',
+              render: (value) => value || '-',
+            },
+            {
+              title: t('Status'),
+              dataIndex: 'enabled',
+              render: (value, record) => (
+                <Switch
+                  checked={value}
+                  onChange={(checked) => updateBlock(record, checked)}
+                />
+              ),
+            },
+            {
+              title: t('Created at'),
+              dataIndex: 'created_at',
+              render: formatTime,
+            },
+            {
+              title: t('Action'),
+              render: (_, record) => (
+                <Button
+                  type='danger'
+                  theme='borderless'
+                  icon={<Trash2 size={15} />}
+                  onClick={() => deleteBlock(record)}
+                >
+                  {t('Remove')}
+                </Button>
+              ),
+            },
           ]}
         />
       </Card>
 
-      <Modal title='拉黑 IP 地址' visible={modalVisible} onCancel={() => setModalVisible(false)} footer={null}>
+      <Modal
+        title={t('Block an IP address')}
+        visible={modalVisible}
+        onCancel={() => setModalVisible(false)}
+        footer={null}
+      >
         <Form onSubmit={createBlock} layout='vertical'>
-          <Form.Input field='address' label='IP 地址' placeholder='例如 203.0.113.10' rules={[{ required: true, message: '请输入 IP 地址' }]} />
-          <Form.Input field='reason' label='原因' placeholder='例如：异常注册、撞库行为' />
-          <div className='flex justify-end gap-2'><Button onClick={() => setModalVisible(false)}>取消</Button><Button htmlType='submit' type='primary'>确认拉黑</Button></div>
+          <Form.Input
+            field='address'
+            label={t('IP address')}
+            placeholder={t('203.0.113.10')}
+            rules={[{ required: true, message: t('Enter an IP address') }]}
+          />
+          <Form.Input
+            field='reason'
+            label={t('Reason')}
+            placeholder={t('Example: suspicious registration')}
+          />
+          <div className='flex justify-end gap-2'>
+            <Button onClick={() => setModalVisible(false)}>
+              {t('Cancel')}
+            </Button>
+            <Button htmlType='submit' type='primary'>
+              {t('Confirm block')}
+            </Button>
+          </div>
         </Form>
       </Modal>
     </div>
