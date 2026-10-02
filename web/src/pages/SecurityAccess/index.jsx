@@ -98,9 +98,7 @@ const SecurityAccess = () => {
         setBlocksTotal(blockRes.data.data?.total || 0);
       }
     } catch (error) {
-      Toast.error(
-        error?.response?.data?.message || t('Security data failed to load'),
-      );
+      Toast.error(error?.response?.data?.message || t('安全数据加载失败'));
     } finally {
       setLoading(false);
     }
@@ -114,15 +112,13 @@ const SecurityAccess = () => {
     try {
       const response = await API.post('/api/admin/security/ip-blocks', values);
       if (!response.data?.success)
-        throw new Error(response.data?.message || t('Operation failed'));
-      Toast.success(t('IP added to blocklist'));
+        throw new Error(response.data?.message || t('操作失败'));
+      Toast.success(t('IP 已加入黑名单'));
       setModalVisible(false);
       await load();
     } catch (error) {
       Toast.error(
-        error?.response?.data?.message ||
-          error.message ||
-          t('Operation failed'),
+        error?.response?.data?.message || error.message || t('操作失败'),
       );
     }
   };
@@ -134,14 +130,14 @@ const SecurityAccess = () => {
       });
       await load();
     } catch (error) {
-      Toast.error(error?.response?.data?.message || t('Status update failed'));
+      Toast.error(error?.response?.data?.message || t('状态更新失败'));
     }
   };
 
   const deleteBlock = (record) => {
     Modal.confirm({
-      title: t('Remove IP block'),
-      content: t('Remove {{address}} from the blocklist?', {
+      title: t('移除 IP 黑名单'),
+      content: t('确定移除 {{address}} 吗？', {
         address: record.address,
       }),
       onOk: async () => {
@@ -149,7 +145,7 @@ const SecurityAccess = () => {
           await API.delete(`/api/admin/security/ip-blocks/${record.id}`);
           await load();
         } catch (error) {
-          Toast.error(error?.response?.data?.message || t('Delete failed'));
+          Toast.error(error?.response?.data?.message || t('删除失败'));
         }
       },
     });
@@ -158,37 +154,37 @@ const SecurityAccess = () => {
   const metricItems = useMemo(
     () => [
       {
-        label: t('Audit events'),
+        label: t('审计事件'),
         value: summary?.audit_events,
         icon: <History size={18} />,
         tone: 'blue',
       },
       {
-        label: t('Active IPs'),
+        label: t('活跃 IP'),
         value: summary?.distinct_ips,
         icon: <Globe2 size={18} />,
         tone: 'cyan',
       },
       {
-        label: t('Registration events'),
+        label: t('注册事件'),
         value: summary?.registrations,
         icon: <UserRound size={18} />,
         tone: 'violet',
       },
       {
-        label: t('Login events'),
+        label: t('登录事件'),
         value: summary?.logins,
         icon: <CheckCircle2 size={18} />,
         tone: 'green',
       },
       {
-        label: t('Wallet actions'),
+        label: t('钱包操作'),
         value: summary?.wallet_actions,
         icon: <Activity size={18} />,
         tone: 'orange',
       },
       {
-        label: t('Blocked IPs'),
+        label: t('封禁 IP'),
         value: summary?.active_blocks,
         icon: <Ban size={18} />,
         tone: 'red',
@@ -202,12 +198,10 @@ const SecurityAccess = () => {
       <div className='mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
         <div>
           <Typography.Title heading={3} style={{ margin: 0 }}>
-            {t('Security & Access')}
+            {t('安全与访问')}
           </Typography.Title>
           <div className='mt-1 text-sm text-semi-color-text-2'>
-            {t(
-              'Review registrations, logins, wallet actions, and administrator activity, then respond to risky IPs.',
-            )}
+            {t('集中查看注册、登录、充值及管理员操作，并快速处置风险 IP。')}
           </div>
         </div>
         <div className='flex gap-2'>
@@ -217,14 +211,14 @@ const SecurityAccess = () => {
             loading={loading}
             onClick={load}
           >
-            {t('Refresh')}
+            {t('刷新')}
           </Button>
           <Button
             type='primary'
             icon={<Plus size={15} />}
             onClick={() => setModalVisible(true)}
           >
-            {t('Block IP')}
+            {t('拉黑 IP')}
           </Button>
         </div>
       </div>
@@ -246,9 +240,9 @@ const SecurityAccess = () => {
         >
           <div className='flex items-center justify-between border-b border-semi-color-border px-5 py-4'>
             <div>
-              <div className='font-semibold'>{t('Risky IPs')}</div>
+              <div className='font-semibold'>{t('异常 IP')}</div>
               <div className='mt-1 text-xs text-semi-color-text-2'>
-                {t('IPs associated with multiple users')}
+                {t('同一 IP 关联多个用户的风险聚合')}
               </div>
             </div>
             <ShieldAlert className='text-orange-500' size={20} />
@@ -259,23 +253,23 @@ const SecurityAccess = () => {
             loading={loading}
             dataSource={risks}
             rowKey='address'
-            empty={t('No risky IPs')}
+            empty={t('暂无异常 IP')}
             columns={[
               {
-                title: t('IP address'),
+                title: t('IP 地址'),
                 dataIndex: 'address',
                 render: (value) => (
                   <span className='font-mono text-xs'>{value}</span>
                 ),
               },
               {
-                title: t('Users'),
+                title: t('用户数'),
                 dataIndex: 'user_count',
                 render: (value) => <Tag color='orange'>{value}</Tag>,
               },
-              { title: t('Events'), dataIndex: 'event_count' },
+              { title: t('事件数'), dataIndex: 'event_count' },
               {
-                title: t('Last activity'),
+                title: t('最近活动'),
                 dataIndex: 'last_seen',
                 render: formatTime,
               },
@@ -288,11 +282,9 @@ const SecurityAccess = () => {
           bodyStyle={{ padding: 0 }}
         >
           <div className='border-b border-semi-color-border px-5 py-4'>
-            <div className='font-semibold'>{t('Recent activity')}</div>
+            <div className='font-semibold'>{t('最近操作')}</div>
             <div className='mt-1 text-xs text-semi-color-text-2'>
-              {t(
-                'Only metadata is stored; passwords, tokens, and request bodies are excluded.',
-              )}
+              {t('仅记录操作元数据，不保存密码、Token 或请求正文')}
             </div>
           </div>
           <Table
@@ -306,17 +298,17 @@ const SecurityAccess = () => {
             loading={loading}
             dataSource={events}
             rowKey='event_id'
-            empty={t('No audit events')}
+            empty={t('暂无审计事件')}
             scroll={{ x: 720 }}
             columns={[
-              { title: t('Time'), dataIndex: 'created_at', render: formatTime },
+              { title: t('时间'), dataIndex: 'created_at', render: formatTime },
               {
-                title: t('User'),
+                title: t('用户'),
                 dataIndex: 'username',
-                render: (value) => value || t('System'),
+                render: (value) => value || t('系统'),
               },
               {
-                title: t('Action'),
+                title: t('动作'),
                 dataIndex: 'action',
                 render: (value) => <Tag>{value}</Tag>,
               },
@@ -328,11 +320,11 @@ const SecurityAccess = () => {
                 ),
               },
               {
-                title: t('Result'),
+                title: t('结果'),
                 dataIndex: 'success',
                 render: (value) => (
                   <Tag color={value ? 'green' : 'red'}>
-                    {value ? t('Success') : t('Failed')}
+                    {value ? t('成功') : t('失败')}
                   </Tag>
                 ),
               },
@@ -347,9 +339,9 @@ const SecurityAccess = () => {
       >
         <div className='flex items-center justify-between border-b border-semi-color-border px-5 py-4'>
           <div>
-            <div className='font-semibold'>{t('IP blocklist')}</div>
+            <div className='font-semibold'>{t('IP 黑名单')}</div>
             <div className='mt-1 text-xs text-semi-color-text-2'>
-              {t('Rules apply immediately to API and console entry points.')}
+              {t('规则立即生效于 API 和控制台入口')}
             </div>
           </div>
           <Ban size={20} className='text-red-500' />
@@ -365,20 +357,20 @@ const SecurityAccess = () => {
           loading={loading}
           dataSource={blocks}
           rowKey='id'
-          empty={t('No blocked IPs')}
+          empty={t('暂无 IP 黑名单')}
           columns={[
             {
-              title: t('IP address'),
+              title: t('IP 地址'),
               dataIndex: 'address',
               render: (value) => <span className='font-mono'>{value}</span>,
             },
             {
-              title: t('Reason'),
+              title: t('原因'),
               dataIndex: 'reason',
               render: (value) => value || '-',
             },
             {
-              title: t('Status'),
+              title: t('状态'),
               dataIndex: 'enabled',
               render: (value, record) => (
                 <Switch
@@ -388,12 +380,12 @@ const SecurityAccess = () => {
               ),
             },
             {
-              title: t('Created at'),
+              title: t('创建时间'),
               dataIndex: 'created_at',
               render: formatTime,
             },
             {
-              title: t('Action'),
+              title: t('操作'),
               render: (_, record) => (
                 <Button
                   type='danger'
@@ -401,7 +393,7 @@ const SecurityAccess = () => {
                   icon={<Trash2 size={15} />}
                   onClick={() => deleteBlock(record)}
                 >
-                  {t('Remove')}
+                  {t('移除')}
                 </Button>
               ),
             },
@@ -410,7 +402,7 @@ const SecurityAccess = () => {
       </Card>
 
       <Modal
-        title={t('Block an IP address')}
+        title={t('拉黑 IP 地址')}
         visible={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
@@ -418,21 +410,19 @@ const SecurityAccess = () => {
         <Form onSubmit={createBlock} layout='vertical'>
           <Form.Input
             field='address'
-            label={t('IP address')}
-            placeholder={t('203.0.113.10')}
-            rules={[{ required: true, message: t('Enter an IP address') }]}
+            label={t('IP 地址')}
+            placeholder={t('例如 203.0.113.10')}
+            rules={[{ required: true, message: t('请输入 IP 地址') }]}
           />
           <Form.Input
             field='reason'
-            label={t('Reason')}
-            placeholder={t('Example: suspicious registration')}
+            label={t('原因')}
+            placeholder={t('例如：异常注册、撞库行为')}
           />
           <div className='flex justify-end gap-2'>
-            <Button onClick={() => setModalVisible(false)}>
-              {t('Cancel')}
-            </Button>
+            <Button onClick={() => setModalVisible(false)}>{t('取消')}</Button>
             <Button htmlType='submit' type='primary'>
-              {t('Confirm block')}
+              {t('确认拉黑')}
             </Button>
           </div>
         </Form>
