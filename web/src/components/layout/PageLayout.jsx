@@ -73,6 +73,10 @@ const PageLayout = () => {
     location.pathname !== '/console/playground';
 
   const flatConsolePages = [
+    '/console/dashboard',
+    '/console/dashboard/models',
+    '/console/dashboard/flow',
+    '/console/dashboard/users',
     '/console/token',
     '/console/log',
     '/console/channel',

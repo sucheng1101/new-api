@@ -53,17 +53,17 @@ const PerformanceHealthPanel = ({ enabled, t }) => {
   if (!enabled) return null;
 
   return (
-    <div className='dashboard-performance-strip'>
-      <div className='dashboard-performance-title'>
-        <span className='dashboard-performance-icon'>
+    <div className='dashboard-official-performance-strip'>
+      <div className='dashboard-official-performance-title'>
+        <span className='dashboard-official-performance-icon'>
           <Activity size={14} />
         </span>
         <span>{t('模型性能健康')}</span>
       </div>
       {summary ? (
         <>
-          <span className='dashboard-performance-divider' />
-          <div className='dashboard-performance-metrics'>
+          <span className='dashboard-official-performance-divider' />
+          <div className='dashboard-official-performance-metrics'>
             <InlineMetric
               icon={Gauge}
               label={t('平均成功率')}
@@ -80,12 +80,12 @@ const PerformanceHealthPanel = ({ enabled, t }) => {
               value={`${summary.tps.toFixed(2)} TPS`}
             />
           </div>
-          <span className='dashboard-performance-divider hidden lg:block' />
-          <div className='dashboard-performance-models'>
+          <span className='dashboard-official-performance-divider hidden lg:block' />
+          <div className='dashboard-official-performance-models'>
             {summary.models.map((item) => (
               <span
                 key={item.model_name}
-                className='dashboard-performance-badge'
+                className='dashboard-official-performance-badge'
               >
                 {item.model_name}
               </span>
@@ -93,14 +93,16 @@ const PerformanceHealthPanel = ({ enabled, t }) => {
           </div>
         </>
       ) : (
-        <span className='dashboard-performance-empty'>{t('暂无性能数据')}</span>
+        <span className='dashboard-official-performance-empty'>
+          {t('暂无性能数据')}
+        </span>
       )}
     </div>
   );
 };
 
 const InlineMetric = ({ icon: Icon, label, value }) => (
-  <div className='dashboard-performance-metric'>
+  <div className='dashboard-official-performance-metric'>
     <Icon size={13} />
     <span>{label}</span>
     <strong>{value}</strong>

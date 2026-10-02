@@ -18,15 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useMemo, useState } from 'react';
-import {
-  Checkbox,
-  Empty,
-  Input,
-  Select,
-  Tabs,
-  TabPane,
-  Tag,
-} from '@douyinfe/semi-ui';
+import { Empty, Input, Select, Tabs, TabPane, Tag } from '@douyinfe/semi-ui';
 import {
   Activity,
   Eye,
@@ -223,18 +215,6 @@ export default function FlowAnalyticsPanel({
     }
     return visibleRows;
   }, [flowData, metric, nodeFilter, overflowMode, t, topN]);
-  const totals = useMemo(
-    () =>
-      flowData.reduce(
-        (result, row) => ({
-          quota: result.quota + Number(row.quota || 0),
-          tokens: result.tokens + Number(row.token_used || 0),
-          requests: result.requests + Number(row.count || 0),
-        }),
-        { quota: 0, tokens: 0, requests: 0 },
-      ),
-    [flowData],
-  );
   const sankeySpec = useMemo(
     () => buildSankeySpec(filteredData, stages, metric, t, sensitiveVisible),
     [filteredData, metric, stages, t, sensitiveVisible],
@@ -257,9 +237,9 @@ export default function FlowAnalyticsPanel({
   ];
 
   return (
-    <div className='dashboard-flow-layout'>
-      <div className='dashboard-flow-controls'>
-        <div className='dashboard-flow-control-group'>
+    <div className='dashboard-official-flow-layout'>
+      <div className='dashboard-official-flow-controls'>
+        <div className='dashboard-official-flow-control-group'>
           <span>{t('流向宽度指标')}</span>
           <Tabs type='button' activeKey={metric} onChange={setMetric}>
             {metricOptions.map(([value, label, Icon]) => (
@@ -275,7 +255,7 @@ export default function FlowAnalyticsPanel({
             ))}
           </Tabs>
         </div>
-        <div className='dashboard-flow-control-group'>
+        <div className='dashboard-official-flow-control-group'>
           <span>{t('显示数量')}</span>
           <Tabs
             type='button'
@@ -291,7 +271,7 @@ export default function FlowAnalyticsPanel({
             ))}
           </Tabs>
         </div>
-        <div className='dashboard-flow-control-group'>
+        <div className='dashboard-official-flow-control-group'>
           <span>{t('溢出项目')}</span>
           <Tabs
             type='button'
@@ -322,19 +302,32 @@ export default function FlowAnalyticsPanel({
         />
       </div>
 
-      <section className='dashboard-new-chart-card dashboard-flow-card'>
-        <header className='dashboard-new-chart-header dashboard-flow-card-header'>
-          <div className='dashboard-new-chart-title'>
-            <span className='dashboard-new-chart-icon'>
+      <section className='dashboard-official-panel dashboard-official-flow-panel'>
+        <header className='dashboard-official-panel-header dashboard-official-flow-header'>
+          <div className='dashboard-official-panel-heading'>
+            <span className='dashboard-official-icon-badge dashboard-official-icon-chart'>
               <GitBranch size={15} />
             </span>
-            <span>{t('分流')}</span>
+            <span className='dashboard-official-panel-title'>{t('分流')}</span>
             {isAdminUser && <Tag color='blue'>{t('全站')}</Tag>}
           </div>
-          <div className='dashboard-flow-header-actions'>
+          <div className='dashboard-official-flow-header-actions'>
+            <div className='dashboard-official-flow-stage-toggles'>
+              {availableStages.map(([kind]) => (
+                <button
+                  key={kind}
+                  type='button'
+                  className={`dashboard-official-stage-toggle ${visibleStageKeys.includes(kind) ? 'is-active' : ''}`}
+                  onClick={() => toggleStage(kind)}
+                  aria-pressed={visibleStageKeys.includes(kind)}
+                >
+                  {t(STAGE_LABELS[kind])}
+                </button>
+              ))}
+            </div>
             <button
               type='button'
-              className='dashboard-flow-icon-button'
+              className='dashboard-official-icon-button'
               onClick={() => setSensitiveVisible((value) => !value)}
               aria-label={
                 sensitiveVisible ? t('隐藏敏感数据') : t('显示敏感数据')
@@ -345,7 +338,7 @@ export default function FlowAnalyticsPanel({
             <button
               type='button'
               aria-label={t('刷新调用流向')}
-              className='dashboard-flow-icon-button'
+              className='dashboard-official-icon-button'
               onClick={onRefresh}
               disabled={loading}
             >
@@ -353,34 +346,11 @@ export default function FlowAnalyticsPanel({
             </button>
           </div>
         </header>
-        <div className='dashboard-flow-stage-bar'>
-          {availableStages.map(([kind]) => (
-            <Checkbox
-              key={kind}
-              checked={visibleStageKeys.includes(kind)}
-              onChange={() => toggleStage(kind)}
-            >
-              {t(STAGE_LABELS[kind])}
-            </Checkbox>
-          ))}
-        </div>
-        <div className='dashboard-flow-metrics'>
-          {[
-            [t('额度'), renderQuota(totals.quota, 2)],
-            [t('Token'), renderNumber(totals.tokens)],
-            [t('请求次数'), renderNumber(totals.requests)],
-          ].map(([label, value]) => (
-            <div key={label} className='dashboard-flow-summary'>
-              <div className='text-xs text-semi-color-text-2'>{label}</div>
-              <div className='mt-1 text-lg font-semibold'>{value}</div>
-            </div>
-          ))}
-        </div>
-        <div className='flow-sankey-chart dashboard-flow-chart'>
+        <div className='dashboard-official-flow-chart'>
           {loading ? (
-            <div className='dashboard-chart-placeholder' aria-busy='true'>
-              <div className='dashboard-chart-placeholder-bar' />
-              <div className='dashboard-chart-placeholder-bars' />
+            <div className='dashboard-official-chart-skeleton' aria-busy='true'>
+              <div className='dashboard-official-skeleton-line' />
+              <div className='dashboard-official-skeleton-grid' />
             </div>
           ) : filteredData.length > 0 && stages.length >= 2 ? (
             <VChart spec={sankeySpec} option={CHART_CONFIG} />
@@ -389,7 +359,7 @@ export default function FlowAnalyticsPanel({
           )}
         </div>
         {overflowMode === 'hide' && flowData.length > filteredData.length && (
-          <div className='dashboard-flow-overflow-note'>
+          <div className='dashboard-official-flow-overflow-note'>
             {t('已隐藏超出显示数量的项目')}
           </div>
         )}

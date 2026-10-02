@@ -17,12 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Tabs, TabPane } from '@douyinfe/semi-ui';
-import { Activity, PieChart, Users, WalletCards } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  PieChart,
+  Users,
+  WalletCards,
+} from 'lucide-react';
 import { VChart } from '@visactor/react-vchart';
 
-const chartSpec = (spec) => {
+const prepareSpec = (spec) => {
   if (!spec) return null;
   return {
     ...spec,
@@ -31,37 +37,19 @@ const chartSpec = (spec) => {
   };
 };
 
-const ChartFrame = ({ icon: Icon, title, total, actions, children }) => (
-  <section className='dashboard-new-chart-card'>
-    <header className='dashboard-new-chart-header'>
-      <div className='dashboard-new-chart-title'>
-        <span className='dashboard-new-chart-icon'>
-          <Icon size={15} />
-        </span>
-        <span>{title}</span>
-        {total ? (
-          <span className='dashboard-new-chart-total'>{total}</span>
-        ) : null}
-      </div>
-      {actions ? (
-        <div className='dashboard-new-chart-actions'>{actions}</div>
-      ) : null}
-    </header>
-    <div className='dashboard-new-chart-body'>{children}</div>
-  </section>
+const OfficialIconBadge = ({ children, tone = 'info' }) => (
+  <span
+    className={`dashboard-official-icon-badge dashboard-official-icon-${tone}`}
+  >
+    {children}
+  </span>
 );
 
-const ChartCanvas = ({ spec, option }) => {
-  const prepared = useMemo(() => chartSpec(spec), [spec]);
-  if (!prepared) return null;
-  return <VChart spec={prepared} option={option} />;
-};
-
-const ChartLoading = () => (
-  <div className='dashboard-chart-placeholder' aria-busy='true'>
-    <div className='dashboard-chart-placeholder-bar' />
-    <div className='dashboard-chart-placeholder-bars'>
-      {[32, 54, 42, 78, 62, 88, 48, 70, 40, 64, 52, 82].map((height, index) => (
+const ChartSkeleton = () => (
+  <div className='dashboard-official-chart-skeleton' aria-busy='true'>
+    <div className='dashboard-official-skeleton-line' />
+    <div className='dashboard-official-skeleton-grid'>
+      {[38, 62, 48, 76, 54, 86, 44, 69, 52, 78, 46, 64].map((height, index) => (
         <span key={index} style={{ height: `${height}%` }} />
       ))}
     </div>
@@ -69,24 +57,67 @@ const ChartLoading = () => (
 );
 
 const ChartEmpty = ({ label }) => (
-  <div className='dashboard-chart-empty'>
-    <span className='dashboard-chart-empty-icon'>
-      <Activity size={18} />
+  <div className='dashboard-official-chart-empty'>
+    <span className='dashboard-official-empty-icon'>
+      <Activity size={16} />
     </span>
     <span>{label}</span>
   </div>
 );
 
-const ChartContent = ({ spec, option, loading, hasData, t }) => {
-  if (loading) return <ChartLoading />;
-  if (!hasData) return <ChartEmpty label={t('暂无数据')} />;
-  return <ChartCanvas spec={spec} option={option} />;
+const ChartCanvas = ({ spec, option, loading, hasData, t }) => {
+  const prepared = useMemo(() => prepareSpec(spec), [spec]);
+  if (loading) return <ChartSkeleton />;
+  if (!hasData || !prepared) return <ChartEmpty label={t('暂无数据')} />;
+  return <VChart spec={prepared} option={option} />;
 };
 
+const SegmentTabs = ({ activeKey, onChange, children, ariaLabel }) => (
+  <div className='dashboard-official-segmented' aria-label={ariaLabel}>
+    <Tabs type='button' activeKey={activeKey} onChange={onChange}>
+      {children}
+    </Tabs>
+  </div>
+);
+
+const ChartPanel = ({
+  icon: Icon,
+  tone,
+  title,
+  total,
+  actions,
+  children,
+  className = '',
+}) => (
+  <section className={`dashboard-official-panel ${className}`}>
+    <div className='dashboard-official-panel-header'>
+      <div className='dashboard-official-panel-heading'>
+        <OfficialIconBadge tone={tone}>
+          <Icon size={15} />
+        </OfficialIconBadge>
+        <span className='dashboard-official-panel-title'>{title}</span>
+        {total ? (
+          <span className='dashboard-official-panel-total'>{total}</span>
+        ) : null}
+      </div>
+      {actions ? (
+        <div className='dashboard-official-panel-actions'>{actions}</div>
+      ) : null}
+    </div>
+    <div className='dashboard-official-panel-body'>{children}</div>
+  </section>
+);
+
+const ChartBody = ({ children }) => (
+  <div className='dashboard-official-chart-body'>{children}</div>
+);
+
 const ChartsPanel = ({
-  mode = 'all',
-  activeChartTab,
-  setActiveChartTab,
+  mode = 'models',
+  modelChartTab = '2',
+  setModelChartTab,
+  consumptionChartType = 'bar',
+  setConsumptionChartType,
   spec_line,
   spec_area,
   spec_model_line,
@@ -94,126 +125,121 @@ const ChartsPanel = ({
   spec_rank_bar,
   spec_user_rank,
   spec_user_trend,
-  isAdminUser,
   loading = false,
   hasData = true,
   CHART_CONFIG,
   t,
 }) => {
-  const showModelCharts = mode !== 'users';
-  const showUserCharts = mode !== 'models' && isAdminUser;
-  const [consumptionChartType, setConsumptionChartType] = useState('bar');
-  const modelTab = ['3', '4'].includes(activeChartTab) ? activeChartTab : '2';
-
-  if (showModelCharts) {
+  if (mode === 'users') {
     return (
-      <div className='dashboard-chart-stack'>
-        <ChartFrame
-          icon={WalletCards}
-          title={t('消耗分布')}
-          total={spec_line?.title?.subtext}
-          actions={
-            <Tabs
-              type='button'
-              activeKey={consumptionChartType}
-              onChange={setConsumptionChartType}
-            >
-              <TabPane itemKey='bar' tab={t('柱状图')} />
-              <TabPane itemKey='area' tab={t('面积图')} />
-            </Tabs>
-          }
-        >
-          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartContent
-              spec={consumptionChartType === 'area' ? spec_area : spec_line}
-              option={CHART_CONFIG}
-              loading={loading}
-              hasData={hasData}
-              t={t}
-            />
-          </div>
-        </ChartFrame>
-
-        <ChartFrame
-          icon={PieChart}
-          title={t('模型调用分析')}
-          total={
-            modelTab === '3'
-              ? spec_pie?.title?.subtext
-              : modelTab === '4'
-                ? spec_rank_bar?.title?.subtext
-                : spec_model_line?.title?.subtext
-          }
-          actions={
-            <Tabs
-              type='button'
-              activeKey={modelTab}
-              onChange={setActiveChartTab}
-            >
-              <TabPane itemKey='2' tab={t('调用趋势')} />
-              <TabPane itemKey='3' tab={t('调用次数占比')} />
-              <TabPane itemKey='4' tab={t('调用次数排行')} />
-            </Tabs>
-          }
-        >
-          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartContent
-              spec={
-                modelTab === '3'
-                  ? spec_pie
-                  : modelTab === '4'
-                    ? spec_rank_bar
-                    : spec_model_line
-              }
-              option={CHART_CONFIG}
-              loading={loading}
-              hasData={hasData}
-              t={t}
-            />
-          </div>
-        </ChartFrame>
-      </div>
-    );
-  }
-
-  if (showUserCharts) {
-    return (
-      <div className='dashboard-chart-stack'>
-        <ChartFrame
-          icon={Users}
-          title={t('用户消耗排行')}
-          total={spec_user_rank?.title?.subtext}
-        >
-          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartContent
+      <div className='dashboard-official-chart-stack'>
+        <ChartPanel icon={Users} tone='info' title={t('用户消耗排行')}>
+          <ChartBody>
+            <ChartCanvas
               spec={spec_user_rank}
               option={CHART_CONFIG}
               loading={loading}
               hasData={hasData}
               t={t}
             />
-          </div>
-        </ChartFrame>
-        <ChartFrame
-          icon={Activity}
-          title={t('用户消耗趋势')}
-          total={spec_user_trend?.title?.subtext}
-        >
-          <div className='dashboard-new-chart-canvas dashboard-new-chart-canvas-tall'>
-            <ChartContent
+          </ChartBody>
+        </ChartPanel>
+        <ChartPanel icon={Users} tone='info' title={t('用户消耗趋势')}>
+          <ChartBody>
+            <ChartCanvas
               spec={spec_user_trend}
               option={CHART_CONFIG}
               loading={loading}
               hasData={hasData}
               t={t}
             />
-          </div>
-        </ChartFrame>
+          </ChartBody>
+        </ChartPanel>
       </div>
     );
   }
 
-  return null;
+  const modelSpec =
+    modelChartTab === '3'
+      ? spec_pie
+      : modelChartTab === '4'
+        ? spec_rank_bar
+        : spec_model_line;
+
+  return (
+    <div className='dashboard-official-chart-stack'>
+      <ChartPanel
+        icon={WalletCards}
+        tone='success'
+        title={t('消耗分布')}
+        total={spec_line?.title?.subtext}
+        actions={
+          <SegmentTabs
+            activeKey={consumptionChartType}
+            onChange={setConsumptionChartType}
+            ariaLabel={t('消耗分布图表')}
+          >
+            <TabPane
+              itemKey='bar'
+              tab={
+                <>
+                  <BarChart3 size={13} />
+                  {t('柱状图')}
+                </>
+              }
+            />
+            <TabPane
+              itemKey='area'
+              tab={
+                <>
+                  <Activity size={13} />
+                  {t('面积图')}
+                </>
+              }
+            />
+          </SegmentTabs>
+        }
+      >
+        <ChartBody>
+          <ChartCanvas
+            spec={consumptionChartType === 'area' ? spec_area : spec_line}
+            option={CHART_CONFIG}
+            loading={loading}
+            hasData={hasData}
+            t={t}
+          />
+        </ChartBody>
+      </ChartPanel>
+
+      <ChartPanel
+        icon={PieChart}
+        tone='chart'
+        title={t('模型调用分析')}
+        total={modelSpec?.title?.subtext}
+        actions={
+          <SegmentTabs
+            activeKey={modelChartTab}
+            onChange={setModelChartTab}
+            ariaLabel={t('模型调用分析图表')}
+          >
+            <TabPane itemKey='2' tab={t('调用趋势')} />
+            <TabPane itemKey='3' tab={t('调用次数占比')} />
+            <TabPane itemKey='4' tab={t('调用次数排行')} />
+          </SegmentTabs>
+        }
+      >
+        <ChartBody>
+          <ChartCanvas
+            spec={modelSpec}
+            option={CHART_CONFIG}
+            loading={loading}
+            hasData={hasData}
+            t={t}
+          />
+        </ChartBody>
+      </ChartPanel>
+    </div>
+  );
 };
 
 export default ChartsPanel;

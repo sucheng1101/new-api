@@ -17,9 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useCallback, useContext, useEffect, useMemo } from 'react';
-import { Button, TabPane, Tabs, Typography } from '@douyinfe/semi-ui';
-import { BarChart3, Coins, Hash, RefreshCw, Search, Timer } from 'lucide-react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { Button, Modal, Select, TabPane, Tabs } from '@douyinfe/semi-ui';
+import { BarChart3, Coins, Filter, Hash, Settings2, Timer } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { UserContext } from '../../context/User';
@@ -33,30 +39,84 @@ import { useDashboardData } from '../../hooks/dashboard/useDashboardData';
 import { useDashboardCharts } from '../../hooks/dashboard/useDashboardCharts';
 import { useDashboardAnalytics } from '../../hooks/dashboard/useDashboardAnalytics';
 import { useSidebar } from '../../hooks/common/useSidebar';
-import {
-  CARD_PROPS,
-  CHART_CONFIG,
-  FLEX_CENTER_GAP2,
-} from '../../constants/dashboard.constants';
+import { CHART_CONFIG } from '../../constants/dashboard.constants';
 
-const SummaryCard = ({ icon, label, value, description, loading }) => (
-  <div className='min-w-0 px-3 py-3 sm:px-5 sm:py-4'>
-    <div className='flex items-center gap-2 text-xs font-medium text-semi-color-text-2'>
-      <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600 dark:bg-blue-950/40'>
-        {icon}
+const SummaryCard = ({
+  icon: Icon,
+  tone,
+  label,
+  value,
+  description,
+  loading,
+}) => (
+  <div className='dashboard-official-stat-card'>
+    <div className='dashboard-official-stat-label'>
+      <span
+        className={`dashboard-official-icon-badge dashboard-official-icon-${tone}`}
+      >
+        <Icon size={14} />
       </span>
-      <span className='truncate'>{label}</span>
+      <span>{label}</span>
     </div>
-    <div
-      className='mt-2 truncate text-xl font-semibold'
-      title={loading ? '' : String(value)}
-    >
-      {loading ? '—' : value}
-    </div>
-    <div className='mt-1 hidden text-xs text-semi-color-text-2 md:block'>
-      {description}
-    </div>
+    {loading ? (
+      <div className='dashboard-official-stat-loading'>
+        <span />
+        <span />
+      </div>
+    ) : (
+      <>
+        <div className='dashboard-official-stat-value' title={String(value)}>
+          {value}
+        </div>
+        <div className='dashboard-official-stat-description'>{description}</div>
+      </>
+    )}
   </div>
+);
+
+const DashboardPreferences = ({
+  visible,
+  onClose,
+  consumptionChartType,
+  setConsumptionChartType,
+  modelChartTab,
+  setModelChartTab,
+  t,
+}) => (
+  <Modal
+    title={t('模型分析默认设置')}
+    visible={visible}
+    onCancel={onClose}
+    onOk={onClose}
+    okText={t('保存')}
+    cancelText={t('取消')}
+  >
+    <div className='dashboard-official-preferences'>
+      <label>
+        <span>{t('默认消耗图表')}</span>
+        <Select
+          value={consumptionChartType}
+          onChange={setConsumptionChartType}
+          optionList={[
+            { value: 'bar', label: t('柱状图') },
+            { value: 'area', label: t('面积图') },
+          ]}
+        />
+      </label>
+      <label>
+        <span>{t('默认模型调用图表')}</span>
+        <Select
+          value={modelChartTab}
+          onChange={setModelChartTab}
+          optionList={[
+            { value: '2', label: t('调用趋势') },
+            { value: '3', label: t('调用次数占比') },
+            { value: '4', label: t('调用次数排行') },
+          ]}
+        />
+      </label>
+    </div>
+  </Modal>
 );
 
 const DashboardAnalytics = () => {
@@ -82,9 +142,13 @@ const DashboardAnalytics = () => {
     inputs: dashboardData.inputs,
     isAdminUser: dashboardData.isAdminUser,
   });
-  const [userTopLimit, setUserTopLimit] = React.useState(10);
-  const [userRangeDays, setUserRangeDays] = React.useState(1);
-  const [userChartData, setUserChartData] = React.useState([]);
+  const [userTopLimit, setUserTopLimit] = useState(10);
+  const [userRangeDays, setUserRangeDays] = useState(1);
+  const [userChartData, setUserChartData] = useState([]);
+  const [modelChartTab, setModelChartTab] = useState('2');
+  const [consumptionChartType, setConsumptionChartType] = useState('bar');
+  const [preferencesVisible, setPreferencesVisible] = useState(false);
+
   const usersSectionVisible =
     dashboardData.isAdminUser &&
     (sidebarLoading || isModuleVisible('admin', 'dashboardUsers'));
@@ -92,9 +156,7 @@ const DashboardAnalytics = () => {
     ? 'flow'
     : location.pathname.endsWith('/users')
       ? 'users'
-      : location.pathname.endsWith('/models')
-        ? 'models'
-        : null;
+      : 'models';
   const requestedSection = searchParams.get('section') || pathnameSection;
   const section =
     requestedSection === 'flow' ||
@@ -146,19 +208,12 @@ const DashboardAnalytics = () => {
   }, [analytics.loadFlowData, loadModelData, loadUserData, section]);
 
   useEffect(() => {
-    if (searchParams.get('section') && pathnameSection) {
-      setSearchParams({}, { replace: true });
-    }
-  }, [pathnameSection, searchParams, setSearchParams]);
+    if (searchParams.get('section')) setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (section === 'users') {
-      dashboardData.setActiveChartTab('5');
-    } else if (!['2', '3', '4'].includes(dashboardData.activeChartTab)) {
-      dashboardData.setActiveChartTab('2');
-    }
     loadSectionData();
-    // Each route owns its first load; filter changes load only after confirmation.
+    // Each route owns its first load; filter changes load after confirmation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
@@ -177,14 +232,14 @@ const DashboardAnalytics = () => {
     ],
     [dashboardData.t, usersSectionVisible],
   );
-
   const loading =
     section === 'flow' ? analytics.flowLoading : dashboardData.loading;
   const sectionTitle =
     visibleSections.find((item) => item.key === section)?.label ||
     dashboardData.t('数据看板');
+
   return (
-    <div className='dashboard-analytics-page mx-auto w-full max-w-[1800px] px-2 pb-8 sm:px-4'>
+    <div className='dashboard-official-page'>
       <SearchModal
         searchModalVisible={dashboardData.searchModalVisible}
         handleSearchConfirm={handleApplyFilters}
@@ -197,17 +252,22 @@ const DashboardAnalytics = () => {
         handleInputChange={dashboardData.handleInputChange}
         t={dashboardData.t}
       />
+      <DashboardPreferences
+        visible={preferencesVisible}
+        onClose={() => setPreferencesVisible(false)}
+        consumptionChartType={consumptionChartType}
+        setConsumptionChartType={setConsumptionChartType}
+        modelChartTab={modelChartTab}
+        setModelChartTab={setModelChartTab}
+        t={dashboardData.t}
+      />
 
-      <div className='dashboard-page-heading mb-3 flex flex-wrap items-center justify-between gap-3'>
-        <div>
-          <Typography.Title heading={4} style={{ margin: 0 }}>
-            {sectionTitle}
-          </Typography.Title>
-        </div>
+      <div className='dashboard-official-title-row'>
+        <h2>{sectionTitle}</h2>
       </div>
 
-      <div className='dashboard-analytics-toolbar mb-4 flex flex-wrap items-center justify-between gap-3'>
-        <div className='overflow-x-auto'>
+      <div className='dashboard-official-section-toolbar'>
+        <div className='dashboard-official-section-tabs'>
           <Tabs
             type='button'
             activeKey={section}
@@ -224,97 +284,91 @@ const DashboardAnalytics = () => {
             ))}
           </Tabs>
         </div>
-        <div className='flex shrink-0 flex-wrap items-center gap-2'>
+        <div className='dashboard-official-section-actions'>
+          {section === 'models' && (
+            <Button
+              size='small'
+              theme='light'
+              type='tertiary'
+              icon={<Settings2 size={14} />}
+              onClick={() => setPreferencesVisible(true)}
+            >
+              {dashboardData.t('偏好设置')}
+            </Button>
+          )}
           <Button
             size='small'
             theme='light'
             type='tertiary'
-            icon={<Search size={14} />}
+            icon={<Filter size={14} />}
             onClick={dashboardData.showSearchModal}
           >
             {dashboardData.t('筛选')}
-          </Button>
-          <Button
-            size='small'
-            theme='light'
-            type='primary'
-            icon={
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            }
-            onClick={loadSectionData}
-            loading={loading}
-          >
-            {dashboardData.t('刷新')}
           </Button>
         </div>
       </div>
 
       {section === 'models' && (
         <>
-          <div className='dashboard-stat-strip mb-4 overflow-hidden rounded-lg border border-semi-color-border'>
-            <div className='grid grid-cols-2 divide-x divide-y divide-semi-color-border sm:grid-cols-3 lg:grid-cols-5 lg:divide-y-0'>
-              <SummaryCard
-                icon={<Hash size={16} />}
-                label={dashboardData.t('调用次数')}
-                value={renderNumber(dashboardData.times)}
-                description={dashboardData.t('统计请求数')}
-                loading={dashboardData.loading}
-              />
-              <SummaryCard
-                icon={<Coins size={16} />}
-                label={dashboardData.t('额度消耗')}
-                value={renderQuota(dashboardData.consumeQuota, 2)}
-                description={dashboardData.t('统计配额')}
-                loading={dashboardData.loading}
-              />
-              <SummaryCard
-                icon={<BarChart3 size={16} />}
-                label={dashboardData.t('Token 消耗')}
-                value={renderNumber(dashboardData.consumeTokens)}
-                description={dashboardData.t('统计 Token 数')}
-                loading={dashboardData.loading}
-              />
-              <SummaryCard
-                icon={<Timer size={16} />}
-                label={dashboardData.t('平均 RPM')}
-                value={dashboardData.performanceMetrics.avgRPM}
-                description={dashboardData.t('每分钟请求数')}
-                loading={dashboardData.loading}
-              />
-              <SummaryCard
-                icon={<Timer size={16} />}
-                label={dashboardData.t('平均 TPM')}
-                value={dashboardData.performanceMetrics.avgTPM}
-                description={dashboardData.t('每分钟 Token 数')}
-                loading={dashboardData.loading}
-              />
-            </div>
+          <div className='dashboard-official-stat-strip'>
+            <SummaryCard
+              icon={Hash}
+              tone='chart'
+              label={dashboardData.t('调用次数')}
+              value={renderNumber(dashboardData.times)}
+              description={dashboardData.t('统计请求数')}
+              loading={dashboardData.loading}
+            />
+            <SummaryCard
+              icon={Coins}
+              tone='success'
+              label={dashboardData.t('额度消耗')}
+              value={renderQuota(dashboardData.consumeQuota, 2)}
+              description={dashboardData.t('统计配额')}
+              loading={dashboardData.loading}
+            />
+            <SummaryCard
+              icon={BarChart3}
+              tone='info'
+              label={dashboardData.t('Token 消耗')}
+              value={renderNumber(dashboardData.consumeTokens)}
+              description={dashboardData.t('统计 Token 数')}
+              loading={dashboardData.loading}
+            />
+            <SummaryCard
+              icon={Timer}
+              tone='warning'
+              label={dashboardData.t('平均 RPM')}
+              value={dashboardData.performanceMetrics.avgRPM}
+              description={dashboardData.t('每分钟请求数')}
+              loading={dashboardData.loading}
+            />
+            <SummaryCard
+              icon={Timer}
+              tone='warning'
+              label={dashboardData.t('平均 TPM')}
+              value={dashboardData.performanceMetrics.avgTPM}
+              description={dashboardData.t('每分钟 Token 数')}
+              loading={dashboardData.loading}
+            />
           </div>
           {dashboardData.isAdminUser && (
-            <div className='mb-4'>
-              <PerformanceHealthPanel enabled t={dashboardData.t} />
-            </div>
+            <PerformanceHealthPanel enabled t={dashboardData.t} />
           )}
           <ChartsPanel
             mode='models'
-            activeChartTab={dashboardData.activeChartTab}
-            setActiveChartTab={dashboardData.setActiveChartTab}
+            modelChartTab={modelChartTab}
+            setModelChartTab={setModelChartTab}
+            consumptionChartType={consumptionChartType}
+            setConsumptionChartType={setConsumptionChartType}
             spec_line={dashboardCharts.spec_line}
             spec_area={dashboardCharts.spec_area}
             spec_model_line={dashboardCharts.spec_model_line}
             spec_pie={dashboardCharts.spec_pie}
             spec_rank_bar={dashboardCharts.spec_rank_bar}
-            spec_user_rank={dashboardCharts.spec_user_rank}
-            userRankMetric={dashboardCharts.userRankMetric}
-            setUserRankMetric={dashboardCharts.setUserRankMetric}
-            spec_user_trend={dashboardCharts.spec_user_trend}
-            isAdminUser={dashboardData.isAdminUser}
             loading={dashboardData.loading}
             hasData={dashboardData.quotaData.length > 0}
-            CARD_PROPS={CARD_PROPS}
             CHART_CONFIG={CHART_CONFIG}
-            FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-            hasApiInfoPanel={false}
             t={dashboardData.t}
           />
         </>
@@ -322,10 +376,7 @@ const DashboardAnalytics = () => {
 
       {section === 'users' && dashboardData.isAdminUser && (
         <>
-          <div className='dashboard-user-controls mb-3 flex flex-wrap items-center gap-2'>
-            <span className='text-xs font-medium text-semi-color-text-2'>
-              {dashboardData.t('时间范围')}
-            </span>
+          <div className='dashboard-official-user-controls'>
             <Tabs
               type='button'
               activeKey={String(userRangeDays)}
@@ -347,33 +398,6 @@ const DashboardAnalytics = () => {
                 />
               ))}
             </Tabs>
-            <span className='text-xs font-medium text-semi-color-text-2'>
-              {dashboardData.t('Top Users')}
-            </span>
-            <Tabs
-              type='button'
-              activeKey={String(userTopLimit)}
-              onChange={(value) => {
-                const limit = Number(value);
-                setUserTopLimit(limit);
-                loadUserData(
-                  limit,
-                  dashboardData.dataExportDefaultTime,
-                  userRangeDays,
-                );
-              }}
-            >
-              {[5, 10, 20, 50].map((limit) => (
-                <TabPane
-                  key={limit}
-                  itemKey={String(limit)}
-                  tab={dashboardData.t(`Top ${limit}`)}
-                />
-              ))}
-            </Tabs>
-            <span className='text-xs font-medium text-semi-color-text-2'>
-              {dashboardData.t('Time granularity')}
-            </span>
             <Tabs
               type='button'
               activeKey={dashboardData.dataExportDefaultTime}
@@ -393,27 +417,32 @@ const DashboardAnalytics = () => {
                 />
               ))}
             </Tabs>
+            <Tabs
+              type='button'
+              activeKey={String(userTopLimit)}
+              onChange={(value) => {
+                const limit = Number(value);
+                setUserTopLimit(limit);
+                loadUserData(
+                  limit,
+                  dashboardData.dataExportDefaultTime,
+                  userRangeDays,
+                );
+              }}
+            >
+              <TabPane itemKey='5' tab='Top 5' />
+              <TabPane itemKey='10' tab='Top 10' />
+              <TabPane itemKey='20' tab='Top 20' />
+              <TabPane itemKey='50' tab='Top 50' />
+            </Tabs>
           </div>
           <ChartsPanel
             mode='users'
-            activeChartTab={dashboardData.activeChartTab}
-            setActiveChartTab={dashboardData.setActiveChartTab}
-            spec_line={dashboardCharts.spec_line}
-            spec_area={dashboardCharts.spec_area}
-            spec_model_line={dashboardCharts.spec_model_line}
-            spec_pie={dashboardCharts.spec_pie}
-            spec_rank_bar={dashboardCharts.spec_rank_bar}
             spec_user_rank={dashboardCharts.spec_user_rank}
-            userRankMetric={dashboardCharts.userRankMetric}
-            setUserRankMetric={dashboardCharts.setUserRankMetric}
             spec_user_trend={dashboardCharts.spec_user_trend}
-            isAdminUser
             loading={dashboardData.loading}
             hasData={userChartData.length > 0}
-            CARD_PROPS={CARD_PROPS}
             CHART_CONFIG={CHART_CONFIG}
-            FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-            hasApiInfoPanel={false}
             t={dashboardData.t}
           />
         </>
