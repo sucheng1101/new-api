@@ -216,7 +216,9 @@ function App() {
           path='/console/dashboard/models'
           element={
             <PrivateRoute>
-              <Navigate to='/console/dashboard' replace />
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <DashboardAnalytics />
+              </Suspense>
             </PrivateRoute>
           }
         />
@@ -224,7 +226,9 @@ function App() {
           path='/console/dashboard/flow'
           element={
             <PrivateRoute>
-              <Navigate to='/console/dashboard?section=flow' replace />
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <DashboardAnalytics />
+              </Suspense>
             </PrivateRoute>
           }
         />
@@ -232,7 +236,9 @@ function App() {
           path='/console/dashboard/users'
           element={
             <AdminRoute>
-              <Navigate to='/console/dashboard?section=users' replace />
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <DashboardAnalytics />
+              </Suspense>
             </AdminRoute>
           }
         />

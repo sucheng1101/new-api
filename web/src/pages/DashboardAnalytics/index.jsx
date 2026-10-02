@@ -20,7 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useCallback, useContext, useEffect, useMemo } from 'react';
 import { Button, TabPane, Tabs, Typography } from '@douyinfe/semi-ui';
 import { BarChart3, Coins, Hash, RefreshCw, Search, Timer } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
@@ -39,7 +39,7 @@ import {
   FLEX_CENTER_GAP2,
 } from '../../constants/dashboard.constants';
 
-const SummaryCard = ({ icon, label, value, loading }) => (
+const SummaryCard = ({ icon, label, value, description, loading }) => (
   <div className='min-w-0 px-3 py-3 sm:px-5 sm:py-4'>
     <div className='flex items-center gap-2 text-xs font-medium text-semi-color-text-2'>
       <span className='flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600 dark:bg-blue-950/40'>
@@ -53,6 +53,9 @@ const SummaryCard = ({ icon, label, value, loading }) => (
     >
       {loading ? '—' : value}
     </div>
+    <div className='mt-1 hidden text-xs text-semi-color-text-2 md:block'>
+      {description}
+    </div>
   </div>
 );
 
@@ -60,6 +63,8 @@ const DashboardAnalytics = () => {
   const [userState, userDispatch] = useContext(UserContext);
   const [statusState] = useContext(StatusContext);
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { isModuleVisible, loading: sidebarLoading } = useSidebar();
   const dashboardData = useDashboardData(userState, userDispatch, statusState);
   const dashboardCharts = useDashboardCharts(
@@ -81,7 +86,14 @@ const DashboardAnalytics = () => {
   const usersSectionVisible =
     dashboardData.isAdminUser &&
     (sidebarLoading || isModuleVisible('admin', 'dashboardUsers'));
-  const requestedSection = searchParams.get('section');
+  const pathnameSection = location.pathname.endsWith('/flow')
+    ? 'flow'
+    : location.pathname.endsWith('/users')
+      ? 'users'
+      : location.pathname.endsWith('/models')
+        ? 'models'
+        : null;
+  const requestedSection = searchParams.get('section') || pathnameSection;
   const section =
     requestedSection === 'flow' ||
     (requestedSection === 'users' && usersSectionVisible)
@@ -124,10 +136,10 @@ const DashboardAnalytics = () => {
   }, [analytics.loadFlowData, loadModelData, loadUserData, section]);
 
   useEffect(() => {
-    if (requestedSection && requestedSection !== section) {
+    if (searchParams.get('section') && pathnameSection) {
       setSearchParams({}, { replace: true });
     }
-  }, [requestedSection, section, setSearchParams]);
+  }, [pathnameSection, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (section === 'users') {
@@ -148,9 +160,9 @@ const DashboardAnalytics = () => {
   const visibleSections = useMemo(
     () => [
       { key: 'models', label: dashboardData.t('模型调用分析') },
-      { key: 'flow', label: dashboardData.t('调用流向') },
+      { key: 'flow', label: dashboardData.t('分流') },
       ...(usersSectionVisible
-        ? [{ key: 'users', label: dashboardData.t('用户分析') }]
+        ? [{ key: 'users', label: dashboardData.t('用户统计') }]
         : []),
     ],
     [dashboardData.t, usersSectionVisible],
@@ -178,53 +190,52 @@ const DashboardAnalytics = () => {
 
       <div className='dashboard-page-heading mb-3 flex flex-wrap items-center justify-between gap-3'>
         <div>
-          <Typography.Title heading={3} style={{ margin: 0 }}>
+          <Typography.Title heading={4} style={{ margin: 0 }}>
             {sectionTitle}
           </Typography.Title>
         </div>
       </div>
 
-      <div className='dashboard-analytics-toolbar mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
-        <div className='flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
-          <div className='overflow-x-auto'>
-            <Tabs
-              type='button'
-              activeKey={section}
-              onChange={(key) =>
-                setSearchParams(key === 'models' ? {} : { section: key })
-              }
-            >
-              {visibleSections.map((item) => (
-                <TabPane key={item.key} itemKey={item.key} tab={item.label} />
-              ))}
-            </Tabs>
-          </div>
-          <div className='flex shrink-0 flex-wrap items-center gap-2'>
-            <Button
-              size='small'
-              theme='light'
-              type='tertiary'
-              icon={<Search size={14} />}
-              onClick={dashboardData.showSearchModal}
-            >
-              {dashboardData.t('筛选')}
-            </Button>
-            <Button
-              size='small'
-              theme='light'
-              type='primary'
-              icon={
-                <RefreshCw
-                  size={14}
-                  className={loading ? 'animate-spin' : ''}
-                />
-              }
-              onClick={loadSectionData}
-              loading={loading}
-            >
-              {dashboardData.t('刷新')}
-            </Button>
-          </div>
+      <div className='dashboard-analytics-toolbar mb-4 flex flex-wrap items-center justify-between gap-3'>
+        <div className='overflow-x-auto'>
+          <Tabs
+            type='button'
+            activeKey={section}
+            onChange={(key) =>
+              navigate(
+                key === 'models'
+                  ? '/console/dashboard/models'
+                  : `/console/dashboard/${key}`,
+              )
+            }
+          >
+            {visibleSections.map((item) => (
+              <TabPane key={item.key} itemKey={item.key} tab={item.label} />
+            ))}
+          </Tabs>
+        </div>
+        <div className='flex shrink-0 flex-wrap items-center gap-2'>
+          <Button
+            size='small'
+            theme='light'
+            type='tertiary'
+            icon={<Search size={14} />}
+            onClick={dashboardData.showSearchModal}
+          >
+            {dashboardData.t('筛选')}
+          </Button>
+          <Button
+            size='small'
+            theme='light'
+            type='primary'
+            icon={
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            }
+            onClick={loadSectionData}
+            loading={loading}
+          >
+            {dashboardData.t('刷新')}
+          </Button>
         </div>
       </div>
 
@@ -236,30 +247,35 @@ const DashboardAnalytics = () => {
                 icon={<Hash size={16} />}
                 label={dashboardData.t('调用次数')}
                 value={renderNumber(dashboardData.times)}
+                description={dashboardData.t('统计请求数')}
                 loading={dashboardData.loading}
               />
               <SummaryCard
                 icon={<Coins size={16} />}
                 label={dashboardData.t('额度消耗')}
                 value={renderQuota(dashboardData.consumeQuota, 2)}
+                description={dashboardData.t('统计配额')}
                 loading={dashboardData.loading}
               />
               <SummaryCard
                 icon={<BarChart3 size={16} />}
                 label={dashboardData.t('Token 消耗')}
                 value={renderNumber(dashboardData.consumeTokens)}
+                description={dashboardData.t('统计 Token 数')}
                 loading={dashboardData.loading}
               />
               <SummaryCard
                 icon={<Timer size={16} />}
                 label={dashboardData.t('平均 RPM')}
                 value={dashboardData.performanceMetrics.avgRPM}
+                description={dashboardData.t('每分钟请求数')}
                 loading={dashboardData.loading}
               />
               <SummaryCard
                 icon={<Timer size={16} />}
                 label={dashboardData.t('平均 TPM')}
                 value={dashboardData.performanceMetrics.avgTPM}
+                description={dashboardData.t('每分钟 Token 数')}
                 loading={dashboardData.loading}
               />
             </div>

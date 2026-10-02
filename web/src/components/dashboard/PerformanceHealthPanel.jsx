@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useMemo } from 'react';
-import { Card, Empty, Tag } from '@douyinfe/semi-ui';
 import { Activity, Gauge, Timer, Zap } from 'lucide-react';
 
 import { renderNumber } from '../../helpers';
@@ -54,55 +53,58 @@ const PerformanceHealthPanel = ({ enabled, t }) => {
   if (!enabled) return null;
 
   return (
-    <Card
-      className='!rounded-2xl'
-      title={
-        <div className='flex items-center gap-2'>
-          <Activity size={16} />
-          {t('模型性能健康')}
-        </div>
-      }
-      headerExtraContent={<Tag color='blue'>{t('最近 24 小时')}</Tag>}
-    >
+    <div className='dashboard-performance-strip'>
+      <div className='dashboard-performance-title'>
+        <span className='dashboard-performance-icon'>
+          <Activity size={14} />
+        </span>
+        <span>{t('模型性能健康')}</span>
+      </div>
       {summary ? (
-        <div className='grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-[repeat(3,minmax(0,1fr))_minmax(260px,1.2fr)]'>
-          {[
-            [Gauge, t('平均成功率'), `${summary.success.toFixed(2)}%`],
-            [
-              Timer,
-              t('平均延迟'),
-              `${renderNumber(Math.round(summary.latency))} ms`,
-            ],
-            [Zap, t('平均吞吐'), `${summary.tps.toFixed(2)} TPS`],
-          ].map(([Icon, label, value]) => (
-            <div
-              key={label}
-              className='rounded-xl border border-semi-color-border p-3'
-            >
-              <div className='flex items-center gap-2 text-xs text-semi-color-text-2'>
-                <Icon size={14} /> {label}
-              </div>
-              <div className='mt-2 text-xl font-semibold'>{value}</div>
-            </div>
-          ))}
-          <div className='rounded-xl border border-semi-color-border p-3'>
-            <div className='text-xs text-semi-color-text-2'>
-              {t('已统计模型')} · {summary.count}
-            </div>
-            <div className='mt-2 flex flex-wrap gap-2'>
-              {summary.models.map((item) => (
-                <Tag key={item.model_name} color='green' shape='circle'>
-                  {item.model_name}
-                </Tag>
-              ))}
-            </div>
+        <>
+          <span className='dashboard-performance-divider' />
+          <div className='dashboard-performance-metrics'>
+            <InlineMetric
+              icon={Gauge}
+              label={t('平均成功率')}
+              value={`${summary.success.toFixed(2)}%`}
+            />
+            <InlineMetric
+              icon={Timer}
+              label={t('平均延迟')}
+              value={`${renderNumber(Math.round(summary.latency))} ms`}
+            />
+            <InlineMetric
+              icon={Zap}
+              label={t('平均吞吐')}
+              value={`${summary.tps.toFixed(2)} TPS`}
+            />
           </div>
-        </div>
+          <span className='dashboard-performance-divider hidden lg:block' />
+          <div className='dashboard-performance-models'>
+            {summary.models.map((item) => (
+              <span
+                key={item.model_name}
+                className='dashboard-performance-badge'
+              >
+                {item.model_name}
+              </span>
+            ))}
+          </div>
+        </>
       ) : (
-        <Empty description={t('最近 24 小时暂无模型性能数据')} />
+        <span className='dashboard-performance-empty'>{t('暂无性能数据')}</span>
       )}
-    </Card>
+    </div>
   );
 };
+
+const InlineMetric = ({ icon: Icon, label, value }) => (
+  <div className='dashboard-performance-metric'>
+    <Icon size={13} />
+    <span>{label}</span>
+    <strong>{value}</strong>
+  </div>
+);
 
 export default PerformanceHealthPanel;
