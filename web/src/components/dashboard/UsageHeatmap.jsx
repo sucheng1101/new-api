@@ -26,11 +26,11 @@ import { renderNumber, renderQuota } from '../../helpers';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const VIEW_MODES = ['daily', 'weekly', 'cumulative'];
 const LEVEL_CLASSES = [
-  'bg-semi-color-fill-0',
-  'bg-blue-100 dark:bg-blue-950/60',
-  'bg-blue-300 dark:bg-blue-800',
-  'bg-blue-500 dark:bg-blue-600',
-  'bg-blue-700 dark:bg-blue-400',
+  'bg-transparent',
+  'bg-green-100 dark:bg-green-950/60',
+  'bg-green-300 dark:bg-green-800',
+  'bg-green-500 dark:bg-green-600',
+  'bg-green-700 dark:bg-green-400',
 ];
 
 const toDateKey = (date) => {
@@ -47,16 +47,26 @@ const formatDate = (date) =>
     day: 'numeric',
   }).format(date);
 
+const getWeekStart = (date) => {
+  const weekStart = new Date(date);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+  return weekStart;
+};
+
+const formatWeekRange = (start) => {
+  const end = new Date(start.getTime() + 6 * DAY_MS);
+  return `${formatDate(start)} – ${formatDate(end)}`;
+};
+
 const getLevel = (count, thresholds) => {
   if (!count) return 0;
-  // Keep every active day visibly different from an unused day. With a
-  // single active value all percentile thresholds collapse to the same
-  // number, so the lowest non-zero level would otherwise be too faint.
+  // Keep active records on the light-to-dark green scale while reserving
+  // level 0 for dates without any usage.
   let level = 4;
   if (count <= thresholds[0]) level = 1;
   else if (count <= thresholds[1]) level = 2;
   else if (count <= thresholds[2]) level = 3;
-  return Math.max(2, level);
+  return level;
 };
 
 const getStreaks = (dates, today) => {
@@ -117,8 +127,8 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
     cells,
     monthLabels,
     thresholds,
+    gridRows,
     totalRequests,
-    activeDays,
     peakCount,
     peakDate,
     averageDaily,
@@ -147,32 +157,37 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
       .sort(([left], [right]) => left.localeCompare(right));
     const weekTotals = new Map();
     activeEntries.forEach(([date, item]) => {
-      const dateValue = new Date(`${date}T00:00:00`);
-      const weekStart = new Date(dateValue);
-      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-      const weekKey = toDateKey(weekStart);
-      weekTotals.set(weekKey, (weekTotals.get(weekKey) || 0) + item.count);
+      const weekKey = toDateKey(getWeekStart(new Date(`${date}T00:00:00`)));
+      const current = weekTotals.get(weekKey) || {
+        date: weekKey,
+        count: 0,
+        quota: 0,
+        tokenUsed: 0,
+      };
+      current.count += item.count;
+      current.quota += item.quota;
+      current.tokenUsed += item.tokenUsed;
+      weekTotals.set(weekKey, current);
     });
     let cumulative = 0;
-    const levelByDate = new Map();
+    const cumulativeByDate = new Map();
     activeEntries.forEach(([date, item]) => {
-      const dateValue = new Date(`${date}T00:00:00`);
-      const weekStart = new Date(dateValue);
-      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-      const weekKey = toDateKey(weekStart);
       cumulative += item.count;
-      levelByDate.set(
-        date,
-        viewMode === 'weekly'
-          ? weekTotals.get(weekKey)
-          : viewMode === 'cumulative'
-            ? cumulative
-            : item.count,
-      );
+      cumulativeByDate.set(date, cumulative);
     });
     const rawValues = activeEntries.map(([, item]) => item.count);
-    const values = activeEntries
-      .map(([date]) => levelByDate.get(date) || 0)
+    const values = (
+      viewMode === 'weekly'
+        ? Array.from(weekTotals.values())
+        : activeEntries.map(([date, item]) => ({
+            ...item,
+            count:
+              viewMode === 'cumulative'
+                ? cumulativeByDate.get(date) || 0
+                : item.count,
+          }))
+    )
+      .map((item) => item.count)
       .sort((a, b) => a - b);
     const percentile = (ratio) =>
       values.length
@@ -186,26 +201,54 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
 
     const nextCells = [];
     const nextMonthLabels = [];
-    const cursor = new Date(gridStart);
+    const cursor = new Date(
+      viewMode === 'weekly' ? getWeekStart(gridStart) : gridStart,
+    );
+    const lastCursor = viewMode === 'weekly' ? getWeekStart(gridEnd) : gridEnd;
     let column = 0;
-    while (cursor <= gridEnd) {
-      for (let row = 0; row < 7; row += 1) {
-        const date = new Date(cursor.getTime() + row * DAY_MS);
-        const key = toDateKey(date);
-        const value = byDate.get(key) || {
+    while (cursor <= lastCursor) {
+      if (viewMode === 'weekly') {
+        const key = toDateKey(cursor);
+        const value = weekTotals.get(key) || {
+          date: key,
           count: 0,
           quota: 0,
           tokenUsed: 0,
         };
         nextCells.push({
           key,
-          date,
+          date: new Date(cursor),
           value,
-          levelCount: levelByDate.get(key) || 0,
+          levelCount: value.count,
           column,
-          row,
-          future: date > today,
+          row: 0,
+          future: cursor > today,
         });
+      } else {
+        for (let row = 0; row < 7; row += 1) {
+          const date = new Date(cursor.getTime() + row * DAY_MS);
+          const key = toDateKey(date);
+          const value = byDate.get(key) || {
+            count: 0,
+            quota: 0,
+            tokenUsed: 0,
+          };
+          const levelCount =
+            value.count > 0
+              ? viewMode === 'cumulative'
+                ? cumulativeByDate.get(key) || 0
+                : value.count
+              : 0;
+          nextCells.push({
+            key,
+            date,
+            value,
+            levelCount,
+            column,
+            row,
+            future: date > today,
+          });
+        }
       }
       if (cursor.getDate() <= 7 || column === 0) {
         nextMonthLabels.push({
@@ -234,6 +277,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
       cells: nextCells,
       monthLabels: nextMonthLabels,
       thresholds: nextThresholds,
+      gridRows: viewMode === 'weekly' ? 1 : 7,
       totalRequests: requestTotal,
       activeDays: rawValues.length,
       peakCount: peak.count,
@@ -289,8 +333,8 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
 
   return (
     <div className='flex h-full w-full min-w-0 flex-col'>
-      <div className='mb-3 flex flex-wrap items-center justify-between gap-2'>
-        <div className='flex items-center gap-2'>
+      <div className='mb-3 flex flex-wrap items-center gap-3'>
+        <div className='flex shrink-0 items-center gap-2'>
           <span className='flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300'>
             <CalendarDays size={15} />
           </span>
@@ -303,11 +347,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
             </div>
           </div>
         </div>
-        <div className='flex items-center gap-3'>
-          <div className='text-xs text-semi-color-text-2'>
-            {t('\u8c03\u7528\u6b21\u6570')}: {renderNumber(totalRequests)} -{' '}
-            {renderNumber(activeDays)} {t('\u5929')}
-          </div>
+        <div className='order-2 ml-auto flex shrink-0 items-center gap-3 lg:order-3'>
           <div className='flex items-center rounded-full bg-semi-color-fill-0 p-0.5'>
             {VIEW_MODES.map((mode) => (
               <button
@@ -332,6 +372,15 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
             ))}
           </div>
         </div>
+        <div className='order-3 flex min-w-0 basis-full overflow-x-auto rounded-lg bg-semi-color-fill-0 lg:order-2 lg:flex-1 lg:basis-0'>
+          <div className='flex min-w-full divide-x divide-semi-color-border'>
+            {summaryMetrics.map((metric) => (
+              <div key={metric.label} className='min-w-[116px] flex-1'>
+                <SummaryMetric {...metric} />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div
@@ -340,8 +389,10 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
       >
         <div className='relative min-w-[640px] sm:w-full sm:min-w-0'>
           {loading ? (
-            <div className='grid h-[76px] grid-flow-col grid-rows-7 gap-1'>
-              {Array.from({ length: 53 * 7 }).map((_, index) => (
+            <div
+              className={`grid grid-flow-col gap-1 ${gridRows === 1 ? 'h-10 grid-rows-1' : 'h-[76px] grid-rows-7'}`}
+            >
+              {Array.from({ length: 53 * gridRows }).map((_, index) => (
                 <span
                   key={index}
                   className='animate-pulse rounded-[3px] bg-semi-color-fill-0'
@@ -350,13 +401,23 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
             </div>
           ) : (
             <div
-              className='grid h-[76px] grid-flow-col grid-rows-7 gap-1'
+              className={`grid grid-flow-col gap-1 ${gridRows === 1 ? 'h-10 grid-rows-1' : 'h-[76px] grid-rows-7'}`}
               style={{
-                gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(cells.length / 7))}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(cells.length / gridRows))}, minmax(0, 1fr))`,
               }}
             >
               {cells.map((cell) => {
-                const tooltip = `${formatDate(cell.date)} · ${t('调用次数')}：${renderNumber(cell.value.count)} · ${t('额度')}：${renderQuota(cell.value.quota)} · Token：${renderNumber(cell.value.tokenUsed)}`;
+                const period =
+                  viewMode === 'weekly'
+                    ? formatWeekRange(cell.date)
+                    : formatDate(cell.date);
+                const countLabel =
+                  viewMode === 'cumulative' ? t('累计调用次数') : t('调用次数');
+                const displayCount =
+                  viewMode === 'cumulative'
+                    ? cell.levelCount
+                    : cell.value.count;
+                const tooltip = `${period} · ${countLabel}：${renderNumber(displayCount)} · ${t('额度')}：${renderQuota(cell.value.quota)} · Token：${renderNumber(cell.value.tokenUsed)}`;
                 return (
                   <Tooltip key={cell.key} content={tooltip} position='top'>
                     <span
@@ -389,7 +450,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
         <span>{t('按调用次数')}</span>
         <div className='flex items-center gap-1'>
           <span>{t('少')}</span>
-          {LEVEL_CLASSES.map((className, index) => (
+          {LEVEL_CLASSES.slice(1).map((className, index) => (
             <span
               key={index}
               className={`h-3 w-3 rounded-[3px] ${className}`}
@@ -397,17 +458,6 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
           ))}
           <span>{t('多')}</span>
         </div>
-      </div>
-
-      <div className='mt-3 grid grid-cols-2 overflow-hidden rounded-lg bg-semi-color-fill-0 sm:grid-cols-3 lg:grid-cols-5'>
-        {summaryMetrics.map((metric, index) => (
-          <div
-            key={metric.label}
-            className={`${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''} ${index === 4 ? 'col-span-2 sm:col-span-1' : ''} border-semi-color-border`}
-          >
-            <SummaryMetric {...metric} />
-          </div>
-        ))}
       </div>
     </div>
   );
