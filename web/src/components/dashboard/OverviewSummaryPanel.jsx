@@ -168,12 +168,9 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
       bodyStyle={{ padding: 0 }}
     >
       <div className='grid xl:grid-cols-[minmax(0,1fr)_310px]'>
-        <div className='p-4 sm:p-5'>
-          <div className='mb-4'>
-            <h2 className='text-base font-semibold'>{t('用量概览')}</h2>
-            <p className='mt-1 text-sm text-semi-color-text-2'>
-              {t('查看余额、消耗和请求量')}
-            </p>
+        <div className='p-3 sm:p-4'>
+          <div className='mb-2'>
+            <h2 className='text-sm font-medium'>{t('用量概览')}</h2>
           </div>
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
             {cards.map((item) => {

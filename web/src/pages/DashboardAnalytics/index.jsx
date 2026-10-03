@@ -291,7 +291,10 @@ const DashboardAnalytics = () => {
       />
 
       <div className='dashboard-official-title-row'>
-        <h2>{sectionTitle}</h2>
+        <div className='flex items-center text-blue-500'>
+          <BarChart3 size={16} className='mr-2' />
+          <h2 className='!text-sm !font-medium'>{sectionTitle}</h2>
+        </div>
       </div>
 
       <div className='dashboard-official-section-toolbar'>

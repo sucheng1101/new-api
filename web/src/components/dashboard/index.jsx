@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useContext, useEffect, useState } from 'react';
 import { Button } from '@douyinfe/semi-ui';
-import { BarChart3, RefreshCw } from 'lucide-react';
+import { BarChart3, LayoutDashboard, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { getRelativeTime } from '../../helpers';
@@ -104,8 +104,9 @@ const Dashboard = () => {
   return (
     <div className='h-full'>
       <div className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-        <div>
-          <h1 className='text-2xl font-semibold'>{dashboardData.t('概览')}</h1>
+        <div className='flex items-center text-blue-500'>
+          <LayoutDashboard size={16} className='mr-2' />
+          <h1 className='!text-sm !font-medium'>{dashboardData.t('概览')}</h1>
         </div>
         <div className='flex flex-wrap items-center gap-2'>
           <Button
@@ -156,39 +157,47 @@ const Dashboard = () => {
                   <PerformanceHealthPanel enabled t={dashboardData.t} />
                 </div>
               )}
-              {dashboardData.apiInfoEnabled && (
-                <ApiInfoPanel
-                  apiInfoData={apiInfoData}
-                  handleCopyUrl={(url) => handleCopyUrl(url, dashboardData.t)}
-                  handleSpeedTest={handleSpeedTest}
-                  CARD_PROPS={CARD_PROPS}
-                  FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-                  ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
-                  t={dashboardData.t}
-                />
+              {(dashboardData.apiInfoEnabled || dashboardData.faqEnabled) && (
+                <div className='grid min-w-0 grid-cols-1 gap-4 lg:col-span-2 lg:grid-cols-2'>
+                  {dashboardData.apiInfoEnabled && (
+                    <ApiInfoPanel
+                      apiInfoData={apiInfoData}
+                      handleCopyUrl={(url) =>
+                        handleCopyUrl(url, dashboardData.t)
+                      }
+                      handleSpeedTest={handleSpeedTest}
+                      CARD_PROPS={CARD_PROPS}
+                      FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+                      ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
+                      t={dashboardData.t}
+                    />
+                  )}
+                  {dashboardData.faqEnabled && (
+                    <FaqPanel
+                      faqData={faqData}
+                      CARD_PROPS={CARD_PROPS}
+                      FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+                      ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
+                      t={dashboardData.t}
+                    />
+                  )}
+                </div>
               )}
               {dashboardData.announcementsEnabled && (
-                <AnnouncementsPanel
-                  announcementData={announcementData}
-                  announcementLegendData={ANNOUNCEMENT_LEGEND_DATA.map(
-                    (item) => ({
-                      ...item,
-                      label: dashboardData.t(item.label),
-                    }),
-                  )}
-                  CARD_PROPS={CARD_PROPS}
-                  ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
-                  t={dashboardData.t}
-                />
-              )}
-              {dashboardData.faqEnabled && (
-                <FaqPanel
-                  faqData={faqData}
-                  CARD_PROPS={CARD_PROPS}
-                  FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-                  ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
-                  t={dashboardData.t}
-                />
+                <div className='lg:col-span-2'>
+                  <AnnouncementsPanel
+                    announcementData={announcementData}
+                    announcementLegendData={ANNOUNCEMENT_LEGEND_DATA.map(
+                      (item) => ({
+                        ...item,
+                        label: dashboardData.t(item.label),
+                      }),
+                    )}
+                    CARD_PROPS={CARD_PROPS}
+                    ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
+                    t={dashboardData.t}
+                  />
+                </div>
               )}
             </div>
           )}
