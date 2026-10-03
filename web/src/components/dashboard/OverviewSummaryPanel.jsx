@@ -18,32 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Skeleton, Tag } from '@douyinfe/semi-ui';
+import { Button, Card, Tag } from '@douyinfe/semi-ui';
 import { Activity, ArrowRight, Flame, ShieldCheck, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { API, renderNumber, renderQuota } from '../../helpers';
 import UsageHeatmap, { aggregateUsageByDate } from './UsageHeatmap';
 
-const BUCKET_COUNT = 12;
 const DAY_SECONDS = 24 * 60 * 60;
 const MAX_RANGE_SECONDS = 30 * DAY_SECONDS;
 const YEAR_SECONDS = 365 * DAY_SECONDS;
-
-const MiniBars = ({ values }) => {
-  const max = Math.max(...values, 1);
-  return (
-    <div className='flex h-8 items-end gap-1' aria-hidden>
-      {values.map((value, index) => (
-        <span
-          key={index}
-          className='min-w-1 flex-1 rounded-sm bg-semi-color-primary opacity-50'
-          style={{ height: `${Math.max(8, (value / max) * 100)}%` }}
-        />
-      ))}
-    </div>
-  );
-};
 
 const loadYearRows = async (start, end) => {
   const requests = [];
@@ -96,27 +80,15 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
   const summary = useMemo(() => {
     const end = Math.floor(Date.now() / 1000);
     const start = end - DAY_SECONDS;
-    const usageBuckets = Array.from({ length: BUCKET_COUNT }, () => 0);
-    const requestBuckets = Array.from({ length: BUCKET_COUNT }, () => 0);
     let usage = 0;
-    let requests = 0;
 
     rows.forEach((row) => {
       const timestamp = Number(row.created_at || start);
       if (timestamp < start || timestamp > end) return;
       const quota = Number(row.quota || 0);
-      const count = Number(row.count || 0);
-      const ratio = Math.max(
-        0,
-        Math.min(0.9999, (timestamp - start) / (end - start)),
-      );
-      const index = Math.floor(ratio * BUCKET_COUNT);
       usage += quota;
-      requests += count;
-      usageBuckets[index] += quota;
-      requestBuckets[index] += count;
     });
-    return { usage, requests, usageBuckets, requestBuckets };
+    return { usage };
   }, [rows]);
 
   const remainQuota = Number(user?.quota || 0);
@@ -143,21 +115,18 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
       value: renderQuota(usedQuota),
       description: t('账户累计使用额度'),
       icon: Activity,
-      values: summary.usageBuckets,
     },
     {
       title: t('请求次数'),
       value: renderNumber(requestCount),
       description: t('账户累计请求总量'),
       icon: ShieldCheck,
-      values: summary.requestBuckets,
     },
     {
       title: t('最近 24 小时消耗'),
       value: renderQuota(summary.usage),
       description: t('按小时聚合的额度消耗'),
       icon: Flame,
-      values: summary.usageBuckets,
     },
   ];
   const heatmapData = useMemo(() => aggregateUsageByDate(rows), [rows]);
@@ -167,54 +136,18 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
       className='!mb-4 !rounded-2xl overflow-hidden'
       bodyStyle={{ padding: 0 }}
     >
-      <div className='grid xl:grid-cols-[minmax(0,1fr)_310px]'>
-        <div className='p-3 sm:p-4'>
-          <div className='mb-2'>
-            <h2 className='text-sm font-medium'>{t('用量概览')}</h2>
-          </div>
-          <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
-            {cards.map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.title}
-                  className='rounded-xl border border-semi-color-border bg-semi-color-bg-0 p-3'
-                >
-                  <div className='flex items-center gap-2 text-xs font-medium text-semi-color-text-2'>
-                    <Icon size={15} />
-                    {item.title}
-                  </div>
-                  <Skeleton
-                    loading={loading}
-                    active
-                    placeholder={
-                      <Skeleton.Title style={{ width: 96, height: 28 }} />
-                    }
-                  >
-                    <div className='mt-2 text-xl font-semibold'>
-                      {item.value}
-                    </div>
-                    <div className='mt-1 text-xs text-semi-color-text-2'>
-                      {item.description}
-                    </div>
-                    <div className='mt-3'>
-                      <MiniBars values={item.values} />
-                    </div>
-                  </Skeleton>
-                </div>
-              );
-            })}
-          </div>
+      <div className='grid xl:grid-cols-[minmax(0,1fr)_360px]'>
+        <div className='min-w-0 p-3 sm:p-4'>
           <UsageHeatmap data={heatmapData} loading={loading} t={t} />
         </div>
 
-        <div className='flex flex-col justify-between gap-4 border-t border-semi-color-border bg-gradient-to-br from-blue-50 to-emerald-50 p-4 dark:from-blue-950/30 dark:to-emerald-950/20 sm:p-5 xl:border-l xl:border-t-0'>
+        <div className='flex flex-col justify-between gap-3 border-t border-semi-color-border bg-gradient-to-br from-blue-50 to-emerald-50 p-3 dark:from-blue-950/30 dark:to-emerald-950/20 sm:p-4 xl:border-l xl:border-t-0'>
           <div>
             <div className='flex items-center justify-between gap-2'>
               <span className='text-xs font-medium text-semi-color-text-2'>
                 {t('剩余额度')}
               </span>
-              <Tag color={health}>
+              <Tag color={health} size='small'>
                 {health === 'red'
                   ? t('余额已用尽')
                   : health === 'orange'
@@ -222,34 +155,46 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
                     : t('状态健康')}
               </Tag>
             </div>
-            <div className='mt-3 text-2xl font-semibold'>
+            <div className='mt-2 text-xl font-semibold'>
               {renderQuota(remainQuota)}
             </div>
-            <div className='mt-4 grid grid-cols-2 gap-2'>
-              <div className='rounded-lg bg-semi-color-bg-0 p-3'>
-                <div className='flex items-center gap-1 text-[11px] text-semi-color-text-2'>
-                  <Flame size={12} /> {t('最近 24 小时')}
-                </div>
-                <div className='mt-1 text-sm font-semibold'>
-                  {renderQuota(summary.usage)}
-                </div>
+            <div className='mt-3 grid grid-cols-3 gap-2'>
+              {cards.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.title}
+                    className='min-w-0 rounded-lg bg-semi-color-bg-0 px-2 py-2'
+                  >
+                    <div className='flex items-center gap-1 text-[10px] text-semi-color-text-2'>
+                      <Icon size={11} className='shrink-0' />
+                      <span className='truncate'>{item.title}</span>
+                    </div>
+                    <div className='mt-1 truncate text-sm font-semibold'>
+                      {item.value}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className='mt-2 rounded-lg bg-semi-color-bg-0 px-2.5 py-2'>
+              <div className='flex items-center gap-1 text-[10px] text-semi-color-text-2'>
+                <ShieldCheck size={11} /> {t('预计可用')}
               </div>
-              <div className='rounded-lg bg-semi-color-bg-0 p-3'>
-                <div className='flex items-center gap-1 text-[11px] text-semi-color-text-2'>
-                  <ShieldCheck size={12} /> {t('预计可用')}
-                </div>
-                <div className='mt-1 text-sm font-semibold'>{runway}</div>
+              <div className='mt-1 truncate text-xs font-semibold'>
+                {runway}
               </div>
             </div>
           </div>
           <Button
             block
+            size='small'
             type='primary'
-            icon={<Wallet size={15} />}
+            icon={<Wallet size={14} />}
             onClick={() => navigate('/console/topup')}
           >
             <span className='flex flex-1 items-center justify-between'>
-              {t('钱包管理')} <ArrowRight size={15} />
+              {t('钱包管理')} <ArrowRight size={14} />
             </span>
           </Button>
         </div>
