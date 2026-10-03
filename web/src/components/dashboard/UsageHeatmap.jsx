@@ -25,12 +25,12 @@ import { renderNumber, renderQuota } from '../../helpers';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const VIEW_MODES = ['daily', 'weekly', 'cumulative'];
-const LEVEL_CLASSES = [
-  'bg-transparent',
-  'bg-green-100 dark:bg-green-950/60',
-  'bg-green-300 dark:bg-green-800',
-  'bg-green-500 dark:bg-green-600',
-  'bg-green-700 dark:bg-green-400',
+const LEVEL_COLORS = [
+  null,
+  'rgba(var(--semi-green-1), 1)',
+  'rgba(var(--semi-green-3), 1)',
+  'rgba(var(--semi-green-5), 1)',
+  'rgba(var(--semi-green-7), 1)',
 ];
 
 const toDateKey = (date) => {
@@ -302,32 +302,32 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
       icon: Hash,
       value: loading ? '—' : renderNumber(totalRequests),
       label: t('累计调用次数'),
-      tone: 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300',
+      tone: 'bg-semi-color-primary-light-default text-semi-color-primary',
     },
     {
       icon: TrendingUp,
       value: loading ? '—' : renderNumber(peakCount),
       label: t('峰值调用次数'),
       detail: peakDate ? formatDate(peakDate) : t('暂无数据'),
-      tone: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300',
+      tone: 'bg-semi-color-success-light-default text-semi-color-success',
     },
     {
       icon: CalendarDays,
       value: loading ? '—' : renderNumber(averageDaily),
       label: t('平均每日调用'),
-      tone: 'bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300',
+      tone: 'bg-semi-color-info-light-default text-semi-color-info',
     },
     {
       icon: Flame,
       value: loading ? '—' : `${renderNumber(currentStreak)} ${t('天')}`,
       label: t('当前连续天数'),
-      tone: 'bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-300',
+      tone: 'bg-semi-color-warning-light-default text-semi-color-warning',
     },
     {
       icon: Trophy,
       value: loading ? '—' : `${renderNumber(longestStreak)} ${t('天')}`,
       label: t('最长连续天数'),
-      tone: 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300',
+      tone: 'bg-semi-color-danger-light-default text-semi-color-danger',
     },
   ];
 
@@ -335,7 +335,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
     <div className='flex h-full w-full min-w-0 flex-col'>
       <div className='mb-3 flex flex-wrap items-center gap-3'>
         <div className='flex shrink-0 items-center gap-2'>
-          <span className='flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300'>
+          <span className='flex h-7 w-7 items-center justify-center rounded-lg bg-semi-color-success-light-default text-semi-color-success'>
             <CalendarDays size={15} />
           </span>
           <div>
@@ -422,11 +422,17 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
                   <Tooltip key={cell.key} content={tooltip} position='top'>
                     <span
                       aria-label={tooltip}
-                      className={`block h-full min-h-[9px] rounded-[3px] ${
+                      className='block h-full min-h-[9px] rounded-[3px]'
+                      style={
                         cell.future
-                          ? 'bg-transparent'
-                          : LEVEL_CLASSES[getLevel(cell.levelCount, thresholds)]
-                      }`}
+                          ? undefined
+                          : {
+                              backgroundColor:
+                                LEVEL_COLORS[
+                                  getLevel(cell.levelCount, thresholds)
+                                ],
+                            }
+                      }
                     />
                   </Tooltip>
                 );
@@ -450,10 +456,11 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
         <span>{t('按调用次数')}</span>
         <div className='flex items-center gap-1'>
           <span>{t('少')}</span>
-          {LEVEL_CLASSES.slice(1).map((className, index) => (
+          {LEVEL_COLORS.slice(1).map((color, index) => (
             <span
               key={index}
-              className={`h-3 w-3 rounded-[3px] ${className}`}
+              className='h-3 w-3 rounded-[3px]'
+              style={{ backgroundColor: color }}
             />
           ))}
           <span>{t('多')}</span>
