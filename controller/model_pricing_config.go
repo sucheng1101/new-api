@@ -78,3 +78,26 @@ func UpdateModelPricingConfig(c *gin.Context) {
 	}
 	common.ApiSuccess(c, gin.H{"updated_models": names})
 }
+
+// UpdateModelPricingOptions applies a legacy pricing-map update atomically.
+// The upstream ratio synchronizer produces complete option maps rather than
+// model-versioned drafts, so keeping the write in one transaction prevents
+// concurrent option requests from partially overwriting one another.
+func UpdateModelPricingOptions(c *gin.Context) {
+	var request struct {
+		Updates map[string]string `json:"updates"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if len(request.Updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing updates are required"})
+		return
+	}
+	if err := model.UpdateModelPricingOptions(request.Updates); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"updated_keys": len(request.Updates)})
+}

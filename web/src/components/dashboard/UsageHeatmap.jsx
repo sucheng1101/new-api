@@ -134,7 +134,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
     }, [data]);
 
   return (
-    <div className='rounded-xl border border-semi-color-border bg-semi-color-bg-0 p-3 sm:p-4'>
+    <div className='w-full min-w-0'>
       <div className='mb-3 flex flex-wrap items-center justify-between gap-2'>
         <div className='flex items-center gap-2'>
           <span className='flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300'>

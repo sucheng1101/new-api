@@ -402,6 +402,7 @@ func GetSelf(c *gin.Context) {
 	responseData := map[string]interface{}{
 		"id":                user.Id,
 		"username":          user.Username,
+		"created_at":        user.CreatedAt,
 		"display_name":      user.DisplayName,
 		"role":              user.Role,
 		"status":            user.Status,
