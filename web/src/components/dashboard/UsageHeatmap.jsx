@@ -98,12 +98,8 @@ const getStreaks = (dates, today) => {
 };
 
 const SummaryMetric = ({ icon: Icon, value, label, detail, tone }) => (
-  <div className='flex min-w-0 items-center justify-center gap-2 px-2 py-2 sm:px-3'>
-    <div
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${tone}`}
-    >
-      <Icon size={14} />
-    </div>
+  <div className='flex min-w-0 items-center justify-center gap-2 px-2 py-1.5 sm:px-3'>
+    <Icon size={15} className={`shrink-0 ${tone}`} />
     <div className='min-w-0 text-left'>
       <div className='truncate text-base font-semibold leading-5 text-semi-color-text-0 sm:text-lg'>
         {value}
@@ -302,32 +298,32 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
       icon: Hash,
       value: loading ? '—' : renderNumber(totalRequests),
       label: t('累计调用次数'),
-      tone: 'bg-semi-color-primary-light-default text-semi-color-primary',
+      tone: 'text-semi-color-primary',
     },
     {
       icon: TrendingUp,
       value: loading ? '—' : renderNumber(peakCount),
       label: t('峰值调用次数'),
       detail: peakDate ? formatDate(peakDate) : t('暂无数据'),
-      tone: 'bg-semi-color-success-light-default text-semi-color-success',
+      tone: 'text-semi-color-success',
     },
     {
       icon: CalendarDays,
       value: loading ? '—' : renderNumber(averageDaily),
       label: t('平均每日调用'),
-      tone: 'bg-semi-color-info-light-default text-semi-color-info',
+      tone: 'text-semi-color-info',
     },
     {
       icon: Flame,
       value: loading ? '—' : `${renderNumber(currentStreak)} ${t('天')}`,
       label: t('当前连续天数'),
-      tone: 'bg-semi-color-warning-light-default text-semi-color-warning',
+      tone: 'text-semi-color-warning',
     },
     {
       icon: Trophy,
       value: loading ? '—' : `${renderNumber(longestStreak)} ${t('天')}`,
       label: t('最长连续天数'),
-      tone: 'bg-semi-color-danger-light-default text-semi-color-danger',
+      tone: 'text-semi-color-danger',
     },
   ];
 
@@ -348,7 +344,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
           </div>
         </div>
         <div className='order-2 ml-auto flex shrink-0 items-center gap-3 lg:order-3'>
-          <div className='flex items-center rounded-full bg-semi-color-fill-0 p-0.5'>
+          <div className='flex items-center rounded-full border border-semi-color-border p-0.5'>
             {VIEW_MODES.map((mode) => (
               <button
                 key={mode}
@@ -372,12 +368,17 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
             ))}
           </div>
         </div>
-        <div className='order-3 flex min-w-0 basis-full overflow-x-auto rounded-lg bg-semi-color-fill-0 lg:order-2 lg:flex-1 lg:basis-0'>
-          <div className='flex min-w-full divide-x divide-semi-color-border'>
-            {summaryMetrics.map((metric) => (
-              <div key={metric.label} className='min-w-[116px] flex-1'>
-                <SummaryMetric {...metric} />
-              </div>
+        <div className='order-3 flex min-w-0 basis-full overflow-x-auto lg:order-2 lg:flex-1 lg:basis-0'>
+          <div className='flex min-w-full items-stretch'>
+            {summaryMetrics.map((metric, index) => (
+              <React.Fragment key={metric.label}>
+                {index > 0 ? (
+                  <span className='my-1.5 h-8 w-px shrink-0 bg-semi-color-border' />
+                ) : null}
+                <div className='min-w-[116px] flex-1'>
+                  <SummaryMetric {...metric} />
+                </div>
+              </React.Fragment>
             ))}
           </div>
         </div>
