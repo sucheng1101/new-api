@@ -136,8 +136,8 @@ const OverviewSummaryPanel = ({ user, refreshKey, t }) => {
       className='!mb-4 !rounded-2xl overflow-hidden'
       bodyStyle={{ padding: 0 }}
     >
-      <div className='grid xl:grid-cols-[minmax(0,1fr)_360px]'>
-        <div className='min-w-0 p-3 sm:p-4'>
+      <div className='grid items-stretch xl:grid-cols-[minmax(0,1fr)_360px]'>
+        <div className='flex min-w-0 p-3 sm:p-4'>
           <UsageHeatmap data={heatmapData} loading={loading} t={t} />
         </div>
 

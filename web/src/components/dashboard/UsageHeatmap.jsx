@@ -48,10 +48,14 @@ const formatDate = (date) =>
 
 const getLevel = (count, thresholds) => {
   if (!count) return 0;
-  if (count <= thresholds[0]) return 1;
-  if (count <= thresholds[1]) return 2;
-  if (count <= thresholds[2]) return 3;
-  return 4;
+  // Keep every active day visibly different from an unused day. With a
+  // single active value all percentile thresholds collapse to the same
+  // number, so the lowest non-zero level would otherwise be too faint.
+  let level = 4;
+  if (count <= thresholds[0]) level = 1;
+  else if (count <= thresholds[1]) level = 2;
+  else if (count <= thresholds[2]) level = 3;
+  return Math.max(2, level);
 };
 
 const getStreaks = (dates, today) => {
@@ -83,20 +87,20 @@ const getStreaks = (dates, today) => {
 };
 
 const SummaryMetric = ({ icon: Icon, value, label, detail, tone }) => (
-  <div className='min-w-0 px-3 py-3 text-center sm:px-4'>
+  <div className='min-w-0 px-2 py-2 text-center sm:px-3'>
     <div
-      className={`mx-auto flex h-7 w-7 items-center justify-center rounded-lg ${tone}`}
+      className={`mx-auto flex h-6 w-6 items-center justify-center rounded-md ${tone}`}
     >
-      <Icon size={14} />
+      <Icon size={13} />
     </div>
-    <div className='mt-1.5 truncate text-base font-semibold text-semi-color-text-0 sm:text-lg'>
+    <div className='mt-1 truncate text-sm font-semibold text-semi-color-text-0 sm:text-base'>
       {value}
     </div>
-    <div className='mt-0.5 truncate text-[11px] text-semi-color-text-2'>
+    <div className='mt-0.5 truncate text-[10px] text-semi-color-text-2'>
       {label}
     </div>
     {detail ? (
-      <div className='mt-0.5 truncate text-[10px] text-semi-color-text-2'>
+      <div className='mt-0.5 truncate text-[9px] text-semi-color-text-2'>
         {detail}
       </div>
     ) : null}
@@ -245,18 +249,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
   ];
 
   return (
-    <div className='w-full min-w-0'>
-      <div className='mb-3 grid grid-cols-2 overflow-hidden rounded-xl bg-semi-color-fill-0 sm:grid-cols-3 lg:grid-cols-5'>
-        {summaryMetrics.map((metric, index) => (
-          <div
-            key={metric.label}
-            className={`${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''} border-semi-color-border`}
-          >
-            <SummaryMetric {...metric} />
-          </div>
-        ))}
-      </div>
-
+    <div className='flex h-full w-full min-w-0 flex-col'>
       <div className='mb-3 flex flex-wrap items-center justify-between gap-2'>
         <div className='flex items-center gap-2'>
           <span className='flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300'>
@@ -276,7 +269,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
       </div>
 
       <div className='overflow-x-auto pb-1'>
-        <div className='relative min-w-[680px] pl-7'>
+        <div className='relative min-w-[680px]'>
           <div
             className='mb-1 grid h-4'
             style={{
@@ -292,12 +285,6 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
                 {item.label}
               </span>
             ))}
-          </div>
-          <div className='absolute left-0 top-6 flex flex-col justify-between text-[10px] leading-3 text-semi-color-text-2'>
-            <span>{t('周日')}</span>
-            <span>{t('周二')}</span>
-            <span>{t('周四')}</span>
-            <span>{t('周六')}</span>
           </div>
           {loading ? (
             <div className='grid h-[76px] grid-flow-col grid-rows-7 gap-1'>
@@ -349,6 +336,17 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
           ))}
           <span>{t('多')}</span>
         </div>
+      </div>
+
+      <div className='mt-3 grid grid-cols-2 overflow-hidden rounded-lg bg-semi-color-fill-0 sm:grid-cols-3 lg:grid-cols-5'>
+        {summaryMetrics.map((metric, index) => (
+          <div
+            key={metric.label}
+            className={`${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''} border-semi-color-border`}
+          >
+            <SummaryMetric {...metric} />
+          </div>
+        ))}
       </div>
     </div>
   );

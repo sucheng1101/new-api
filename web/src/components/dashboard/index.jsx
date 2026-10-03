@@ -157,6 +157,22 @@ const Dashboard = () => {
                   <PerformanceHealthPanel enabled t={dashboardData.t} />
                 </div>
               )}
+              {dashboardData.announcementsEnabled && (
+                <div className='lg:col-span-2'>
+                  <AnnouncementsPanel
+                    announcementData={announcementData}
+                    announcementLegendData={ANNOUNCEMENT_LEGEND_DATA.map(
+                      (item) => ({
+                        ...item,
+                        label: dashboardData.t(item.label),
+                      }),
+                    )}
+                    CARD_PROPS={CARD_PROPS}
+                    ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
+                    t={dashboardData.t}
+                  />
+                </div>
+              )}
               {(dashboardData.apiInfoEnabled || dashboardData.faqEnabled) && (
                 <div className='grid min-w-0 grid-cols-1 gap-4 lg:col-span-2 lg:grid-cols-2'>
                   {dashboardData.apiInfoEnabled && (
@@ -181,22 +197,6 @@ const Dashboard = () => {
                       t={dashboardData.t}
                     />
                   )}
-                </div>
-              )}
-              {dashboardData.announcementsEnabled && (
-                <div className='lg:col-span-2'>
-                  <AnnouncementsPanel
-                    announcementData={announcementData}
-                    announcementLegendData={ANNOUNCEMENT_LEGEND_DATA.map(
-                      (item) => ({
-                        ...item,
-                        label: dashboardData.t(item.label),
-                      }),
-                    )}
-                    CARD_PROPS={CARD_PROPS}
-                    ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
-                    t={dashboardData.t}
-                  />
                 </div>
               )}
             </div>
