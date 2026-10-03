@@ -1177,7 +1177,7 @@
     "多密钥管理": "Multi-key management",
     "多种充值方式，安全便捷": "Multiple recharge methods, safe and convenient",
     "大模型接口网关": "LLM API Gateway",
-    "天": "day",
+    "天": "days",
     "天前": "days ago",
     "失败": "Failed",
     "失败原因": "Failure Reason",
@@ -4240,6 +4240,8 @@
     "全站数据": "Site-wide data",
     "我的数据": "My data",
     "平均 RPM": "Average RPM",
-    "平均 TPM": "Average TPM"
+    "平均 TPM": "Average TPM",
+    "每日": "Daily",
+    "累计": "Cumulative"
   }
 }

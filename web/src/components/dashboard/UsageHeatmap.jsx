@@ -17,19 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Tooltip } from '@douyinfe/semi-ui';
 import { CalendarDays, Flame, Hash, Trophy, TrendingUp } from 'lucide-react';
 
 import { renderNumber, renderQuota } from '../../helpers';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const VIEW_MODES = ['daily', 'weekly', 'cumulative'];
 const LEVEL_CLASSES = [
   'bg-semi-color-fill-0',
-  'bg-emerald-100 dark:bg-emerald-950/60',
-  'bg-emerald-300 dark:bg-emerald-800',
-  'bg-emerald-500 dark:bg-emerald-600',
-  'bg-emerald-700 dark:bg-emerald-400',
+  'bg-blue-100 dark:bg-blue-950/60',
+  'bg-blue-300 dark:bg-blue-800',
+  'bg-blue-500 dark:bg-blue-600',
+  'bg-blue-700 dark:bg-blue-400',
 ];
 
 const toDateKey = (date) => {
@@ -87,27 +88,31 @@ const getStreaks = (dates, today) => {
 };
 
 const SummaryMetric = ({ icon: Icon, value, label, detail, tone }) => (
-  <div className='min-w-0 px-2 py-2 text-center sm:px-3'>
+  <div className='flex min-w-0 items-center justify-center gap-2 px-2 py-2 sm:px-3'>
     <div
-      className={`mx-auto flex h-6 w-6 items-center justify-center rounded-md ${tone}`}
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${tone}`}
     >
-      <Icon size={13} />
+      <Icon size={14} />
     </div>
-    <div className='mt-1 truncate text-sm font-semibold text-semi-color-text-0 sm:text-base'>
-      {value}
-    </div>
-    <div className='mt-0.5 truncate text-[10px] text-semi-color-text-2'>
-      {label}
-    </div>
-    {detail ? (
-      <div className='mt-0.5 truncate text-[9px] text-semi-color-text-2'>
-        {detail}
+    <div className='min-w-0 text-left'>
+      <div className='truncate text-base font-semibold leading-5 text-semi-color-text-0 sm:text-lg'>
+        {value}
       </div>
-    ) : null}
+      <div className='text-[11px] leading-4 text-semi-color-text-2'>
+        {label}
+      </div>
+      {detail ? (
+        <div className='text-[9px] leading-3 text-semi-color-text-2'>
+          {detail}
+        </div>
+      ) : null}
+    </div>
   </div>
 );
 
 const UsageHeatmap = ({ data = [], loading, t }) => {
+  const [viewMode, setViewMode] = useState('daily');
+  const heatmapScrollRef = useRef(null);
   const {
     cells,
     monthLabels,
@@ -140,8 +145,34 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
     const activeEntries = Array.from(byDate.entries())
       .filter(([, item]) => item.count > 0)
       .sort(([left], [right]) => left.localeCompare(right));
+    const weekTotals = new Map();
+    activeEntries.forEach(([date, item]) => {
+      const dateValue = new Date(`${date}T00:00:00`);
+      const weekStart = new Date(dateValue);
+      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+      const weekKey = toDateKey(weekStart);
+      weekTotals.set(weekKey, (weekTotals.get(weekKey) || 0) + item.count);
+    });
+    let cumulative = 0;
+    const levelByDate = new Map();
+    activeEntries.forEach(([date, item]) => {
+      const dateValue = new Date(`${date}T00:00:00`);
+      const weekStart = new Date(dateValue);
+      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+      const weekKey = toDateKey(weekStart);
+      cumulative += item.count;
+      levelByDate.set(
+        date,
+        viewMode === 'weekly'
+          ? weekTotals.get(weekKey)
+          : viewMode === 'cumulative'
+            ? cumulative
+            : item.count,
+      );
+    });
+    const rawValues = activeEntries.map(([, item]) => item.count);
     const values = activeEntries
-      .map(([, item]) => item.count)
+      .map(([date]) => levelByDate.get(date) || 0)
       .sort((a, b) => a - b);
     const percentile = (ratio) =>
       values.length
@@ -170,6 +201,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
           key,
           date,
           value,
+          levelCount: levelByDate.get(key) || 0,
           column,
           row,
           future: date > today,
@@ -196,23 +228,30 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
       ([date]) => new Date(`${date}T00:00:00`),
     );
     const streaks = getStreaks(activeDates, today);
-    const requestTotal = values.reduce((sum, value) => sum + value, 0);
+    const requestTotal = rawValues.reduce((sum, value) => sum + value, 0);
 
     return {
       cells: nextCells,
       monthLabels: nextMonthLabels,
       thresholds: nextThresholds,
       totalRequests: requestTotal,
-      activeDays: values.length,
+      activeDays: rawValues.length,
       peakCount: peak.count,
       peakDate: peak.date ? new Date(`${peak.date}T00:00:00`) : null,
-      averageDaily: values.length
-        ? Math.round(requestTotal / values.length)
+      averageDaily: rawValues.length
+        ? Math.round(requestTotal / rawValues.length)
         : 0,
       currentStreak: streaks.current,
       longestStreak: streaks.longest,
     };
-  }, [data]);
+  }, [data, viewMode]);
+
+  useEffect(() => {
+    if (!loading && heatmapScrollRef.current) {
+      heatmapScrollRef.current.scrollLeft =
+        heatmapScrollRef.current.scrollWidth;
+    }
+  }, [data, loading]);
 
   const summaryMetrics = [
     {
@@ -256,36 +295,50 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
             <CalendarDays size={15} />
           </span>
           <div>
-            <div className='text-sm font-semibold'>{t('调用次数')}</div>
+            <div className='text-sm font-semibold'>
+              {t('\u8c03\u7528\u6b21\u6570')}
+            </div>
             <div className='text-xs text-semi-color-text-2'>
-              {t('调用次数分布')}
+              {t('\u8c03\u7528\u6b21\u6570\u5206\u5e03')}
             </div>
           </div>
         </div>
-        <div className='text-xs text-semi-color-text-2'>
-          {t('调用次数')}：{renderNumber(totalRequests)} ·{' '}
-          {renderNumber(activeDays)} {t('天')}
+        <div className='flex items-center gap-3'>
+          <div className='text-xs text-semi-color-text-2'>
+            {t('\u8c03\u7528\u6b21\u6570')}: {renderNumber(totalRequests)} -{' '}
+            {renderNumber(activeDays)} {t('\u5929')}
+          </div>
+          <div className='flex items-center rounded-full bg-semi-color-fill-0 p-0.5'>
+            {VIEW_MODES.map((mode) => (
+              <button
+                key={mode}
+                type='button'
+                aria-pressed={viewMode === mode}
+                className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                  viewMode === mode
+                    ? 'bg-semi-color-bg-2 font-medium text-semi-color-text-0 shadow-sm'
+                    : 'text-semi-color-text-2 hover:text-semi-color-text-0'
+                }`}
+                onClick={() => setViewMode(mode)}
+              >
+                {t(
+                  mode === 'daily'
+                    ? '\u6bcf\u65e5'
+                    : mode === 'weekly'
+                      ? '\u6bcf\u5468'
+                      : '\u7d2f\u8ba1',
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className='overflow-x-auto pb-1'>
-        <div className='relative min-w-[680px]'>
-          <div
-            className='mb-1 grid h-4'
-            style={{
-              gridTemplateColumns: `repeat(${Math.max(1, Math.ceil(cells.length / 7))}, minmax(0, 1fr))`,
-            }}
-          >
-            {monthLabels.map((item) => (
-              <span
-                key={`${item.label}-${item.column}`}
-                className='text-[10px] text-semi-color-text-2'
-                style={{ gridColumnStart: item.column + 1 }}
-              >
-                {item.label}
-              </span>
-            ))}
-          </div>
+      <div
+        ref={heatmapScrollRef}
+        className='w-full overflow-x-auto pb-1 sm:overflow-visible'
+      >
+        <div className='relative min-w-[640px] sm:w-full sm:min-w-0'>
           {loading ? (
             <div className='grid h-[76px] grid-flow-col grid-rows-7 gap-1'>
               {Array.from({ length: 53 * 7 }).map((_, index) => (
@@ -311,9 +364,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
                       className={`block h-full min-h-[9px] rounded-[3px] ${
                         cell.future
                           ? 'bg-transparent'
-                          : LEVEL_CLASSES[
-                              getLevel(cell.value.count, thresholds)
-                            ]
+                          : LEVEL_CLASSES[getLevel(cell.levelCount, thresholds)]
                       }`}
                     />
                   </Tooltip>
@@ -321,6 +372,16 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
               })}
             </div>
           )}
+          <div className='mt-2 flex h-4 items-start justify-between gap-2'>
+            {monthLabels.map((item) => (
+              <span
+                key={`${item.label}-${item.column}`}
+                className='whitespace-nowrap text-[10px] text-semi-color-text-2'
+              >
+                {item.label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -342,7 +403,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
         {summaryMetrics.map((metric, index) => (
           <div
             key={metric.label}
-            className={`${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''} border-semi-color-border`}
+            className={`${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''} ${index === 4 ? 'col-span-2 sm:col-span-1' : ''} border-semi-color-border`}
           >
             <SummaryMetric {...metric} />
           </div>

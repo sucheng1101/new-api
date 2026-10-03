@@ -18,6 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 export const SKYE_CUSTOM_I18N_KEYS = [
+  '\u6bcf\u65e5',
+  '\u6bcf\u5468',
+  '\u7d2f\u8ba1',
+  '\u5929',
   '{{count}} 起事件',
   '{{seconds}} s 后刷新',
   '15 天',

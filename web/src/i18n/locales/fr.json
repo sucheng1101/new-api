@@ -1173,7 +1173,7 @@
     "多密钥管理": "Gestion multi-clés",
     "多种充值方式，安全便捷": "Plusieurs méthodes de recharge, sûres et pratiques",
     "大模型接口网关": "API LLM Unifiée",
-    "天": "Jour",
+    "天": "jours",
     "天前": "il y a des jours",
     "失败": "Échec",
     "失败原因": "Raison de l'échec",
@@ -4097,6 +4097,8 @@
     "全站数据": "Données de l'ensemble du site",
     "我的数据": "Mes données",
     "平均 RPM": "RPM moyen",
-    "平均 TPM": "TPM moyen"
+    "平均 TPM": "TPM moyen",
+    "每日": "Quotidien",
+    "累计": "Cumul"
   }
 }
