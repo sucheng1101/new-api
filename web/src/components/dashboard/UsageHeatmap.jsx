@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useMemo } from 'react';
 import { Tooltip } from '@douyinfe/semi-ui';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Flame, Hash, Trophy, TrendingUp } from 'lucide-react';
 
 import { renderNumber, renderQuota } from '../../helpers';
 
@@ -54,87 +54,209 @@ const getLevel = (count, thresholds) => {
   return 4;
 };
 
+const getStreaks = (dates, today) => {
+  if (dates.length === 0) return { current: 0, longest: 0 };
+
+  let longest = 0;
+  let run = 0;
+  let previous = null;
+  dates.forEach((date) => {
+    const distance = previous
+      ? Math.round((date.getTime() - previous.getTime()) / DAY_MS)
+      : 0;
+    run = distance === 1 ? run + 1 : 1;
+    longest = Math.max(longest, run);
+    previous = date;
+  });
+
+  const activeKeys = new Set(dates.map(toDateKey));
+  const cursor = new Date(today);
+  if (!activeKeys.has(toDateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+
+  let current = 0;
+  while (activeKeys.has(toDateKey(cursor))) {
+    current += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return { current, longest };
+};
+
+const SummaryMetric = ({ icon: Icon, value, label, detail, tone }) => (
+  <div className='min-w-0 px-3 py-3 text-center sm:px-4'>
+    <div
+      className={`mx-auto flex h-7 w-7 items-center justify-center rounded-lg ${tone}`}
+    >
+      <Icon size={14} />
+    </div>
+    <div className='mt-1.5 truncate text-base font-semibold text-semi-color-text-0 sm:text-lg'>
+      {value}
+    </div>
+    <div className='mt-0.5 truncate text-[11px] text-semi-color-text-2'>
+      {label}
+    </div>
+    {detail ? (
+      <div className='mt-0.5 truncate text-[10px] text-semi-color-text-2'>
+        {detail}
+      </div>
+    ) : null}
+  </div>
+);
+
 const UsageHeatmap = ({ data = [], loading, t }) => {
-  const { cells, monthLabels, thresholds, totalRequests, activeDays } =
-    useMemo(() => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const gridStart = new Date(today.getTime() - 364 * DAY_MS);
-      gridStart.setDate(gridStart.getDate() - gridStart.getDay());
-      const gridEnd = new Date(today);
-      gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
+  const {
+    cells,
+    monthLabels,
+    thresholds,
+    totalRequests,
+    activeDays,
+    peakCount,
+    peakDate,
+    averageDaily,
+    currentStreak,
+    longestStreak,
+  } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const gridStart = new Date(today.getTime() - 364 * DAY_MS);
+    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+    const gridEnd = new Date(today);
+    gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
 
-      const byDate = new Map(
-        data.map((item) => [
-          item.date,
-          {
-            count: Number(item.count || 0),
-            quota: Number(item.quota || 0),
-            tokenUsed: Number(item.tokenUsed || 0),
-          },
-        ]),
-      );
-      const values = Array.from(byDate.values())
-        .map((item) => item.count)
-        .filter((value) => value > 0)
-        .sort((a, b) => a - b);
-      const percentile = (ratio) =>
-        values.length
-          ? values[
-              Math.min(values.length - 1, Math.floor(values.length * ratio))
-            ]
-          : 1;
-      const nextThresholds = [
-        percentile(0.25),
-        percentile(0.5),
-        percentile(0.75),
-      ];
+    const byDate = new Map(
+      data.map((item) => [
+        item.date,
+        {
+          count: Number(item.count || 0),
+          quota: Number(item.quota || 0),
+          tokenUsed: Number(item.tokenUsed || 0),
+        },
+      ]),
+    );
+    const activeEntries = Array.from(byDate.entries())
+      .filter(([, item]) => item.count > 0)
+      .sort(([left], [right]) => left.localeCompare(right));
+    const values = activeEntries
+      .map(([, item]) => item.count)
+      .sort((a, b) => a - b);
+    const percentile = (ratio) =>
+      values.length
+        ? values[Math.min(values.length - 1, Math.floor(values.length * ratio))]
+        : 1;
+    const nextThresholds = [
+      percentile(0.25),
+      percentile(0.5),
+      percentile(0.75),
+    ];
 
-      const nextCells = [];
-      const nextMonthLabels = [];
-      const cursor = new Date(gridStart);
-      let column = 0;
-      while (cursor <= gridEnd) {
-        for (let row = 0; row < 7; row += 1) {
-          const date = new Date(cursor.getTime() + row * DAY_MS);
-          const key = toDateKey(date);
-          const value = byDate.get(key) || {
-            count: 0,
-            quota: 0,
-            tokenUsed: 0,
-          };
-          nextCells.push({
-            key,
-            date,
-            value,
-            column,
-            row,
-            future: date > today,
-          });
-        }
-        if (cursor.getDate() <= 7 || column === 0) {
-          nextMonthLabels.push({
-            label: new Intl.DateTimeFormat(undefined, {
-              month: 'short',
-            }).format(cursor),
-            column,
-          });
-        }
-        cursor.setDate(cursor.getDate() + 7);
-        column += 1;
+    const nextCells = [];
+    const nextMonthLabels = [];
+    const cursor = new Date(gridStart);
+    let column = 0;
+    while (cursor <= gridEnd) {
+      for (let row = 0; row < 7; row += 1) {
+        const date = new Date(cursor.getTime() + row * DAY_MS);
+        const key = toDateKey(date);
+        const value = byDate.get(key) || {
+          count: 0,
+          quota: 0,
+          tokenUsed: 0,
+        };
+        nextCells.push({
+          key,
+          date,
+          value,
+          column,
+          row,
+          future: date > today,
+        });
       }
+      if (cursor.getDate() <= 7 || column === 0) {
+        nextMonthLabels.push({
+          label: new Intl.DateTimeFormat(undefined, {
+            month: 'short',
+          }).format(cursor),
+          column,
+        });
+      }
+      cursor.setDate(cursor.getDate() + 7);
+      column += 1;
+    }
 
-      return {
-        cells: nextCells,
-        monthLabels: nextMonthLabels,
-        thresholds: nextThresholds,
-        totalRequests: values.reduce((sum, value) => sum + value, 0),
-        activeDays: values.length,
-      };
-    }, [data]);
+    const peak = activeEntries.reduce(
+      (result, [date, item]) =>
+        item.count > result.count ? { date, count: item.count } : result,
+      { date: '', count: 0 },
+    );
+    const activeDates = activeEntries.map(
+      ([date]) => new Date(`${date}T00:00:00`),
+    );
+    const streaks = getStreaks(activeDates, today);
+    const requestTotal = values.reduce((sum, value) => sum + value, 0);
+
+    return {
+      cells: nextCells,
+      monthLabels: nextMonthLabels,
+      thresholds: nextThresholds,
+      totalRequests: requestTotal,
+      activeDays: values.length,
+      peakCount: peak.count,
+      peakDate: peak.date ? new Date(`${peak.date}T00:00:00`) : null,
+      averageDaily: values.length
+        ? Math.round(requestTotal / values.length)
+        : 0,
+      currentStreak: streaks.current,
+      longestStreak: streaks.longest,
+    };
+  }, [data]);
+
+  const summaryMetrics = [
+    {
+      icon: Hash,
+      value: loading ? '—' : renderNumber(totalRequests),
+      label: t('累计调用次数'),
+      tone: 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300',
+    },
+    {
+      icon: TrendingUp,
+      value: loading ? '—' : renderNumber(peakCount),
+      label: t('峰值调用次数'),
+      detail: peakDate ? formatDate(peakDate) : t('暂无数据'),
+      tone: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300',
+    },
+    {
+      icon: CalendarDays,
+      value: loading ? '—' : renderNumber(averageDaily),
+      label: t('平均每日调用'),
+      tone: 'bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300',
+    },
+    {
+      icon: Flame,
+      value: loading ? '—' : `${renderNumber(currentStreak)} ${t('天')}`,
+      label: t('当前连续天数'),
+      tone: 'bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-300',
+    },
+    {
+      icon: Trophy,
+      value: loading ? '—' : `${renderNumber(longestStreak)} ${t('天')}`,
+      label: t('最长连续天数'),
+      tone: 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300',
+    },
+  ];
 
   return (
     <div className='w-full min-w-0'>
+      <div className='mb-3 grid grid-cols-2 overflow-hidden rounded-xl bg-semi-color-fill-0 sm:grid-cols-3 lg:grid-cols-5'>
+        {summaryMetrics.map((metric, index) => (
+          <div
+            key={metric.label}
+            className={`${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''} border-semi-color-border`}
+          >
+            <SummaryMetric {...metric} />
+          </div>
+        ))}
+      </div>
+
       <div className='mb-3 flex flex-wrap items-center justify-between gap-2'>
         <div className='flex items-center gap-2'>
           <span className='flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300'>
