@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Button, Typography } from '@douyinfe/semi-ui';
-import { BarChart2, Receipt, TrendingUp } from 'lucide-react';
+import {
+  Award,
+  BarChart2,
+  Gift,
+  Receipt,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
 
 const { Text } = Typography;
 
@@ -31,18 +38,32 @@ const WalletOverview = ({ t, userState, renderQuota, onOpenHistory }) => {
       label: t('现金余额'),
       value: user.cash_quota || 0,
       note: t('按充值批次先进先出'),
+      icon: Wallet,
+      tone: 'cash',
     },
     {
       key: 'gift',
       label: t('赠送余额'),
       value: user.gift_quota || 0,
       note: t('优先消费'),
+      icon: Gift,
+      tone: 'gift',
     },
     {
       key: 'promotion',
       label: t('推广余额'),
       value: user.aff_quota || 0,
-      note: t('仅可转入赠送余额，不支持提现'),
+      note: t('当前可划转，不支持提现'),
+      icon: TrendingUp,
+      tone: 'promotion',
+    },
+    {
+      key: 'promotion-history',
+      label: t('累计推广奖励'),
+      value: user.aff_history_quota || 0,
+      note: t('历史累计获得，划转后不减少'),
+      icon: Award,
+      tone: 'promotion-history',
     },
   ];
 
@@ -69,11 +90,14 @@ const WalletOverview = ({ t, userState, renderQuota, onOpenHistory }) => {
       </div>
       <div className='wallet-overview-body'>
         <div className='wallet-overview-main'>
-          <div>
+          <div className='wallet-overview-main-top'>
             <div className='wallet-overview-total'>
               {renderQuota(user.quota)}
             </div>
             <div className='wallet-overview-label'>{t('总可用余额')}</div>
+            <div className='wallet-overview-total-note'>
+              {t('现金余额 + 赠送余额')}
+            </div>
           </div>
           <div className='wallet-overview-meta'>
             <div className='wallet-overview-meta-row'>
@@ -90,11 +114,18 @@ const WalletOverview = ({ t, userState, renderQuota, onOpenHistory }) => {
             </div>
           </div>
         </div>
-        <div className='wallet-overview-divider' />
         <div className='wallet-overview-subs'>
-          {subBalances.map((item) => (
-            <div className='wallet-overview-sub' key={item.key}>
-              <div className='wallet-overview-label'>{item.label}</div>
+          {subBalances.map(({ icon: Icon, ...item }) => (
+            <div
+              className={`wallet-overview-sub wallet-overview-sub-${item.tone}`}
+              key={item.key}
+            >
+              <div className='wallet-overview-sub-head'>
+                <span className='wallet-overview-sub-icon'>
+                  <Icon size={14} />
+                </span>
+                <div className='wallet-overview-label'>{item.label}</div>
+              </div>
               <div className='wallet-overview-sub-value'>
                 {renderQuota(item.value)}
               </div>
