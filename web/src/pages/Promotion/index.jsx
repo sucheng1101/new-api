@@ -41,11 +41,15 @@ import { useTranslation } from 'react-i18next';
 import {
   API,
   copy,
-  getQuotaPerUnit,
+  getCurrencyConfig,
   renderQuota,
   showError,
   showSuccess,
 } from '../../helpers';
+import {
+  displayAmountToQuota,
+  quotaToDisplayAmount,
+} from '../../helpers/quota';
 
 const REWARD_STATUS_META = {
   credited: { label: '已入账', color: 'green' },
@@ -60,7 +64,7 @@ const Promotion = () => {
   const [rewards, setRewards] = useState([]);
   const [invitees, setInvitees] = useState([]);
   const [affCode, setAffCode] = useState('');
-  const [transferQuota, setTransferQuota] = useState(getQuotaPerUnit());
+  const [transferAmount, setTransferAmount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [transferLoading, setTransferLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('rewards');
@@ -70,6 +74,9 @@ const Promotion = () => {
     [affCode],
   );
   const availableAffQuota = Number(summary?.aff_quota || 0);
+  const availableAffAmount = quotaToDisplayAmount(availableAffQuota);
+  const currencyConfig = getCurrencyConfig();
+  const transferStep = currencyConfig.type === 'TOKENS' ? 1 : 0.01;
   const directInvitees = useMemo(
     () => invitees.filter((item) => Number(item.level) === 1).length,
     [invitees],
@@ -94,7 +101,11 @@ const Promotion = () => {
         API.get('/api/user/promotion/invitees?limit=100'),
         API.get('/api/user/aff'),
       ]);
-      if (summaryRes.data?.success) setSummary(summaryRes.data.data);
+      if (summaryRes.data?.success) {
+        const nextSummary = summaryRes.data.data;
+        setSummary(nextSummary);
+        setTransferAmount(quotaToDisplayAmount(nextSummary?.aff_quota || 0));
+      }
       if (rewardsRes.data?.success)
         setRewards(rewardsRes.data.data?.items || []);
       if (inviteesRes.data?.success)
@@ -118,7 +129,13 @@ const Promotion = () => {
   };
 
   const transfer = async () => {
-    const quota = Number(transferQuota);
+    const amount = Number(transferAmount);
+    const isFullBalance =
+      Number.isFinite(amount) &&
+      Math.abs(amount - availableAffAmount) <= Number.EPSILON * 10;
+    const quota = isFullBalance
+      ? availableAffQuota
+      : displayAmountToQuota(amount);
     if (!Number.isInteger(quota) || quota <= 0 || quota > availableAffQuota) {
       Toast.error({ content: t('请输入有效的转入额度') });
       return;
@@ -251,18 +268,19 @@ const Promotion = () => {
             </strong>
             <InputNumber
               className='promotion-transfer-input'
-              value={transferQuota}
-              min={getQuotaPerUnit()}
-              max={availableAffQuota}
-              step={getQuotaPerUnit()}
-              onChange={setTransferQuota}
-              placeholder={t('转入赠送余额')}
+              value={transferAmount}
+              min={0}
+              max={availableAffAmount}
+              step={transferStep}
+              prefix={currencyConfig.symbol || undefined}
+              onChange={setTransferAmount}
+              placeholder={t('输入金额')}
             />
             <Button
               theme='solid'
               type='primary'
               loading={transferLoading}
-              disabled={availableAffQuota < getQuotaPerUnit()}
+              disabled={availableAffQuota <= 0}
               onClick={transfer}
             >
               {t('立即转入')}
