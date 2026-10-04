@@ -26,7 +26,7 @@ import { renderNumber, renderQuota } from '../../helpers';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const VIEW_MODES = ['daily', 'weekly', 'cumulative'];
 const LEVEL_COLORS = [
-  null,
+  'var(--semi-color-fill-0)',
   'rgba(var(--semi-green-1), 1)',
   'rgba(var(--semi-green-3), 1)',
   'rgba(var(--semi-green-5), 1)',
@@ -352,7 +352,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
                 aria-pressed={viewMode === mode}
                 className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
                   viewMode === mode
-                    ? 'bg-semi-color-bg-2 font-medium text-semi-color-text-0 shadow-sm'
+                    ? 'bg-semi-color-primary-light-default text-semi-color-primary shadow-sm'
                     : 'text-semi-color-text-2 hover:text-semi-color-text-0'
                 }`}
                 onClick={() => setViewMode(mode)}
@@ -457,7 +457,7 @@ const UsageHeatmap = ({ data = [], loading, t }) => {
         <span>{t('按调用次数')}</span>
         <div className='flex items-center gap-1'>
           <span>{t('少')}</span>
-          {LEVEL_COLORS.slice(1).map((color, index) => (
+          {LEVEL_COLORS.map((color, index) => (
             <span
               key={index}
               className='h-3 w-3 rounded-[3px]'
