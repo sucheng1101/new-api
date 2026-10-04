@@ -837,7 +837,7 @@ const NotificationSettings = ({
                   uncheckedText={t('关')}
                   onChange={(value) => handleFormChange('recordIpLog', value)}
                   extraText={t(
-                    '开启后，仅"消费"和"错误"日志将记录您的客户端IP地址',
+                    '开启后，仅控制用户侧显示"消费"和"错误"日志IP，后台始终记录',
                   )}
                 />
               </div>

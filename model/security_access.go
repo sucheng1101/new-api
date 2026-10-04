@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -113,47 +114,118 @@ type SecurityIPRisk struct {
 }
 
 func GetSecurityIPRisks(startTimestamp, endTimestamp int64, limit int) ([]SecurityIPRisk, error) {
-	if LOG_DB == nil {
+	if DB == nil && LOG_DB == nil {
 		return []SecurityIPRisk{}, nil
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	rows := make([]SecurityIPRisk, 0)
-	query := LOG_DB.Model(&AuditLog{}).
-		Select("ip AS address, COUNT(DISTINCT user_id) AS user_count, COUNT(*) AS event_count, MAX(created_at) AS last_seen").
-		Where("ip <> ''")
-	if startTimestamp > 0 {
-		query = query.Where("created_at >= ?", startTimestamp)
+	type userIPRow struct {
+		Address   string
+		UserCount int64
+		LastSeen  int64
 	}
-	if endTimestamp > 0 {
-		query = query.Where("created_at <= ?", endTimestamp)
+	type auditIPRow struct {
+		Address    string
+		UserCount  int64
+		EventCount int64
+		LastSeen   int64
 	}
-	if err := query.Group("ip").Order("event_count DESC").Limit(limit * 4).Scan(&rows).Error; err != nil {
-		return nil, err
+	type riskAggregate struct {
+		SecurityIPRisk
 	}
-	filtered := make([]SecurityIPRisk, 0, len(rows))
-	for _, row := range rows {
-		userCount := row.UserCount
-		if DB != nil {
-			var registered int64
-			if err := DB.Model(&User{}).Where("register_ip = ?", row.Address).Count(&registered).Error; err != nil {
-				return nil, err
+	aggregates := make(map[string]*riskAggregate)
+
+	if DB != nil {
+		users := make([]userIPRow, 0)
+		query := DB.Model(&User{}).
+			Select("register_ip AS address, COUNT(*) AS user_count, MAX(created_at) AS last_seen").
+			Where("register_ip IS NOT NULL AND register_ip <> ''").
+			Group("register_ip").
+			Having("COUNT(*) >= ?", 2)
+		if startTimestamp > 0 {
+			query = query.Where("created_at >= ?", startTimestamp)
+		}
+		if endTimestamp > 0 {
+			query = query.Where("created_at <= ?", endTimestamp)
+		}
+		if err := query.Scan(&users).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range users {
+			address := strings.TrimSpace(row.Address)
+			if address == "" {
+				continue
 			}
-			if registered > userCount {
-				userCount = registered
+			aggregates[address] = &riskAggregate{
+				SecurityIPRisk: SecurityIPRisk{
+					Address:   address,
+					UserCount: row.UserCount,
+					LastSeen:  row.LastSeen,
+				},
 			}
 		}
-		if userCount < 2 {
+	}
+
+	if LOG_DB != nil {
+		audits := make([]auditIPRow, 0)
+		query := LOG_DB.Model(&AuditLog{}).
+			Select("ip AS address, COUNT(DISTINCT user_id) AS user_count, COUNT(*) AS event_count, MAX(created_at) AS last_seen").
+			Where("ip IS NOT NULL AND ip <> ''")
+		if startTimestamp > 0 {
+			query = query.Where("created_at >= ?", startTimestamp)
+		}
+		if endTimestamp > 0 {
+			query = query.Where("created_at <= ?", endTimestamp)
+		}
+		if err := query.Group("ip").Scan(&audits).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range audits {
+			address := strings.TrimSpace(row.Address)
+			if address == "" {
+				continue
+			}
+			aggregate, ok := aggregates[address]
+			if !ok {
+				aggregate = &riskAggregate{SecurityIPRisk: SecurityIPRisk{Address: address}}
+				aggregates[address] = aggregate
+			}
+			if row.UserCount > aggregate.UserCount {
+				aggregate.UserCount = row.UserCount
+			}
+			if row.EventCount > aggregate.EventCount {
+				aggregate.EventCount = row.EventCount
+			}
+			if row.LastSeen > aggregate.LastSeen {
+				aggregate.LastSeen = row.LastSeen
+			}
+		}
+	}
+
+	rows := make([]SecurityIPRisk, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		if aggregate.UserCount < 2 {
 			continue
 		}
-		row.UserCount = userCount
-		filtered = append(filtered, row)
-		if len(filtered) >= limit {
-			break
-		}
+		rows = append(rows, aggregate.SecurityIPRisk)
 	}
-	return filtered, nil
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].UserCount != rows[j].UserCount {
+			return rows[i].UserCount > rows[j].UserCount
+		}
+		if rows[i].EventCount != rows[j].EventCount {
+			return rows[i].EventCount > rows[j].EventCount
+		}
+		if rows[i].LastSeen != rows[j].LastSeen {
+			return rows[i].LastSeen > rows[j].LastSeen
+		}
+		return rows[i].Address < rows[j].Address
+	})
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	return rows, nil
 }
 
 func CountAuditEvents(startTimestamp, endTimestamp int64) (int64, error) {

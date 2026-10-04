@@ -91,6 +91,69 @@ func TestFormatUserLogsStripsSensitiveScopes(t *testing.T) {
 	}
 }
 
+func TestFormatUserLogsRequestErrorIPVisibility(t *testing.T) {
+	logs := []*Log{
+		{Type: LogTypeConsume, Ip: "203.0.113.10"},
+		{Type: LogTypeError, Ip: "203.0.113.11"},
+		{Type: LogTypeTopup, Ip: "203.0.113.12"},
+	}
+
+	FormatUserLogs(logs, 0)
+	assert.Empty(t, logs[0].Ip)
+	assert.Empty(t, logs[1].Ip)
+	assert.Equal(t, "203.0.113.12", logs[2].Ip)
+
+	logs = []*Log{
+		{Type: LogTypeConsume, Ip: "203.0.113.10"},
+		{Type: LogTypeError, Ip: "203.0.113.11"},
+	}
+	FormatUserLogsWithIP(logs, 0, true)
+	assert.Equal(t, "203.0.113.10", logs[0].Ip)
+	assert.Equal(t, "203.0.113.11", logs[1].Ip)
+}
+
+func TestGetUserLogsAppliesRequestErrorIPPreference(t *testing.T) {
+	modelTestDBMutex.Lock()
+	defer modelTestDBMutex.Unlock()
+
+	previousDB, previousLogDB := DB, LOG_DB
+	previousRedisEnabled := common.RedisEnabled
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&User{}, &Log{}))
+	DB, LOG_DB = database, database
+	common.RedisEnabled = false
+	t.Cleanup(func() {
+		DB, LOG_DB = previousDB, previousLogDB
+		common.RedisEnabled = previousRedisEnabled
+		if sqlDB, closeErr := database.DB(); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	user := &User{Id: 601, Username: "ip-visibility", AffCode: "ip-visibility-code", Setting: `{"record_ip_log":false}`}
+	require.NoError(t, database.Create(user).Error)
+	require.NoError(t, database.Create(&Log{
+		UserId:    user.Id,
+		Type:      LogTypeConsume,
+		Username:  user.Username,
+		CreatedAt: 100,
+		Ip:        "203.0.113.60",
+	}).Error)
+
+	logs, _, err := GetUserLogs(user.Id, LogTypeUnknown, 0, 0, "", "", 0, 20, "", "", "")
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	assert.Empty(t, logs[0].Ip)
+
+	user.Setting = `{"record_ip_log":true}`
+	require.NoError(t, database.Model(user).Update("setting", user.Setting).Error)
+	logs, _, err = GetUserLogs(user.Id, LogTypeUnknown, 0, 0, "", "", 0, 20, "", "", "")
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	assert.Equal(t, "203.0.113.60", logs[0].Ip)
+}
+
 func TestRelayLogsPersistAndFilterUpstreamRequestID(t *testing.T) {
 	modelTestDBMutex.Lock()
 	defer modelTestDBMutex.Unlock()
@@ -140,5 +203,6 @@ func TestRelayLogsPersistAndFilterUpstreamRequestID(t *testing.T) {
 	for _, log := range logs {
 		assert.Equal(t, "gateway-request-id", log.RequestId)
 		assert.Equal(t, "upstream-request-id", log.UpstreamRequestId)
+		assert.NotEmpty(t, log.Ip)
 	}
 }
