@@ -59,7 +59,10 @@ const OtherSetting = () => {
     content: '',
     html_url: '',
     source: '',
+    published_at: '',
   });
+  const [updateRunning, setUpdateRunning] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState('');
 
   const updateOption = async (key, value) => {
     setLoading(true);
@@ -290,6 +293,7 @@ const OtherSetting = () => {
         content: marked.parse(release.body || ''),
         html_url: release.html_url || '',
         source: data.source || '',
+        published_at: release.published_at || '',
       });
       setShowUpdateModal(true);
     } catch (error) {
@@ -300,6 +304,27 @@ const OtherSetting = () => {
         ...loadingInput,
         CheckUpdate: false,
       }));
+    }
+  };
+  const startUpdate = async () => {
+    try {
+      setUpdateRunning(true);
+      setUpdateMessage('正在下载、校验并备份当前版本…');
+      await API.post('/api/status/update', { tag: updateData.tag_name });
+      const timer = setInterval(async () => {
+        const response = await API.get('/api/status/update');
+        const state = response.data?.data;
+        setUpdateMessage(state?.message || '升级处理中…');
+        if (!state?.running) {
+          clearInterval(timer);
+          setUpdateRunning(false);
+          if (state?.message === 'completed') showSuccess('升级完成，请刷新页面');
+          else showError(`升级失败：${state?.log || state?.message || '未知错误'}`);
+        }
+      }, 2000);
+    } catch (error) {
+      setUpdateRunning(false);
+      showError(error?.response?.data?.message || '升级启动失败');
     }
   };
   const getOptions = async () => {
@@ -541,6 +566,9 @@ const OtherSetting = () => {
         visible={showUpdateModal}
         onCancel={() => setShowUpdateModal(false)}
         footer={[
+          <Button key='update' type='primary' theme='solid' loading={updateRunning} onClick={startUpdate}>
+            {updateRunning ? updateMessage : '立即升级'}
+          </Button>,
           <Button
             key='details'
             type='primary'
@@ -553,7 +581,10 @@ const OtherSetting = () => {
           </Button>,
         ]}
       >
+        <Text>来源：{updateData.source || 'GitHub'}</Text>
+        {updateData.published_at && <Text type='tertiary'>发布时间：{updateData.published_at}</Text>}
         <div dangerouslySetInnerHTML={{ __html: updateData.content }}></div>
+        <Text type='tertiary'>升级会自动下载并校验制品，备份当前程序；启动失败时自动回滚。</Text>
       </Modal>
     </Row>
   );
