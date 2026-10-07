@@ -569,7 +569,7 @@ const OtherSetting = () => {
           </Card>
         </Form>
       </Col>
-      <Modal
+      <Modal width={560}
         title={t('新版本') + '：' + updateData.tag_name}
         visible={showUpdateModal}
         onCancel={() => setShowUpdateModal(false)}
