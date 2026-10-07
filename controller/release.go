@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -20,6 +23,13 @@ type releaseSource struct {
 var projectReleaseSources = []releaseSource{
 	{Name: "github", URL: "https://api.github.com/repos/sucheng1101/new-api/releases/latest"},
 	{Name: "gitee", URL: "https://gitee.com/api/v5/repos/sucheng1101/new-api/releases/latest"},
+}
+
+var releaseCache struct {
+	sync.RWMutex
+	release latestRelease
+	source  string
+	at      time.Time
 }
 
 type releaseAsset struct {
@@ -44,6 +54,15 @@ type latestRelease struct {
 // endpoint instead of reaching a forge directly so source fallback stays
 // consistent between local and production instances.
 func GetLatestRelease(c *gin.Context) {
+	releaseCache.RLock()
+	if releaseCache.release.TagName != "" && time.Since(releaseCache.at) < 10*time.Minute {
+		cached := releaseCache.release
+		source := releaseCache.source
+		releaseCache.RUnlock()
+		common.ApiSuccess(c, gin.H{"source": source, "release": cached})
+		return
+	}
+	releaseCache.RUnlock()
 	ctx, cancel := context.WithTimeout(c.Request.Context(), releaseRequestTimeout)
 	defer cancel()
 
@@ -53,6 +72,9 @@ func GetLatestRelease(c *gin.Context) {
 		if err != nil || release.TagName == "" || release.Draft {
 			continue
 		}
+		releaseCache.Lock()
+		releaseCache.release, releaseCache.source, releaseCache.at = release, source.Name, time.Now()
+		releaseCache.Unlock()
 
 		common.ApiSuccess(c, gin.H{
 			"source":  source.Name,
@@ -61,7 +83,7 @@ func GetLatestRelease(c *gin.Context) {
 		return
 	}
 
-	common.ApiErrorMsg(c, "No project release is available yet.")
+	common.ApiErrorMsg(c, "Release service is temporarily unavailable or rate-limited.")
 }
 
 func fetchLatestRelease(ctx context.Context, client *http.Client, endpoint string) (latestRelease, error) {
@@ -71,6 +93,9 @@ func fetchLatestRelease(ctx context.Context, client *http.Client, endpoint strin
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "new-api-update-checker")
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" && strings.Contains(endpoint, "api.github.com") {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
