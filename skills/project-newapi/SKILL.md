@@ -46,6 +46,15 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Frontend format check: `cd web; bun run lint` (documented, unverified in this draft).
 - Frontend ESLint: `cd web; bun run eslint` (documented, unverified in this draft).
 - Frontend i18n: `bun run i18n:extract`, `bun run i18n:sync`, `bun run i18n:lint` from `web/`.
+- Local startup: `powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1`.
+- Local acceptance: `powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1`.
+
+## Local Runtime Safety Standard
+
+- Never start a second instance over an existing project process. `local-start.ps1` stops only processes whose command line belongs to this repository, then verifies the port is free.
+- Every start/restart must verify `/api/status`, `/api/status/latest-release`, the frontend root page, the running version, and the latest Git commit/release response.
+- If a port is occupied by an unrelated process, stop and report the PID; do not force-kill it.
+- Treat stale processes and browser caches as deployment defects: restart the project process before investigating UI behavior.
 
 ## Engineering Rules
 
