@@ -63,6 +63,9 @@ const OtherSetting = () => {
   });
   const [updateRunning, setUpdateRunning] = useState(false);
   const [updateMessage, setUpdateMessage] = useState('');
+  const [updateMode, setUpdateMode] = useState('systemd');
+  const [updatePhase, setUpdatePhase] = useState('idle');
+  const [updateLog, setUpdateLog] = useState('');
 
   const updateOption = async (key, value) => {
     setLoading(true);
@@ -314,6 +317,9 @@ const OtherSetting = () => {
       const timer = setInterval(async () => {
         const response = await API.get('/api/status/update');
         const state = response.data?.data;
+        setUpdateMode(state?.mode || 'systemd');
+        setUpdateLog(state?.log || '');
+        setUpdatePhase(state?.running ? 'running' : state?.message === 'completed' ? 'completed' : 'failed');
         setUpdateMessage(state?.message || '升级处理中…');
         if (!state?.running) {
           clearInterval(timer);
@@ -327,6 +333,8 @@ const OtherSetting = () => {
       showError(error?.response?.data?.message || '升级启动失败');
     }
   };
+  const modeLabel = { windows: 'Windows 本地程序', docker: 'Docker / Compose', systemd: 'Linux systemd' }[updateMode] || '自动识别';
+  const updateSteps = ['检查运行环境', '下载升级包', '校验 SHA-256', '备份当前版本', '替换并重启服务', '健康检查'];
   const getOptions = async () => {
     const res = await API.get('/api/option/');
     const { success, message, data } = res.data;
@@ -583,7 +591,18 @@ const OtherSetting = () => {
       >
         <Text>来源：{updateData.source || 'GitHub'}</Text>
         {updateData.published_at && <Text type='tertiary'>发布时间：{updateData.published_at}</Text>}
-        <div dangerouslySetInnerHTML={{ __html: updateData.content }}></div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18 }}>
+          <div style={{ flex: 1, padding: 16, borderRadius: 12, background: '#f5f7fa' }}><Text type='tertiary'>当前版本</Text><div style={{ fontSize: 24, fontWeight: 700 }}>{statusState?.status?.version || 'v0.0.0'}</div></div>
+          <div style={{ color: '#9ca3af', fontSize: 22 }}>→</div>
+          <div style={{ flex: 1, padding: 16, borderRadius: 12, background: '#eef6ff' }}><Text type='tertiary'>最新版本</Text><div style={{ fontSize: 24, fontWeight: 700, color: '#1677ff' }}>{updateData.tag_name}</div></div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}><span style={{ padding: '4px 10px', borderRadius: 999, background: '#f0f5ff', color: '#1677ff' }}>{updateData.source || 'GitHub'}</span><span style={{ padding: '4px 10px', borderRadius: 999, background: '#f5f5f5' }}>{modeLabel}</span>{updateData.published_at && <span style={{ padding: '4px 10px', borderRadius: 999, background: '#f5f5f5' }}>{updateData.published_at}</span>}</div>
+        <div style={{ maxHeight: 220, overflow: 'auto', padding: '4px 4px 4px 0' }} dangerouslySetInnerHTML={{ __html: updateData.content }} />
+        {(updateRunning || updatePhase !== 'idle') && <div style={{ marginTop: 18, padding: 16, borderRadius: 12, background: '#fafafa' }}>
+          <div style={{ fontWeight: 600, marginBottom: 12 }}>{updatePhase === 'completed' ? '升级完成' : updatePhase === 'failed' ? '升级失败，已尝试回滚' : updateMessage || '升级处理中'}</div>
+          {updateSteps.map((label, index) => { const done = updatePhase === 'completed' || (updatePhase === 'running' && index < 3); const active = updatePhase === 'running' && index === 3; return <div key={label} style={{ display: 'flex', gap: 10, padding: '5px 0', color: done ? '#16a34a' : active ? '#1677ff' : '#9ca3af' }}><span>{done ? '✓' : active ? '●' : '○'}</span><span>{label}</span></div>; })}
+          {updateLog && <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'auto', marginTop: 10, fontSize: 11 }}>{updateLog}</pre>}
+        </div>}
         <Text type='tertiary'>升级会自动下载并校验制品，备份当前程序；启动失败时自动回滚。</Text>
       </Modal>
     </Row>
