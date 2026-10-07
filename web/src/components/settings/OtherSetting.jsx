@@ -591,6 +591,10 @@ const OtherSetting = () => {
       >
         <Text>来源：{updateData.source || 'GitHub'}</Text>
         {updateData.published_at && <Text type='tertiary'>发布时间：{updateData.published_at}</Text>}
+        <div style={{ padding: '12px 14px', marginBottom: 14, borderRadius: 10, background: 'linear-gradient(135deg,#f8fbff,#eef6ff)', border: '1px solid #dcecff' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#1d2939' }}>发现新的稳定版本</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: '#667085' }}>建议在业务低峰期升级，系统会自动备份并支持失败回滚。</div>
+        </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18 }}>
           <div style={{ flex: 1, padding: 16, borderRadius: 12, background: '#f5f7fa' }}><Text type='tertiary'>当前版本</Text><div style={{ fontSize: 24, fontWeight: 700 }}>{statusState?.status?.version || 'v0.0.0'}</div></div>
           <div style={{ color: '#9ca3af', fontSize: 22 }}>→</div>
