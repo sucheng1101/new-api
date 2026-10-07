@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -21,7 +22,20 @@ var updateState = struct {
 func GetUpdateStatus(c *gin.Context) {
 	updateState.RLock()
 	defer updateState.RUnlock()
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"running": updateState.running, "message": updateState.message, "log": updateState.log}})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"running": updateState.running, "message": updateState.message, "log": updateState.log, "mode": updateMode()}})
+}
+
+func updateMode() string {
+	if mode := os.Getenv("NEW_API_UPDATE_MODE"); mode != "" {
+		return mode
+	}
+	if os.Getenv("COMPOSE_PROJECT_NAME") != "" || os.Getenv("NEW_API_DOCKER") == "1" {
+		return "docker"
+	}
+	if runtime.GOOS == "windows" {
+		return "windows"
+	}
+	return "systemd"
 }
 
 func StartUpdate(c *gin.Context) {
@@ -47,9 +61,20 @@ func StartUpdate(c *gin.Context) {
 
 func runUpdate(tag string) {
 	root, _ := os.Getwd()
-	script := filepath.Join(root, "scripts", "production-update.sh")
-	cmd := exec.Command("bash", script)
-	cmd.Env = append(os.Environ(), "RELEASE_TAG="+tag, "CONFIRM_RELEASE=YES")
+	var cmd *exec.Cmd
+	switch updateMode() {
+	case "windows":
+		script := filepath.Join(root, "scripts", "update-local.ps1")
+		cmd = exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", script, "-Tag", tag, "-StopProcess")
+	case "docker":
+		script := filepath.Join(root, "scripts", "production-update-compose.sh")
+		cmd = exec.Command("bash", script)
+		cmd.Env = append(os.Environ(), "RELEASE_TAG="+tag, "CONFIRM_RELEASE=YES")
+	default:
+		script := filepath.Join(root, "scripts", "production-update.sh")
+		cmd = exec.Command("bash", script)
+		cmd.Env = append(os.Environ(), "RELEASE_TAG="+tag, "CONFIRM_RELEASE=YES")
+	}
 	out, err := cmd.CombinedOutput()
 	updateState.Lock()
 	defer updateState.Unlock()
