@@ -36,7 +36,7 @@ func TestLookupIPGeoCachesResolvedAddress(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"country":"Testland","region":"Test Region","city":"Test City","connection_org":"Test ISP","connection_asn":"AS64500","timezone_id":"UTC"}`))
+		_, _ = w.Write([]byte(`{"success":true,"country":"Testland","region":"Test Region","city":"Test City","connection":{"isp":"Test ISP","asn":64500},"timezone":{"id":"UTC"}}`))
 	}))
 	defer provider.Close()
 

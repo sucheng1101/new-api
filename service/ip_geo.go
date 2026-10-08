@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,13 +25,17 @@ type IPGeo struct {
 }
 
 type ipGeoProviderResponse struct {
-	Success  bool   `json:"success"`
-	Country  string `json:"country"`
-	Region   string `json:"region"`
-	City     string `json:"city"`
-	ISP      string `json:"connection_org"`
-	ASN      string `json:"connection_asn"`
-	Timezone string `json:"timezone_id"`
+	Success    bool   `json:"success"`
+	Country    string `json:"country"`
+	Region     string `json:"region"`
+	City       string `json:"city"`
+	Connection struct {
+		ISP string      `json:"isp"`
+		ASN json.Number `json:"asn"`
+	} `json:"connection"`
+	Timezone struct {
+		ID string `json:"id"`
+	} `json:"timezone"`
 }
 
 type ipGeoCacheEntry struct {
@@ -81,7 +86,19 @@ func LookupIPGeo(ctx context.Context, address string) IPGeo {
 	if err := common.DecodeJson(resp.Body, &payload); err != nil || !payload.Success {
 		return IPGeo{Status: "error", Country: "暂无归属地"}
 	}
-	value := IPGeo{Status: "resolved", Country: payload.Country, Region: payload.Region, City: payload.City, ISP: payload.ISP, ASN: payload.ASN, Timezone: payload.Timezone}
+	asn := strings.TrimSpace(payload.Connection.ASN.String())
+	if asn != "" && !strings.HasPrefix(asn, "AS") {
+		asn = "AS" + asn
+	}
+	value := IPGeo{
+		Status:   "resolved",
+		Country:  payload.Country,
+		Region:   payload.Region,
+		City:     payload.City,
+		ISP:      payload.Connection.ISP,
+		ASN:      asn,
+		Timezone: payload.Timezone.ID,
+	}
 	ipGeoCache.Lock()
 	ipGeoCache.items[key] = ipGeoCacheEntry{value: value, at: time.Now()}
 	ipGeoCache.Unlock()
