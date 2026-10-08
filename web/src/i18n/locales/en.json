@@ -4251,6 +4251,18 @@
     "本机地址": "This device",
     "内网地址": "Private network",
     "无效 IP": "Invalid IP",
-    "暂无归属地": "No geolocation available"
+    "暂无归属地": "No geolocation available",
+    "登录失败": "Sign-in failed",
+    "退出登录": "Sign out",
+    "查询钱包": "View wallet",
+    "钱包操作": "Wallet operation",
+    "更新钱包": "Update wallet",
+    "删除钱包": "Delete wallet",
+    "发起充值": "Start top-up",
+    "发起 Stripe 充值": "Start Stripe top-up",
+    "发起 Waffo 充值": "Start Waffo top-up",
+    "发起 Waffo Pancake 充值": "Start Waffo Pancake top-up",
+    "用户操作": "User operation",
+    "其他操作": "Other operation"
   }
 }

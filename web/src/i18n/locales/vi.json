@@ -4629,6 +4629,16 @@
     "内网地址": "Mạng riêng",
     "无效 IP": "IP không hợp lệ",
     "暂无归属地": "Không có thông tin định vị",
-    "时区": "Múi giờ"
+    "时区": "Múi giờ",
+    "查询钱包": "Xem ví",
+    "钱包操作": "Thao tác ví",
+    "更新钱包": "Cập nhật ví",
+    "删除钱包": "Xóa khỏi ví",
+    "发起充值": "Bắt đầu nạp tiền",
+    "发起 Stripe 充值": "Bắt đầu nạp tiền Stripe",
+    "发起 Waffo 充值": "Bắt đầu nạp tiền Waffo",
+    "发起 Waffo Pancake 充值": "Bắt đầu nạp tiền Waffo Pancake",
+    "用户操作": "Thao tác người dùng",
+    "其他操作": "Thao tác khác"
   }
 }

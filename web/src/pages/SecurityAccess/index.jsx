@@ -32,6 +32,31 @@ const formatTime = (value) => {
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
 };
 
+const AUDIT_ACTION_LABELS = {
+  login: '登录',
+  'login.failed': '登录失败',
+  register: '注册',
+  logout: '退出登录',
+  'wallet.get': '查询钱包',
+  'wallet.post': '钱包操作',
+  'wallet.put': '更新钱包',
+  'wallet.patch': '更新钱包',
+  'wallet.delete': '删除钱包',
+  'post.api.user.amount': '发起充值',
+  'post.api.user.stripe.amount': '发起 Stripe 充值',
+  'post.api.user.waffo.amount': '发起 Waffo 充值',
+  'post.api.user.waffo-pancake.amount': '发起 Waffo Pancake 充值',
+};
+
+const formatAuditAction = (value, translate = (label) => label) => {
+  if (!value) return '-';
+  if (AUDIT_ACTION_LABELS[value]) return translate(AUDIT_ACTION_LABELS[value]);
+  if (value.startsWith('wallet.')) return translate('钱包操作');
+  if (value.startsWith('post.api.user.')) return translate('用户操作');
+  if (value.startsWith('post.api.admin.')) return translate('管理操作');
+  return translate('其他操作');
+};
+
 const formatGeoLocation = (record, translate = (value) => value) => {
   const location = [record.country, record.region, record.city]
     .filter(Boolean)
@@ -375,7 +400,9 @@ const SecurityAccess = () => {
               {
                 title: t('动作'),
                 dataIndex: 'action',
-                render: (value) => <Tag>{value}</Tag>,
+                render: (value) => (
+                  <Tag title={value}>{formatAuditAction(value, t)}</Tag>
+                ),
               },
               {
                 title: 'IP',

@@ -4109,6 +4109,18 @@
     "内网地址": "Réseau privé",
     "无效 IP": "IP invalide",
     "暂无归属地": "Géolocalisation indisponible",
-    "时区": "Fuseau horaire"
+    "时区": "Fuseau horaire",
+    "登录失败": "Échec de connexion",
+    "退出登录": "Se déconnecter",
+    "查询钱包": "Consulter le portefeuille",
+    "钱包操作": "Opération du portefeuille",
+    "更新钱包": "Mettre à jour le portefeuille",
+    "删除钱包": "Supprimer du portefeuille",
+    "发起充值": "Démarrer un rechargement",
+    "发起 Stripe 充值": "Démarrer un rechargement Stripe",
+    "发起 Waffo 充值": "Démarrer un rechargement Waffo",
+    "发起 Waffo Pancake 充值": "Démarrer un rechargement Waffo Pancake",
+    "用户操作": "Opération utilisateur",
+    "其他操作": "Autre opération"
   }
 }
