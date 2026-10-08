@@ -65,6 +65,11 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Preserve project identity, attribution, module paths, package metadata, and protected identifiers described in `AGENTS.md`.
 - Prefer Bun for frontend work and preserve the existing Semi Design visual system and i18n conventions.
 
+### External JSON Provider Verification
+
+- Before mapping a third-party JSON response, verify the live/provider-documented payload shape and mirror it in an `httptest` fixture. Do not infer flat field names from the UI requirements.
+- The `ipwho.is` geolocation response nests operator data under `connection.isp`/`connection.asn` and timezone under `timezone.id`; preserve this mapping when changing the IP geolocation service.
+
 ## Billing And Wallet Safety
 
 - Before changing wallets, top-ups, redemption codes, promotion rewards, refunds, lottery, or dashboard analytics, read `docs/superpowers/specs/2026-09-20-promotion-lottery-wallet-dashboard-design.md`.
