@@ -90,6 +90,14 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 
 ## Release Safety
 
+### Platform Release Matrix
+
+- Windows artifacts are for local Windows testing only (`*.exe`). Never use a Windows artifact on the Ubuntu production server.
+- Ubuntu production deployments must use the matching Linux artifact: `linux-amd64` for x86_64 servers or `linux-arm64` for ARM servers.
+- Every formal release must publish the complete platform set: Linux amd64, Linux arm64, macOS, Windows, checksums, and `release-manifest.json`.
+- Upgrade selection must detect the running OS and CPU architecture before downloading an artifact; an incompatible artifact must be rejected before replacement.
+- Release acceptance must verify that the manifest contains the Ubuntu target artifact before enabling production upgrade.
+
 - Do not place credentials, tokens, cookies, private configuration, or database dumps in the repository or this skill.
 - During one deployment, retain supplied credentials only in process memory and reuse them for retries.
 - Before production deployment, verify project-owned GitHub and Gitee release branches point to the same commit.
