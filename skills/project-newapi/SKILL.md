@@ -93,6 +93,19 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Billing changes: concurrency, idempotency, partial refund, retry, and rollback tests.
 - i18n changes: run the repository i18n lint/sync workflow and avoid hard-coded user-facing strings.
 
+### Usage Log UI And Image Requests
+
+- Image generation/edit requests are logged through the request context key
+  `image_generation_log`; only sanitized prompt and generation parameters are
+  persisted in `Log.Other`, never uploaded image bytes or base64 payloads.
+- The usage-log detail adapter detects image logs from the structured marker or
+  `/v1/images/generations` and `/v1/images/edits` paths. Image logs render
+  request, prompt, output metadata, token, and billing sections; text logs keep
+  the existing detail layout.
+- Image error rows prefer `Other.error_code` in the details column. Keep this
+  behavior scoped to image endpoints so ordinary text error summaries remain
+  unchanged.
+
 ## Release Safety
 
 ### Platform Release Matrix

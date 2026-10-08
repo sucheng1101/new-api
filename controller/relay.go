@@ -481,6 +481,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
+		service.AppendImageGenerationLogInfo(c, other)
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
 			startTime = time.Now()

@@ -485,6 +485,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other["image_generation_call"] = true
 		other["image_generation_call_price"] = summary.ImageGenerationCallPrice
 	}
+	AppendImageGenerationLogInfo(ctx, other)
 	if summary.CacheCreationTokens > 0 {
 		other["cache_creation_tokens"] = summary.CacheCreationTokens
 		other["cache_creation_ratio"] = summary.CacheCreationRatio

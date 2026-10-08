@@ -150,6 +150,89 @@ export const isMonitorProbeLog = (record) => {
   return other?.monitor_probe === true || other?.monitor_probe === 'true';
 };
 
+const isImageRequestPath = (path) =>
+  /\/v1\/images\/(generations|edits)(?:\/|$)/i.test(String(path || ''));
+
+export const isImageGenerationLog = (
+  record,
+  other = getLogOther(record?.other),
+) => {
+  const info = asRecord(other?.image_generation);
+  return Boolean(
+    Object.keys(info).length > 0 ||
+      isImageRequestPath(other?.request_path) ||
+      other?.image_generation_call === true,
+  );
+};
+
+const formatImageRequest = (request) => {
+  if (!isRecord(request) || Object.keys(request).length === 0) return null;
+  try {
+    return JSON.stringify(request, null, 2);
+  } catch {
+    return null;
+  }
+};
+
+const buildImageGenerationDetail = ({ record, other, tokens, billing, t }) => {
+  if (!isImageGenerationLog(record, other)) return null;
+  const info = asRecord(other.image_generation);
+  const request = asRecord(info.request);
+  const output = asRecord(info.output);
+  const requestJson = formatImageRequest(request);
+  const prompt = info.user_prompt || request.prompt || '';
+  const parameters = asRecord(info.parameters);
+  const parameterText = Object.entries(parameters)
+    .map(([key, value]) => `${key}=${formatDiagnosticValue(value)}`)
+    .join(', ');
+  const imageCount = output.count ?? request.n ?? other.image_output_count;
+  const outputFormat =
+    output.output_format ||
+    request.output_format ||
+    request.response_format ||
+    other.image_output_format ||
+    '';
+  const status =
+    output.status || (Number(record.type) === 5 ? 'failed' : 'generated');
+  const hasRequest = Boolean(requestJson || prompt || parameterText);
+  const hasOutput = Boolean(
+    imageCount != null || outputFormat || output.url || output.urls || status,
+  );
+
+  return {
+    request: hasRequest
+      ? {
+          title: t('用户提交的请求'),
+          body: requestJson,
+          prompt,
+          parameterText,
+        }
+      : null,
+    output: hasOutput
+      ? {
+          title: t('交付图片'),
+          count: imageCount,
+          format: outputFormat,
+          status,
+          urls: Array.isArray(output.urls)
+            ? output.urls
+            : output.url
+              ? [output.url]
+              : [],
+        }
+      : null,
+    tokens: {
+      input: tokens.input,
+      output: tokens.output,
+      total: tokens.total,
+    },
+    billing,
+    totalText:
+      billing?.finalText ||
+      (toNum(record.quota) > 0 ? renderQuota(record.quota, 6) : null),
+  };
+};
+
 // 管理员调整用户额度的日志没有独立类型，后端以管理日志的 content 记录操作。
 // 只识别额度调整语句，避免把其他管理操作误渲染成额度详情。
 export const isAdminQuotaAdjustmentLog = (record) =>
@@ -872,8 +955,9 @@ export function buildUsageLogDetail({
   const createdAt =
     record.timestamp2string || formatTimestamp(record.created_at);
   const requestPath = other.request_path || null;
-  const showUsage = ['consume', 'probe'].includes(kind);
-  const showBilling = ['consume', 'probe'].includes(kind);
+  const isImageGeneration = isImageGenerationLog(record, other);
+  const showUsage = ['consume', 'probe'].includes(kind) && !isImageGeneration;
+  const showBilling = ['consume', 'probe'].includes(kind) && !isImageGeneration;
   const event = meta.eventTitle
     ? {
         title: meta.eventTitle,
@@ -896,13 +980,16 @@ export function buildUsageLogDetail({
     ? buildRootDiagnostics({ rootInfo, isRootUser, t })
     : null;
   const billingDiagnostics =
-    isRequestLikeLog(kind) || other.is_task === true || other.task_id != null
+    !isImageGeneration &&
+    (isRequestLikeLog(kind) || other.is_task === true || other.task_id != null)
       ? buildBillingDiagnostics({ record, other, t })
       : null;
-  const contentDiagnostics = isRequestLikeLog(kind)
-    ? buildContentDiagnostics({ record, error, t })
-    : null;
+  const contentDiagnostics =
+    !isImageGeneration && isRequestLikeLog(kind)
+      ? buildContentDiagnostics({ record, error, t })
+      : null;
   const taskUsage = buildTaskUsage(record, other, t);
+  const billing = buildBilling(record, other, t);
 
   return {
     id: record.id,
@@ -934,7 +1021,7 @@ export function buildUsageLogDetail({
       total: inputTokens + outputTokens,
       hitRate: cacheHitRate,
     },
-    billing: buildBilling(record, other, t),
+    billing,
     billingProcess: billingProcessRow ? billingProcessRow.value : null,
     probe,
     error,
@@ -973,6 +1060,18 @@ export function buildUsageLogDetail({
     rootDiagnostics,
     billingDiagnostics,
     contentDiagnostics,
+    isImageGeneration,
+    imageGeneration: buildImageGenerationDetail({
+      record,
+      other,
+      tokens: {
+        input: inputTokens,
+        output: outputTokens,
+        total: inputTokens + outputTokens,
+      },
+      billing,
+      t,
+    }),
     isAdminQuotaAdjustment: isQuotaAdjustment,
     extraRows,
   };
@@ -995,7 +1094,11 @@ export function buildUsageLogBriefSummary(record, t) {
     }
     return `${t('探测成功')} · ${formatCount(toNum(record.prompt_tokens) + toNum(record.completion_tokens))} Token`;
   }
-  if (record.type === 5) {
+  if (Number(record.type) === 5) {
+    const other = getLogOther(record.other) || {};
+    if (isImageGenerationLog(record, other) && other.error_code) {
+      return String(other.error_code);
+    }
     return t('错误详情');
   }
   if (record.type === 6) {

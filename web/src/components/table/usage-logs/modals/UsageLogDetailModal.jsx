@@ -287,6 +287,150 @@ const DiagnosticSection = ({ section, onCopy, t }) => {
   );
 };
 
+const ImageGenerationDetail = ({ detail, onCopy, t }) => {
+  if (!detail) return null;
+  const request = detail.request;
+  const output = detail.output;
+  const tokens = detail.tokens || {};
+  const billing = detail.billing;
+  return (
+    <div className='uldm-image-detail'>
+      {request && (
+        <section className='uldm-image-section'>
+          <div className='uldm-section-head'>
+            <h3 className='uldm-section-title'>{request.title}</h3>
+            {request.body && (
+              <Tooltip content={t('复制请求体')}>
+                <button
+                  type='button'
+                  className='uldm-copy-btn'
+                  aria-label={t('复制请求体')}
+                  onClick={(event) => onCopy(event, request.body)}
+                >
+                  <IconCopy size='small' />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+          {request.body && (
+            <pre className='uldm-image-request-body'>{request.body}</pre>
+          )}
+        </section>
+      )}
+
+      {request && (request.prompt || request.parameterText) && (
+        <section className='uldm-image-section'>
+          <div className='uldm-section-head'>
+            <h3 className='uldm-section-title'>{t('用户请求')}</h3>
+          </div>
+          <div className='uldm-image-request-summary'>
+            {request.prompt && (
+              <div className='uldm-image-summary-row'>
+                <span className='uldm-kv-label'>{t('提示词')}</span>
+                <strong>{request.prompt}</strong>
+              </div>
+            )}
+            {request.parameterText && (
+              <div className='uldm-image-summary-row'>
+                <span className='uldm-kv-label'>{t('参数')}</span>
+                <code>{request.parameterText}</code>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {output && (
+        <section className='uldm-image-section'>
+          <div className='uldm-section-head'>
+            <h3 className='uldm-section-title'>{output.title}</h3>
+            <strong
+              className={
+                output.status === 'failed' ? 'uldm-error' : 'uldm-success'
+              }
+            >
+              {output.status === 'failed' ? t('生成失败') : t('已生成')}
+            </strong>
+          </div>
+          <div className='uldm-image-output-grid'>
+            <div>
+              <span className='uldm-kv-label'>{t('数量')}</span>
+              <strong>{output.count ?? '-'}</strong>
+            </div>
+            <div>
+              <span className='uldm-kv-label'>{t('格式')}</span>
+              <strong>{output.format || '-'}</strong>
+            </div>
+          </div>
+          {output.urls.length > 0 && (
+            <div className='uldm-image-url-list'>
+              {output.urls.map((url, index) => (
+                <button
+                  key={`${url}-${index}`}
+                  type='button'
+                  className='uldm-inline-copy'
+                  onClick={(event) => onCopy(event, url)}
+                  title={url}
+                >
+                  {url}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className='uldm-image-section'>
+        <div className='uldm-section-head'>
+          <h3 className='uldm-section-title'>{t('Token 明细')}</h3>
+        </div>
+        <div className='uldm-image-token-grid'>
+          <div>
+            <span>{t('输入 Token')}</span>
+            <strong>{formatCount(tokens.input)}</strong>
+          </div>
+          <div>
+            <span>{t('输出 Token')}</span>
+            <strong>{formatCount(tokens.output)}</strong>
+          </div>
+          <div>
+            <span>{t('总 Token')}</span>
+            <strong>{formatCount(tokens.total)}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className='uldm-image-section'>
+        <div className='uldm-section-head'>
+          <h3 className='uldm-section-title'>{t('计费详情')}</h3>
+        </div>
+        {billing ? (
+          <div className='uldm-image-billing'>
+            {billing.items.map((item, index) => (
+              <div
+                className='uldm-image-billing-row'
+                key={`${item.label}-${index}`}
+              >
+                <span>{item.label}</span>
+                <strong>{item.amount}</strong>
+              </div>
+            ))}
+            <div className='uldm-image-billing-row uldm-image-billing-total'>
+              <span>{t('总费用')}</span>
+              <strong>{billing.finalText}</strong>
+            </div>
+          </div>
+        ) : (
+          <div className='uldm-image-billing uldm-image-billing-total'>
+            <span>{t('总费用')}</span>
+            <strong>{detail.totalText || t('暂无计费明细')}</strong>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+};
+
 const UsageLogDetailModal = ({
   showLogDetail,
   closeLogDetail,
@@ -372,6 +516,14 @@ const UsageLogDetailModal = ({
                 items={detail.overviewItems}
                 onCopy={handleCopy}
               />
+
+              {detail.isImageGeneration && (
+                <ImageGenerationDetail
+                  detail={detail.imageGeneration}
+                  onCopy={handleCopy}
+                  t={t}
+                />
+              )}
 
               <DiagnosticSection
                 key={`${detail.id}-request`}

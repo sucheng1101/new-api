@@ -17,6 +17,44 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ImageGenerationLogContextKey stores the sanitized image request summary on
+// the request context until the usage or error log is written. The payload is
+// deliberately limited to prompt and generation parameters; uploaded image
+// bytes and other potentially large binary fields are never persisted.
+const ImageGenerationLogContextKey = "image_generation_log"
+
+// ImageGenerationLogInfo returns the request-scoped image log payload when an
+// image generation/edit handler has initialized it.
+func ImageGenerationLogInfo(ctx *gin.Context) map[string]interface{} {
+	if ctx == nil {
+		return nil
+	}
+	value, exists := ctx.Get(ImageGenerationLogContextKey)
+	if !exists {
+		return nil
+	}
+	info, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return info
+}
+
+// AppendImageGenerationLogInfo copies the request-scoped image summary into a
+// usage/error log's Other payload. This is intentionally opt-in so text logs
+// keep their existing shape.
+func AppendImageGenerationLogInfo(ctx *gin.Context, other map[string]interface{}) {
+	if other == nil {
+		return
+	}
+	info := ImageGenerationLogInfo(ctx)
+	if len(info) == 0 {
+		return
+	}
+	other["image_generation"] = info
+	other["image"] = true
+}
+
 func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
 	if other == nil {
 		return

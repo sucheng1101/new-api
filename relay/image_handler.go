@@ -32,6 +32,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if err != nil {
 		return types.NewError(fmt.Errorf("failed to copy request to ImageRequest: %w", err), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
+	// Keep a sanitized, structured copy for the usage/error log. Do this before
+	// model mapping so mapping failures still retain the original user request.
+	c.Set(service.ImageGenerationLogContextKey, buildImageGenerationLogInfo(c, request))
 
 	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {
@@ -151,7 +154,95 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	if imageN > 0 {
 		logContent = append(logContent, fmt.Sprintf("生成数量 %d", imageN))
 	}
+	if imageLog := service.ImageGenerationLogInfo(c); imageLog != nil {
+		output := map[string]interface{}{
+			"status": "generated",
+			"count":  imageN,
+		}
+		if request.ResponseFormat != "" {
+			output["response_format"] = request.ResponseFormat
+		}
+		if value := imageRequestRawValue(request.OutputFormat); value != nil {
+			output["output_format"] = value
+		}
+		imageLog["output"] = output
+	}
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
 	return nil
+}
+
+func buildImageGenerationLogInfo(c *gin.Context, request *dto.ImageRequest) map[string]interface{} {
+	requestBody := map[string]interface{}{
+		"model":  request.Model,
+		"prompt": request.Prompt,
+	}
+	parameters := make(map[string]interface{})
+	if request.N != nil {
+		requestBody["n"] = *request.N
+		parameters["n"] = *request.N
+	}
+	if request.Size != "" {
+		requestBody["size"] = request.Size
+		parameters["size"] = request.Size
+	}
+	if request.Quality != "" {
+		requestBody["quality"] = request.Quality
+		parameters["quality"] = request.Quality
+	}
+	if request.ResponseFormat != "" {
+		requestBody["response_format"] = request.ResponseFormat
+		parameters["response_format"] = request.ResponseFormat
+	}
+	for key, raw := range map[string][]byte{
+		"style":              request.Style,
+		"background":         request.Background,
+		"moderation":         request.Moderation,
+		"output_format":      request.OutputFormat,
+		"output_compression": request.OutputCompression,
+		"partial_images":     request.PartialImages,
+		"watermark":          request.WatermarkEnabled,
+	} {
+		if value := imageRequestRawValue(raw); value != nil {
+			requestBody[key] = value
+			parameters[key] = value
+		}
+	}
+	if request.Watermark != nil {
+		requestBody["watermark"] = *request.Watermark
+		parameters["watermark"] = *request.Watermark
+	}
+	for key, raw := range request.Extra {
+		lowerKey := strings.ToLower(key)
+		if lowerKey == "image" || lowerKey == "mask" || lowerKey == "file" || lowerKey == "files" {
+			continue
+		}
+		if value := imageRequestRawValue(raw); value != nil {
+			requestBody[key] = value
+			parameters[key] = value
+		}
+	}
+
+	info := map[string]interface{}{
+		"kind":           "image_generation",
+		"request":        requestBody,
+		"user_prompt":    request.Prompt,
+		"parameters":     parameters,
+		"request_method": "POST",
+	}
+	if c != nil && c.Request != nil {
+		info["content_type"] = c.GetHeader("Content-Type")
+	}
+	return info
+}
+
+func imageRequestRawValue(raw []byte) interface{} {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var value interface{}
+	if err := common.Unmarshal(raw, &value); err != nil {
+		return nil
+	}
+	return value
 }

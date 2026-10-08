@@ -22,6 +22,7 @@ import {
   buildUsageLogDetail,
   buildUsageLogBriefSummary,
   isMonitorProbeLog,
+  isImageGenerationLog,
   isAdminQuotaAdjustmentLog,
 } from './usageLogDetailAdapter';
 import { encodeToBase64 } from '../../../../helpers/base64';
@@ -267,6 +268,81 @@ describe('usage log detail adapter', () => {
 
     const errorLog = { ...baseLog, type: 5 };
     expect(buildUsageLogBriefSummary(errorLog, identityT)).toBe('错误详情');
+  });
+
+  test('identifies image logs and prioritizes image error codes in the details column', () => {
+    const imageError = {
+      ...baseLog,
+      type: 5,
+      content: 'upstream image failure',
+      other: JSON.stringify({
+        request_path: '/v1/images/generations',
+        error_code: 'image_generation_failed',
+      }),
+    };
+    expect(isImageGenerationLog(imageError)).toBe(true);
+    expect(buildUsageLogBriefSummary(imageError, identityT)).toBe(
+      'image_generation_failed',
+    );
+
+    const textError = {
+      ...baseLog,
+      type: 5,
+      other: JSON.stringify({
+        request_path: '/v1/chat/completions',
+        error_code: 'do_request_failed',
+      }),
+    };
+    expect(isImageGenerationLog(textError)).toBe(false);
+    expect(buildUsageLogBriefSummary(textError, identityT)).toBe('错误详情');
+  });
+
+  test('builds structured image generation details without persisting image bytes', () => {
+    const imageLog = {
+      ...baseLog,
+      type: 2,
+      model_name: 'gpt-image-2.5',
+      prompt_tokens: 2,
+      completion_tokens: 1064,
+      quota: 80000,
+      other: JSON.stringify({
+        request_path: '/v1/images/generations',
+        image_generation: {
+          kind: 'image_generation',
+          request: {
+            model: 'gpt-image-2.5',
+            prompt: '生成上海旅游攻略',
+            n: 1,
+            size: '2480x3312',
+            quality: 'high',
+            output_format: 'png',
+          },
+          user_prompt: '生成上海旅游攻略',
+          parameters: { size: '2480x3312', quality: 'high', n: 1 },
+          output: { status: 'generated', count: 1, output_format: 'png' },
+        },
+        model_price: 0.08,
+      }),
+    };
+    const detail = buildUsageLogDetail({
+      record: imageLog,
+      expandRows: [],
+      t: identityT,
+    });
+    expect(detail.isImageGeneration).toBe(true);
+    expect(detail.showUsage).toBe(false);
+    expect(detail.showBilling).toBe(false);
+    expect(detail.imageGeneration.request.prompt).toBe('生成上海旅游攻略');
+    expect(detail.imageGeneration.output).toMatchObject({
+      count: 1,
+      format: 'png',
+      status: 'generated',
+    });
+    expect(detail.imageGeneration.tokens).toEqual({
+      input: 2,
+      output: 1064,
+      total: 1066,
+    });
   });
 
   test('decodes UTF-8 tier labels in the brief summary', () => {
