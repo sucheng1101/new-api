@@ -4101,6 +4101,14 @@
     "每日": "Quotidien",
     "累计": "Cumul",
     "用户侧仅显示请求与错误日志IP，后台始终记录": "Only the user view is controlled: request and error log IPs are always recorded in the background.",
-    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them."
+    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them.",
+    "归属地": "Localisation",
+    "IP 归属地详情": "Détails de géolocalisation IP",
+    "运营商": "FAI",
+    "本机地址": "Cette machine",
+    "内网地址": "Réseau privé",
+    "无效 IP": "IP invalide",
+    "暂无归属地": "Géolocalisation indisponible",
+    "时区": "Fuseau horaire"
   }
 }

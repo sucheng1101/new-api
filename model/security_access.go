@@ -111,6 +111,13 @@ type SecurityIPRisk struct {
 	UserCount  int64  `json:"user_count"`
 	EventCount int64  `json:"event_count"`
 	LastSeen   int64  `json:"last_seen"`
+	GeoStatus  string `json:"geo_status,omitempty"`
+	Country    string `json:"country,omitempty"`
+	Region     string `json:"region,omitempty"`
+	City       string `json:"city,omitempty"`
+	ISP        string `json:"isp,omitempty"`
+	ASN        string `json:"asn,omitempty"`
+	Timezone   string `json:"timezone,omitempty"`
 }
 
 func GetSecurityIPRisks(startTimestamp, endTimestamp int64, limit int) ([]SecurityIPRisk, error) {

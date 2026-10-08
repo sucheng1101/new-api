@@ -3,9 +3,11 @@ package controller
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -102,6 +104,22 @@ func GetSecurityIPRisks(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	var wg sync.WaitGroup
+	for i := range risks {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			geo := service.LookupIPGeo(c.Request.Context(), risks[index].Address)
+			risks[index].GeoStatus = geo.Status
+			risks[index].Country = geo.Country
+			risks[index].Region = geo.Region
+			risks[index].City = geo.City
+			risks[index].ISP = geo.ISP
+			risks[index].ASN = geo.ASN
+			risks[index].Timezone = geo.Timezone
+		}(i)
+	}
+	wg.Wait()
 	common.ApiSuccess(c, risks)
 }
 

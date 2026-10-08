@@ -4070,6 +4070,14 @@
     "每日": "毎日",
     "累计": "累計",
     "用户侧仅显示请求与错误日志IP，后台始终记录": "Only the user view is controlled: request and error log IPs are always recorded in the background.",
-    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them."
+    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them.",
+    "归属地": "所在地",
+    "IP 归属地详情": "IP位置情報の詳細",
+    "运营商": "通信事業者",
+    "本机地址": "この端末",
+    "内网地址": "プライベートネットワーク",
+    "无效 IP": "無効なIP",
+    "暂无归属地": "位置情報なし",
+    "时区": "タイムゾーン"
   }
 }

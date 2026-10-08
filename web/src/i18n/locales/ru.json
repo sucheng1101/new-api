@@ -4121,6 +4121,14 @@
     "每日": "Ежедневно",
     "累计": "Накопительно",
     "用户侧仅显示请求与错误日志IP，后台始终记录": "Only the user view is controlled: request and error log IPs are always recorded in the background.",
-    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them."
+    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them.",
+    "归属地": "Местоположение",
+    "IP 归属地详情": "Подробности геолокации IP",
+    "运营商": "Провайдер",
+    "本机地址": "Это устройство",
+    "内网地址": "Частная сеть",
+    "无效 IP": "Недействительный IP",
+    "暂无归属地": "Геолокация недоступна",
+    "时区": "Часовой пояс"
   }
 }

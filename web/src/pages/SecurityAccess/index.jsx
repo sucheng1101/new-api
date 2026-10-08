@@ -32,6 +32,17 @@ const formatTime = (value) => {
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
 };
 
+const formatGeoLocation = (record, translate = (value) => value) => {
+  const location = [record.country, record.region, record.city]
+    .filter(Boolean)
+    .join(' · ');
+  if (location) return location;
+  if (record.geo_status === 'local') return translate('本机地址');
+  if (record.geo_status === 'private') return translate('内网地址');
+  if (record.geo_status === 'invalid') return translate('无效 IP');
+  return translate('暂无归属地');
+};
+
 const TONE_CLASSES = {
   blue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/30',
   cyan: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-950/30',
@@ -151,6 +162,32 @@ const SecurityAccess = () => {
     });
   };
 
+  const showGeoDetails = (record) => {
+    const rows = [
+      { label: t('IP 地址'), value: record.address, mono: true },
+      { label: t('归属地'), value: formatGeoLocation(record, t) },
+      { label: t('运营商'), value: record.isp },
+      { label: 'ASN', value: record.asn },
+      { label: t('时区'), value: record.timezone },
+    ];
+    Modal.info({
+      title: t('IP 归属地详情'),
+      content: (
+        <div className='space-y-2 text-sm'>
+          {rows.map((row) => (
+            <div className='grid grid-cols-[80px_1fr] gap-3' key={row.label}>
+              <span className='text-semi-color-text-2'>{row.label}</span>
+              <span className={row.mono ? 'font-mono' : ''}>
+                {row.value || '-'}
+              </span>
+            </div>
+          ))}
+        </div>
+      ),
+      okText: t('关闭'),
+    });
+  };
+
   const metricItems = useMemo(
     () => [
       {
@@ -261,6 +298,34 @@ const SecurityAccess = () => {
                 render: (value) => (
                   <span className='font-mono text-xs'>{value}</span>
                 ),
+              },
+              {
+                title: t('归属地'),
+                dataIndex: 'country',
+                width: 190,
+                render: (_, record) => {
+                  const location = formatGeoLocation(record, t);
+                  const hasDetails = Boolean(
+                    record.country ||
+                      record.region ||
+                      record.city ||
+                      record.isp ||
+                      record.asn ||
+                      record.timezone,
+                  );
+                  return hasDetails ? (
+                    <Button
+                      theme='borderless'
+                      type='tertiary'
+                      className='!px-0 text-left'
+                      onClick={() => showGeoDetails(record)}
+                    >
+                      {location}
+                    </Button>
+                  ) : (
+                    <span className='text-semi-color-text-2'>{location}</span>
+                  );
+                },
               },
               {
                 title: t('用户数'),

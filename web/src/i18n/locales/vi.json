@@ -4621,6 +4621,14 @@
     "每日": "Hàng ngày",
     "累计": "Lũy kế",
     "用户侧仅显示请求与错误日志IP，后台始终记录": "Only the user view is controlled: request and error log IPs are always recorded in the background.",
-    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them."
+    "开启后，仅控制用户侧显示\"消费\"和\"错误\"日志IP，后台始终记录": "When enabled, only the user-side display of IPs for consumption and error logs changes; the background always records them.",
+    "归属地": "Vị trí",
+    "IP 归属地详情": "Chi tiết định vị IP",
+    "运营商": "Nhà mạng",
+    "本机地址": "Thiết bị này",
+    "内网地址": "Mạng riêng",
+    "无效 IP": "IP không hợp lệ",
+    "暂无归属地": "Không có thông tin định vị",
+    "时区": "Múi giờ"
   }
 }
