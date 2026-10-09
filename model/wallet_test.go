@@ -217,3 +217,40 @@ func TestWalletMigrationBackfillsLegacyBalancesOnce(t *testing.T) {
 	require.EqualValues(t, 2, operations)
 	require.EqualValues(t, 2, transactions)
 }
+
+func TestWalletMigrationPreservesNegativeLegacyBalance(t *testing.T) {
+	db := setupWalletTestDB(t)
+	user := createWalletTestUser(t, db, "wallet-migration-negative", -25, 0, 0, 0)
+
+	require.NoError(t, migrateWalletBalances())
+	require.NoError(t, migrateWalletBalances())
+
+	var refreshed User
+	require.NoError(t, db.First(&refreshed, user.Id).Error)
+	require.Equal(t, -25, refreshed.Quota)
+	require.Equal(t, -25, refreshed.CashQuota)
+	require.Zero(t, refreshed.GiftQuota)
+
+	balance, err := GetWalletBalance(user.Id)
+	require.NoError(t, err)
+	require.Equal(t, WalletBalance{Cash: -25, Gift: 0, Promotion: 0, Total: -25}, balance)
+
+	var lots, operations, transactions int64
+	require.NoError(t, db.Model(&WalletCashLot{}).Where("user_id = ?", user.Id).Count(&lots).Error)
+	require.NoError(t, db.Model(&WalletOperation{}).Where("user_id = ?", user.Id).Count(&operations).Error)
+	require.NoError(t, db.Model(&WalletTransaction{}).Where("user_id = ?", user.Id).Count(&transactions).Error)
+	require.EqualValues(t, 1, lots)
+	require.EqualValues(t, 1, operations)
+	require.EqualValues(t, 1, transactions)
+}
+
+func TestWalletCreditRepairsNegativeCashBalance(t *testing.T) {
+	db := setupWalletTestDB(t)
+	user := createWalletTestUser(t, db, "wallet-negative-credit", -25, -25, 0, 0)
+
+	require.NoError(t, CreditCash(user.Id, 40, 1, "topup", "negative-repair", WalletBusinessCashCredit, "negative-repair-credit", true, 0, ""))
+
+	balance, err := GetWalletBalance(user.Id)
+	require.NoError(t, err)
+	require.Equal(t, WalletBalance{Cash: 15, Gift: 0, Promotion: 0, Total: 15}, balance)
+}

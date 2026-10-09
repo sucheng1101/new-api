@@ -31,7 +31,7 @@ const (
 	WalletBusinessModelRefund       = "model_consume_refund"
 	WalletBusinessAdminCashCredit   = "admin_cash_credit"
 	WalletBusinessAdminGiftCredit   = "admin_gift_credit"
-	WalletBusinessAdminCorrection  = "admin_correction"
+	WalletBusinessAdminCorrection   = "admin_correction"
 	WalletBusinessAdminDebit        = "admin_debit"
 	WalletBusinessAdminRefund       = "admin_refund"
 	WalletBusinessLotteryReward     = "lottery_reward"
@@ -112,8 +112,8 @@ func lockWalletUser(tx *gorm.DB, userId int) (*User, error) {
 	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", userId).First(&user).Error; err != nil {
 		return nil, err
 	}
-	if user.CashQuota < 0 || user.GiftQuota < 0 {
-		return nil, errors.New("wallet balance is negative")
+	if user.GiftQuota < 0 {
+		return nil, errors.New("gift wallet balance is negative")
 	}
 	if user.Quota != user.CashQuota+user.GiftQuota {
 		return nil, fmt.Errorf("wallet invariant violated for user %d", user.Id)

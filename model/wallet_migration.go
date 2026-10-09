@@ -62,7 +62,10 @@ func migrateWalletBalances() error {
 		}
 	}
 	var invalidCount int64
-	if err := DB.Model(&User{}).Where("quota <> cash_quota + gift_quota OR cash_quota < 0 OR gift_quota < 0").Count(&invalidCount).Error; err != nil {
+	// Legacy quota may be negative (for example, after a debt-producing debit).
+	// Preserve that signed cash balance while still rejecting broken account
+	// totals and impossible negative gift balances.
+	if err := DB.Model(&User{}).Where("quota <> cash_quota + gift_quota OR gift_quota < 0").Count(&invalidCount).Error; err != nil {
 		return err
 	}
 	if invalidCount > 0 {
