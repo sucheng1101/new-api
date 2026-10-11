@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useMemo } from 'react';
 import { useHeaderBar } from '../../../hooks/common/useHeaderBar';
+import { useActualTheme } from '../../../context/Theme';
 import { useNotifications } from '../../../hooks/common/useNotifications';
 import { useNavigation } from '../../../hooks/common/useNavigation';
 import { getCustomExternalMenuItems } from '../../../hooks/common/useSidebar';
@@ -64,6 +65,8 @@ const HeaderBar = ({ onMobileMenuToggle, drawerOpen }) => {
   } = useNotifications(statusState);
 
   const { mainNavLinks } = useNavigation(t, docsLink, headerNavModules);
+  const actualTheme = useActualTheme();
+  const isDarkTheme = actualTheme === 'dark';
   const navigationLinks = useMemo(() => {
     let customConfig = null;
     try {
@@ -80,7 +83,16 @@ const HeaderBar = ({ onMobileMenuToggle, drawerOpen }) => {
   }, [mainNavLinks, statusState?.status?.SidebarModulesAdmin]);
 
   return (
-    <header className='text-semi-color-text-0 sticky top-0 z-50 transition-colors duration-300 bg-white/75 dark:bg-zinc-900/75 backdrop-blur-lg'>
+    <header
+      className='block w-full z-50 border-b transition-colors duration-300'
+      style={{
+        backgroundColor: isDarkTheme ? '#16161a' : '#ffffff',
+        borderBottomColor: isDarkTheme
+          ? 'rgba(249, 249, 249, 0.12)'
+          : 'rgba(28, 31, 35, 0.08)',
+        color: isDarkTheme ? '#f9f9f9' : '#1c1f23',
+      }}
+    >
       <NoticeModal
         visible={noticeVisible}
         onClose={handleNoticeClose}
