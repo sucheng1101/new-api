@@ -282,6 +282,9 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 			c.Abort()
 			return
 		}
+		if !enforceDirectIPAllowlist(c, token.UserId) {
+			return
+		}
 
 		c.Set("id", token.UserId)
 		c.Set("token_id", token.Id)
@@ -364,6 +367,9 @@ func TokenAuth() func(c *gin.Context) {
 			}
 			return
 		}
+		if !enforceDirectIPAllowlist(c, token.UserId) {
+			return
+		}
 
 		allowIps := token.GetIpLimits()
 		if len(allowIps) > 0 {
@@ -421,6 +427,29 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		c.Next()
 	}
+}
+
+func enforceDirectIPAllowlist(c *gin.Context, userId int) bool {
+	if !common.IsDirectAPIRequest(c.Request.Host) {
+		return true
+	}
+	clientIP := c.ClientIP()
+	ip := net.ParseIP(clientIP)
+	if ip == nil || ip.To4() == nil {
+		abortWithOpenAiMessage(c, http.StatusForbidden, "直连入口仅支持 IPv4，请使用已登记的公网 IPv4 地址", types.ErrorCodeAccessDenied)
+		return false
+	}
+	allowed, err := model.CheckAndTouchDirectIPAllowlist(userId, ip.To4().String())
+	if err != nil {
+		common.SysLog(fmt.Sprintf("direct IP allowlist check failed for user %d: %v", userId, err))
+		abortWithOpenAiMessage(c, http.StatusInternalServerError, common.TranslateMessage(c, i18n.MsgDatabaseError))
+		return false
+	}
+	if !allowed {
+		abortWithOpenAiMessage(c, http.StatusForbidden, "当前 IPv4 不在直连白名单中，请先在个人设置中添加", types.ErrorCodeAccessDenied)
+		return false
+	}
+	return true
 }
 
 func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) error {
