@@ -37,6 +37,7 @@ import TokensTable from './TokensTable';
 import TokensActions from './TokensActions';
 import TokensFilters from './TokensFilters';
 import TokensDescription from './TokensDescription';
+import TokenEndpointBar from './TokenEndpointBar';
 import EditTokenModal from './modals/EditTokenModal';
 import CCSwitchModal from './modals/CCSwitchModal';
 import { useTokensData } from '../../../hooks/tokens/useTokensData';
@@ -400,7 +401,8 @@ function TokensPage() {
             t={t}
           />
         }
-        actionsArea={
+        actionsArea={[
+          <TokenEndpointBar copyText={tokensData.copyText} t={t} />,
           <div className='flex flex-col md:flex-row justify-between items-center gap-2 w-full'>
             <TokensActions
               selectedKeys={selectedKeys}
@@ -421,8 +423,8 @@ function TokensPage() {
                 t={t}
               />
             </div>
-          </div>
-        }
+          </div>,
+        ]}
         paginationArea={createCardProPagination({
           currentPage: tokensData.activePage,
           pageSize: tokensData.pageSize,

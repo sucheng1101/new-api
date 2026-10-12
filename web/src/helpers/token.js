@@ -95,6 +95,32 @@ export function getServerAddress() {
   return serverAddress;
 }
 
+/**
+ * Normalize a server address before displaying or extending it.
+ * @param {string} address
+ * @returns {string}
+ */
+export function normalizeServerAddress(address) {
+  return String(address || '')
+    .trim()
+    .replace(/\/+$/, '');
+}
+
+/**
+ * Build an API endpoint without introducing duplicate separators or suffixes.
+ * @param {string} address
+ * @param {string} path
+ * @returns {string}
+ */
+export function buildApiEndpoint(address, path = '/v1') {
+  const base = normalizeServerAddress(address);
+  const suffix = `/${String(path || '').replace(/^\/+/, '')}`;
+
+  if (!base) return suffix;
+  if (base.toLowerCase().endsWith(suffix.toLowerCase())) return base;
+  return `${base}${suffix}`;
+}
+
 export const CHANNEL_CONN_CLIPBOARD_TYPE = 'newapi_channel_conn';
 
 /**

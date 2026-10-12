@@ -4662,6 +4662,9 @@
     "添加后约 2 秒生效；删除立即失效。每个账号最多 5 个 IP。": "Changes take effect in about 2 seconds. Each account can have up to 5 IPs.",
     "直连入口目前只支持 IPv4；IPv6 地址不会生效。": "The direct endpoint supports IPv4 only.",
     "连续 180 天没有通过直连访问的 IP 会被自动移除。": "IPs unused through the direct endpoint for 180 days are removed automatically.",
-    "宽带重新拨号后公网 IP 可能变化，请重新添加新的 IPv4。": "Your public IP may change after reconnecting; add the new IPv4 again."
+    "宽带重新拨号后公网 IP 可能变化，请重新添加新的 IPv4。": "Your public IP may change after reconnecting; add the new IPv4 again.",
+    "网关地址": "URL cổng",
+    "OpenAI兼容地址": "URL tương thích OpenAI",
+    "复制地址": "Sao chép URL"
   }
 }
