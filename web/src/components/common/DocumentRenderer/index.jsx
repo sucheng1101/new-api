@@ -83,14 +83,18 @@ const DocumentRenderer = ({ apiEndpoint, title, cacheKey, emptyMessage }) => {
     try {
       const res = await API.get(apiEndpoint);
       const { success, message, data } = res.data;
-      if (success && data) {
-        setContent(data);
-        localStorage.setItem(cacheKey, data);
-      } else {
-        if (!cachedContent) {
-          showError(message || emptyMessage);
+      if (success) {
+        if (data) {
+          setContent(data);
+          localStorage.setItem(cacheKey, data);
+        } else if (!cachedContent) {
+          // An empty document is a valid unconfigured state. Let the empty
+          // renderer explain that state instead of showing a load error.
           setContent('');
         }
+      } else if (!cachedContent) {
+        showError(message || emptyMessage);
+        setContent('');
       }
     } catch (error) {
       if (!cachedContent) {

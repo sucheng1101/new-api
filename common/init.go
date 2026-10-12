@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"log"
@@ -54,6 +55,12 @@ func InitEnv() {
 			log.Fatal("Please set SESSION_SECRET to a random string.")
 		} else {
 			SessionSecret = ss
+		}
+	} else {
+		var err error
+		SessionSecret, err = loadOrCreateSessionSecret()
+		if err != nil {
+			log.Fatalf("failed to initialize session secret: %v", err)
 		}
 	}
 	if os.Getenv("CRYPTO_SECRET") != "" {
@@ -126,6 +133,57 @@ func InitEnv() {
 	SearchRateLimitNum = GetEnvOrDefault("SEARCH_RATE_LIMIT", 10)
 	SearchRateLimitDuration = int64(GetEnvOrDefault("SEARCH_RATE_LIMIT_DURATION", 60))
 	initConstantEnv()
+}
+
+// loadOrCreateSessionSecret keeps single-node deployments logged in across
+// restarts when SESSION_SECRET is not explicitly configured. Multi-node
+// deployments should still set the same SESSION_SECRET on every node.
+func loadOrCreateSessionSecret() (string, error) {
+	secretPath := os.Getenv("SESSION_SECRET_FILE")
+	if secretPath == "" {
+		secretPath = ".session_secret"
+	}
+
+	if data, err := os.ReadFile(secretPath); err == nil {
+		secret := strings.TrimSpace(string(data))
+		if secret != "" {
+			return secret, nil
+		}
+		return "", fmt.Errorf("session secret file %q is empty", secretPath)
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err != nil {
+		return "", err
+	}
+	secret := fmt.Sprintf("%x", secretBytes)
+
+	file, err := os.OpenFile(secretPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			data, readErr := os.ReadFile(secretPath)
+			if readErr != nil {
+				return "", readErr
+			}
+			secret = strings.TrimSpace(string(data))
+			if secret == "" {
+				return "", fmt.Errorf("session secret file %q is empty", secretPath)
+			}
+			return secret, nil
+		}
+		return "", err
+	}
+	if _, err := file.WriteString(secret + "\n"); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	log.Printf("SESSION_SECRET is not set; generated a persistent session secret at %s. Set SESSION_SECRET explicitly for multi-node deployments.", secretPath)
+	return secret, nil
 }
 
 func initConstantEnv() {

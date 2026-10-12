@@ -48,6 +48,20 @@ function redirectToOAuthUrl(url, options = {}) {
   window.location.assign(targetUrl);
 }
 
+function attachResponseInterceptor(instance) {
+  instance.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      // 如果请求配置中显式要求跳过全局错误处理，则交给调用方处理。
+      if (error.config && error.config.skipErrorHandler) {
+        return Promise.reject(error);
+      }
+      showError(error);
+      return Promise.reject(error);
+    },
+  );
+}
+
 function patchAPIInstance(instance) {
   const originalGet = instance.get.bind(instance);
   const inFlightGetRequests = new Map();
@@ -74,6 +88,8 @@ function patchAPIInstance(instance) {
     inFlightGetRequests.set(key, reqPromise);
     return reqPromise;
   };
+
+  attachResponseInterceptor(instance);
 }
 
 patchAPIInstance(API);
@@ -91,18 +107,6 @@ export function updateAPI() {
 
   patchAPIInstance(API);
 }
-
-API.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    // 如果请求配置中显式要求跳过全局错误处理，则不弹出默认错误提示
-    if (error.config && error.config.skipErrorHandler) {
-      return Promise.reject(error);
-    }
-    showError(error);
-    return Promise.reject(error);
-  },
-);
 
 // playground
 
