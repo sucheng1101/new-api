@@ -96,7 +96,9 @@ const DirectIPAllowlistSettings = ({ t }) => {
       <div className='rounded-lg border border-gray-200 p-4 mb-4'>
         <div className='flex flex-wrap items-center gap-3 mb-4'>
           <Typography.Text strong>{t('当前浏览器 IPv4')}:</Typography.Text>
-          <Typography.Text code>{currentIP.ipv4 || t('未检测到')}</Typography.Text>
+          <Typography.Text code>
+            {currentIP.ipv4 || t('未检测到')}
+          </Typography.Text>
           <Button
             theme='solid'
             type='primary'
@@ -164,9 +166,13 @@ const DirectIPAllowlistSettings = ({ t }) => {
                   <tr key={entry.id} className='border-b border-gray-100'>
                     <td className='py-2 font-mono'>{entry.ip}</td>
                     <td className='py-2'>{entry.remark || '-'}</td>
-                    <td className='py-2'>{formatTimestamp(entry.created_at)}</td>
                     <td className='py-2'>
-                      {entry.last_access_at ? formatTimestamp(entry.last_access_at) : t('尚未访问')}
+                      {formatTimestamp(entry.created_at)}
+                    </td>
+                    <td className='py-2'>
+                      {entry.last_access_at
+                        ? formatTimestamp(entry.last_access_at)
+                        : t('尚未访问')}
                     </td>
                     <td className='py-2 text-right'>
                       <Button
@@ -190,7 +196,9 @@ const DirectIPAllowlistSettings = ({ t }) => {
         <Typography.Title heading={5}>{t('使用说明')}</Typography.Title>
         <ul className='list-disc pl-5 space-y-1'>
           <li>{t('Base URL 改为直连入口，API Key 不变。')}</li>
-          <li>{t('添加后约 2 秒生效；删除立即失效。每个账号最多 5 个 IP。')}</li>
+          <li>
+            {t('添加后约 2 秒生效；删除立即失效。每个账号最多 5 个 IP。')}
+          </li>
           <li>{t('直连入口目前只支持 IPv4；IPv6 地址不会生效。')}</li>
           <li>{t('连续 180 天没有通过直连访问的 IP 会被自动移除。')}</li>
           <li>{t('宽带重新拨号后公网 IP 可能变化，请重新添加新的 IPv4。')}</li>
