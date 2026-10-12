@@ -40,13 +40,13 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { API, showError, showSuccess, toBoolean } from '../../helpers';
 import {
-  API,
-  showError,
-  showSuccess,
-  toBoolean,
-  getQuotaPerUnit,
-} from '../../helpers';
+  formatRmb,
+  quotaToRmb,
+  rmbToQuota,
+} from '../../helpers/promotionLotteryQuota';
 
 const emptyPrize = {
   id: 0,
@@ -113,7 +113,7 @@ function normalizePrize(value) {
     ...emptyPrize,
     ...value,
     id: Number(value?.id) || 0,
-    reward_quota: Number(value?.reward_quota) || 0,
+    reward_quota: quotaToRmb(value?.reward_quota),
     weight: Number(value?.weight) || 0,
     configured_probability_basis_points:
       Number(value?.configured_probability_basis_points) || 0,
@@ -127,10 +127,25 @@ function normalizePrize(value) {
   };
 }
 
+function prizeToPayload(value) {
+  return {
+    id: Number(value?.id) || 0,
+    name: value?.name || '',
+    prize_type: value?.prize_type || 'gift',
+    reward_quota: rmbToQuota(value?.reward_quota),
+    weight: Number(value?.weight) || 0,
+    configured_probability_basis_points:
+      Number(value?.configured_probability_basis_points) || 0,
+    stock: Number.isFinite(Number(value?.stock)) ? Number(value.stock) : -1,
+    enabled: toBoolean(value?.enabled),
+  };
+}
+
 const formatProbability = (basisPoints) =>
   `${(Number(basisPoints || 0) / 100).toFixed(2)}%`;
 
 export default function PromotionLotterySetting() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [savingSection, setSavingSection] = useState('');
   const [deletingPrizeId, setDeletingPrizeId] = useState(0);
@@ -208,8 +223,9 @@ export default function PromotionLotterySetting() {
     if (settingsResult.status === 'fulfilled') {
       const data = getResponseData(settingsResult.value);
       if (data && typeof data === 'object') {
-        setLottery((current) => ({ ...current, ...data }));
-        lotteryFormRef.current?.setValues(data);
+        const displayData = { ...data, threshold: quotaToRmb(data.threshold) };
+        setLottery((current) => ({ ...current, ...displayData }));
+        lotteryFormRef.current?.setValues(displayData);
       } else if (!settingsResult.value?.data?.success) {
         showError(settingsResult.value?.data?.message || '抽奖规则加载失败');
       }
@@ -239,7 +255,7 @@ export default function PromotionLotterySetting() {
   }, [refresh]);
 
   useEffect(() => {
-    prizeFormRef.current?.setValues(normalizePrize(prize));
+    prizeFormRef.current?.setValues(prize);
   }, [prize]);
 
   const saveOptions = async () => {
@@ -264,9 +280,17 @@ export default function PromotionLotterySetting() {
   };
 
   const saveLotterySettings = async () => {
+    const thresholdQuota = rmbToQuota(lottery.threshold);
+    if (thresholdQuota === null) {
+      showError(t('每日消费门槛必须是大于等于 0 的有效金额。'));
+      return;
+    }
     setSavingSection('lottery');
     try {
-      const response = await API.put('/api/admin/lottery/settings', lottery);
+      const response = await API.put('/api/admin/lottery/settings', {
+        ...lottery,
+        threshold: thresholdQuota,
+      });
       if (!response.data.success) {
         throw new Error(response.data.message || '保存抽奖规则失败');
       }
@@ -286,21 +310,26 @@ export default function PromotionLotterySetting() {
   };
 
   const editPrize = (row) => {
-    const nextPrize = normalizePrize(row);
+    // Rows already contain display-unit RMB values; do not divide them again.
+    const nextPrize = { ...emptyPrize, ...row };
     setPrize(nextPrize);
     prizeFormRef.current?.setValues(nextPrize);
   };
 
   const savePrize = async () => {
-    const name = prize.name.trim();
+    const name = String(prize.name || '').trim();
     if (!name) {
-      showError('请输入奖品名称');
+      showError(t('请输入奖品名称'));
+      return;
+    }
+    if (rmbToQuota(prize.reward_quota) === null) {
+      showError(t('奖励余额必须是大于等于 0 的有效金额。'));
       return;
     }
     setSavingSection('prize');
     try {
       const response = await API.put('/api/admin/lottery/prizes', {
-        ...normalizePrize(prize),
+        ...prizeToPayload(prize),
         name,
       });
       if (!response.data.success) {
@@ -333,7 +362,6 @@ export default function PromotionLotterySetting() {
     }
   };
 
-  const quotaUnit = getQuotaPerUnit();
   const lotteryEnabled = toBoolean(lottery.enabled);
   const isEditingPrize = prize.id > 0;
   const eligiblePrizes = prizes.filter((item) => item.eligible);
@@ -351,9 +379,14 @@ export default function PromotionLotterySetting() {
       title: '类型',
       dataIndex: 'prize_type',
       width: 110,
-      render: (value) => (value === 'gift' ? '额度' : '谢谢参与'),
+      render: (value) => (value === 'gift' ? t('赠送余额') : '谢谢参与'),
     },
-    { title: '奖励额度', dataIndex: 'reward_quota', width: 120 },
+    {
+      title: t('奖励余额（￥）'),
+      dataIndex: 'reward_quota',
+      width: 140,
+      render: (value) => formatRmb(value),
+    },
     { title: '权重', dataIndex: 'weight', width: 90 },
     {
       title: '配置概率',
@@ -596,11 +629,11 @@ export default function PromotionLotterySetting() {
                 />
                 <Form.InputNumber
                   field='threshold'
-                  label='每日消费门槛（额度）'
+                  label={t('每日消费门槛（￥）')}
                   onChange={(value) =>
                     setLottery((current) => ({ ...current, threshold: value }))
                   }
-                  min={1}
+                  min={quotaToRmb(1)}
                 />
                 <Form.InputNumber
                   field='daily_attempts'
@@ -685,8 +718,9 @@ export default function PromotionLotterySetting() {
                 保存抽奖规则
               </Button>
               <Typography.Text type='tertiary'>
-                当前门槛约 {((lottery.threshold || 0) / quotaUnit).toFixed(2)}{' '}
-                美元额度
+                {t('当前门槛为 {{amount}}，后台统一按人民币余额配置。', {
+                  amount: formatRmb(lottery.threshold),
+                })}
               </Typography.Text>
             </div>
           </Card>
@@ -785,13 +819,13 @@ export default function PromotionLotterySetting() {
                   setPrize((current) => ({ ...current, prize_type: value }))
                 }
                 optionList={[
-                  { label: '额度', value: 'gift' },
+                  { label: t('赠送余额'), value: 'gift' },
                   { label: '谢谢参与', value: 'none' },
                 ]}
               />
               <Form.InputNumber
                 field='reward_quota'
-                label='奖励额度'
+                label={t('奖励余额（￥）')}
                 onChange={(value) =>
                   setPrize((current) => ({ ...current, reward_quota: value }))
                 }

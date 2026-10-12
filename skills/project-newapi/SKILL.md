@@ -82,6 +82,7 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Two-level promotion rewards use integer basis points (`PromotionLevel1BasisPoints`/`PromotionLevel2BasisPoints`, defaults 500/300). Redemption codes share the same promotion settlement and create refundable cash lots; subscriptions remain outside promotion settlement.
 - Promotion balance (`aff_quota`) stays outside spendable `quota` until an atomic promotion-to-gift transfer creates paired immutable ledger rows.
 - Any source-specific wallet deduction must restore the same source when a relay pre-consumption is partially or fully refunded.
+- Promotion and lottery administrator configuration displays monetary values in RMB (`￥`) while API/model settlement remains integer quota. Convert through the runtime `quota_per_unit` from `/api/status`; keep validation for zero, minimum one-quota increments, non-finite values, and safe integer bounds. Do not extend this display conversion to recharge, redemption-code, gifting, refund, or manual balance-adjustment pages without a separately confirmed scope.
 - Wallet relay billing uses `BillingSession`/`WalletFunding` with `RelayInfo.RequestId`; every debit/refund gets a distinct idempotency key while `WalletConsumptionAllocation` records gift-first and cash-FIFO sources. Async tasks persist `BillingRequestId` in `TaskPrivateData` so polling refunds and delta settlements use the same source allocations; legacy tasks without it retain the old quota path.
 - For direct non-session wallet billing (`PostConsumeQuota`), use the request ID plus an incrementing operation sequence to avoid idempotency-key collisions across repeated charges. Concurrent wallet operations use a portable upsert/no-op conflict path on the unique idempotency key before locking the user row.
 
@@ -92,6 +93,11 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Schema changes: migration coverage and behavior checks on SQLite, MySQL, and PostgreSQL paths.
 - Billing changes: concurrency, idempotency, partial refund, retry, and rollback tests.
 - i18n changes: run the repository i18n lint/sync workflow and avoid hard-coded user-facing strings.
+
+### Registration Email Domain Policy
+
+- Registration and verification-code endpoints must validate the same runtime email-domain whitelist.
+- `/api/status` exposes the normalized policy so the registration form can show the exact allowed domains; distinguish QQ-only, multiple-domain, and closed-registration states.
 
 ### Usage Log UI And Image Requests
 

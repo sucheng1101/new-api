@@ -4639,6 +4639,15 @@
     "发起 Waffo 充值": "Bắt đầu nạp tiền Waffo",
     "发起 Waffo Pancake 充值": "Bắt đầu nạp tiền Waffo Pancake",
     "用户操作": "Thao tác người dùng",
-    "其他操作": "Thao tác khác"
+    "其他操作": "Thao tác khác",
+    "当前仅支持 QQ 邮箱（@qq.com）注册，请使用 QQ 邮箱接收验证码。": "Hiện chỉ hỗ trợ đăng ký bằng email QQ (@qq.com). Vui lòng dùng email QQ để nhận mã xác minh.",
+    "当前仅支持以下邮箱域名注册：{{domains}}，请使用对应邮箱接收验证码。": "Hiện chỉ hỗ trợ đăng ký với các tên miền email sau: {{domains}}. Vui lòng dùng email phù hợp để nhận mã xác minh.",
+    "当前暂未开放邮箱注册，请联系管理员。": "Đăng ký bằng email hiện đang đóng. Vui lòng liên hệ quản trị viên.",
+    "赠送余额": "Số dư tặng",
+    "奖励余额（￥）": "Số dư phần thưởng (￥)",
+    "每日消费门槛（￥）": "Ngưỡng chi tiêu hằng ngày (￥)",
+    "当前门槛为 {{amount}}，后台统一按人民币余额配置。": "Ngưỡng hiện tại: {{amount}}. Cấu hình theo số dư RMB.",
+    "每日消费门槛必须是大于等于 0 的有效金额。": "Ngưỡng chi tiêu hằng ngày phải là số tiền hợp lệ lớn hơn hoặc bằng 0.",
+    "奖励余额必须是大于等于 0 的有效金额。": "Số dư phần thưởng phải là số tiền hợp lệ lớn hơn hoặc bằng 0."
   }
 }

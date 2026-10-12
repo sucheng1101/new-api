@@ -140,6 +140,24 @@ const RegisterForm = () => {
       status.telegram_oauth ||
       hasCustomOAuthProviders,
   );
+  const emailDomainWhitelist = Array.isArray(status.email_domain_whitelist)
+    ? status.email_domain_whitelist.filter(Boolean)
+    : [];
+  const emailDomainHint = status.email_domain_restriction_enabled
+    ? emailDomainWhitelist.length > 0
+      ? emailDomainWhitelist.length === 1 &&
+        emailDomainWhitelist[0] === 'qq.com'
+        ? t('当前仅支持 QQ 邮箱（@qq.com）注册，请使用 QQ 邮箱接收验证码。')
+        : t(
+            '当前仅支持以下邮箱域名注册：{{domains}}，请使用对应邮箱接收验证码。',
+            {
+              domains: emailDomainWhitelist
+                .map((domain) => `@${domain}`)
+                .join(', '),
+            },
+          )
+      : t('当前暂未开放邮箱注册，请联系管理员。')
+    : '';
 
   const [showEmailVerification, setShowEmailVerification] = useState(false);
 
@@ -612,6 +630,7 @@ const RegisterForm = () => {
                       type='email'
                       onChange={(value) => handleChange('email', value)}
                       prefix={<IconMail />}
+                      extraText={emailDomainHint}
                       suffix={
                         <Button
                           onClick={sendVerificationCode}
@@ -781,8 +800,7 @@ const RegisterForm = () => {
         style={{ top: '50%', left: '-120px' }}
       />
       <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailRegister ||
-        !hasOAuthRegisterOptions
+        {showEmailRegister || !hasOAuthRegisterOptions
           ? renderEmailRegisterForm()
           : renderOAuthOptions()}
         {renderWeChatLoginModal()}

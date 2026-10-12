@@ -61,6 +61,9 @@ redemption.not_provided: "Redemption code not provided"
 redemption.expire_time_invalid: "Expiration time cannot be earlier than current time"
 
 # User messages
+user.email_qq_only: "Registration currently supports QQ email addresses (@qq.com) only. Please use a QQ email address to receive the verification code."
+user.email_domain_restricted: "Registration currently supports these email domains only: {{.Domains}}. Please use a matching email address to receive the verification code."
+user.email_registration_closed: "Email registration is currently closed. Please contact the administrator."
 user.password_login_disabled: "Password login has been disabled by administrator"
 user.register_disabled: "New user registration has been disabled by administrator"
 user.password_register_disabled: "Password registration has been disabled by administrator, please use third-party account verification"

@@ -49,29 +49,31 @@ func GetStatus(c *gin.Context) {
 	legalSetting := system_setting.GetLegalSettings()
 
 	data := gin.H{
-		"version":                     common.Version,
-		"start_time":                  common.StartTime,
-		"email_verification":          common.EmailVerificationEnabled,
-		"github_oauth":                common.GitHubOAuthEnabled,
-		"github_client_id":            common.GitHubClientId,
-		"discord_oauth":               system_setting.GetDiscordSettings().Enabled,
-		"discord_client_id":           system_setting.GetDiscordSettings().ClientId,
-		"linuxdo_oauth":               common.LinuxDOOAuthEnabled,
-		"linuxdo_client_id":           common.LinuxDOClientId,
-		"linuxdo_minimum_trust_level": common.LinuxDOMinimumTrustLevel,
-		"telegram_oauth":              common.TelegramOAuthEnabled,
-		"telegram_bot_name":           common.TelegramBotName,
-		"system_name":                 common.SystemName,
-		"logo":                        common.Logo,
-		"footer_html":                 common.Footer,
-		"wechat_qrcode":               common.WeChatAccountQRCodeImageURL,
-		"wechat_login":                common.WeChatAuthEnabled,
-		"server_address":              system_setting.ServerAddress,
-		"turnstile_check":             common.TurnstileCheckEnabled,
-		"turnstile_site_key":          common.TurnstileSiteKey,
-		"top_up_link":                 common.TopUpLink,
-		"docs_link":                   operation_setting.GetGeneralSetting().DocsLink,
-		"quota_per_unit":              common.QuotaPerUnit,
+		"version":                          common.Version,
+		"start_time":                       common.StartTime,
+		"email_verification":               common.EmailVerificationEnabled,
+		"email_domain_restriction_enabled": common.EmailDomainRestrictionEnabled,
+		"email_domain_whitelist":           common.NormalizeEmailDomainWhitelist(common.EmailDomainWhitelist),
+		"github_oauth":                     common.GitHubOAuthEnabled,
+		"github_client_id":                 common.GitHubClientId,
+		"discord_oauth":                    system_setting.GetDiscordSettings().Enabled,
+		"discord_client_id":                system_setting.GetDiscordSettings().ClientId,
+		"linuxdo_oauth":                    common.LinuxDOOAuthEnabled,
+		"linuxdo_client_id":                common.LinuxDOClientId,
+		"linuxdo_minimum_trust_level":      common.LinuxDOMinimumTrustLevel,
+		"telegram_oauth":                   common.TelegramOAuthEnabled,
+		"telegram_bot_name":                common.TelegramBotName,
+		"system_name":                      common.SystemName,
+		"logo":                             common.Logo,
+		"footer_html":                      common.Footer,
+		"wechat_qrcode":                    common.WeChatAccountQRCodeImageURL,
+		"wechat_login":                     common.WeChatAuthEnabled,
+		"server_address":                   system_setting.ServerAddress,
+		"turnstile_check":                  common.TurnstileCheckEnabled,
+		"turnstile_site_key":               common.TurnstileSiteKey,
+		"top_up_link":                      common.TopUpLink,
+		"docs_link":                        operation_setting.GetGeneralSetting().DocsLink,
+		"quota_per_unit":                   common.QuotaPerUnit,
 		// 兼容旧前端：保留 display_in_currency，同时提供新的 quota_display_type
 		"display_in_currency":           operation_setting.IsCurrencyDisplay(),
 		"quota_display_type":            operation_setting.GetQuotaDisplayType(),
@@ -247,21 +249,8 @@ func SendEmailVerification(c *gin.Context) {
 	}
 	localPart := parts[0]
 	domainPart := parts[1]
-	if common.EmailDomainRestrictionEnabled {
-		allowed := false
-		for _, domain := range common.EmailDomainWhitelist {
-			if domainPart == domain {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": "The administrator has enabled the email domain name whitelist, and your email address is not allowed due to special symbols or it's not in the whitelist.",
-			})
-			return
-		}
+	if !validateRegistrationEmailDomain(c, domainPart) {
+		return
 	}
 	if common.EmailAliasRestrictionEnabled {
 		containsSpecialSymbols := strings.Contains(localPart, "+") || strings.Contains(localPart, ".")

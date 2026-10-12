@@ -62,6 +62,9 @@ redemption.not_provided: "未提供兑换码"
 redemption.expire_time_invalid: "过期时间不能早于当前时间"
 
 # User messages
+user.email_qq_only: "当前仅支持 QQ 邮箱（@qq.com）注册，请使用 QQ 邮箱接收验证码。"
+user.email_domain_restricted: "当前仅支持以下邮箱域名注册：{{.Domains}}，请使用对应邮箱接收验证码。"
+user.email_registration_closed: "当前暂未开放邮箱注册，请联系管理员。"
 user.password_login_disabled: "管理员关闭了密码登录"
 user.register_disabled: "管理员关闭了新用户注册"
 user.password_register_disabled: "管理员关闭了通过密码进行注册，请使用第三方账户验证的形式进行注册"

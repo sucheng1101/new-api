@@ -4121,6 +4121,15 @@
     "发起 Waffo 充值": "Démarrer un rechargement Waffo",
     "发起 Waffo Pancake 充值": "Démarrer un rechargement Waffo Pancake",
     "用户操作": "Opération utilisateur",
-    "其他操作": "Autre opération"
+    "其他操作": "Autre opération",
+    "当前仅支持 QQ 邮箱（@qq.com）注册，请使用 QQ 邮箱接收验证码。": "Seules les adresses QQ (@qq.com) sont actuellement acceptées pour l’inscription. Utilisez une adresse QQ pour recevoir le code de vérification.",
+    "当前仅支持以下邮箱域名注册：{{domains}}，请使用对应邮箱接收验证码。": "Seuls ces domaines de messagerie sont actuellement acceptés pour l’inscription : {{domains}}. Utilisez une adresse correspondante pour recevoir le code de vérification.",
+    "当前暂未开放邮箱注册，请联系管理员。": "L’inscription par e-mail est actuellement fermée. Contactez l’administrateur.",
+    "赠送余额": "Solde offert",
+    "奖励余额（￥）": "Solde de récompense (￥)",
+    "每日消费门槛（￥）": "Seuil de consommation quotidien (￥)",
+    "当前门槛为 {{amount}}，后台统一按人民币余额配置。": "Seuil actuel : {{amount}}. Configurez-le comme un solde en RMB.",
+    "每日消费门槛必须是大于等于 0 的有效金额。": "Le seuil de consommation quotidien doit être un montant valide supérieur ou égal à 0.",
+    "奖励余额必须是大于等于 0 的有效金额。": "Le solde de récompense doit être un montant valide supérieur ou égal à 0."
   }
 }

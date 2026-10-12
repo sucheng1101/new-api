@@ -4263,6 +4263,15 @@
     "发起 Waffo 充值": "Start Waffo top-up",
     "发起 Waffo Pancake 充值": "Start Waffo Pancake top-up",
     "用户操作": "User operation",
-    "其他操作": "Other operation"
+    "其他操作": "Other operation",
+    "当前仅支持 QQ 邮箱（@qq.com）注册，请使用 QQ 邮箱接收验证码。": "Registration currently supports QQ email addresses (@qq.com) only. Please use a QQ email address to receive the verification code.",
+    "当前仅支持以下邮箱域名注册：{{domains}}，请使用对应邮箱接收验证码。": "Registration currently supports these email domains only: {{domains}}. Please use a matching email address to receive the verification code.",
+    "当前暂未开放邮箱注册，请联系管理员。": "Email registration is currently closed. Please contact the administrator.",
+    "赠送余额": "Gift balance",
+    "奖励余额（￥）": "Reward balance (￥)",
+    "每日消费门槛（￥）": "Daily spending threshold (￥)",
+    "当前门槛为 {{amount}}，后台统一按人民币余额配置。": "Current threshold: {{amount}}. Configure it as an RMB balance.",
+    "每日消费门槛必须是大于等于 0 的有效金额。": "The daily spending threshold must be a valid amount greater than or equal to 0.",
+    "奖励余额必须是大于等于 0 的有效金额。": "The reward balance must be a valid amount greater than or equal to 0."
   }
 }

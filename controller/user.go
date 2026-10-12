@@ -158,6 +158,13 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
 		}
+		emailDomain := ""
+		if at := strings.LastIndex(user.Email, "@"); at >= 0 {
+			emailDomain = user.Email[at+1:]
+		}
+		if !validateRegistrationEmailDomain(c, emailDomain) {
+			return
+		}
 		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose) {
 			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 			return
