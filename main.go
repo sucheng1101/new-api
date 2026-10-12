@@ -134,6 +134,9 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 
+	// Remove direct API IP allowlist entries that have not been used for 180 days.
+	service.StartDirectIPAllowlistCleanupTask()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
 		a := relay.GetTaskAdaptor(platform)
@@ -189,6 +192,13 @@ func main() {
 
 	// Initialize HTTP server
 	server := gin.New()
+	trustedProxies, _, trustedProxyErr := common.ResolveTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
+	if trustedProxyErr != nil {
+		common.FatalLog(trustedProxyErr.Error())
+	}
+	if err := common.ConfigureTrustedProxies(server, trustedProxies); err != nil {
+		common.FatalLog(err.Error())
+	}
 	server.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
 		common.SysLog(fmt.Sprintf("panic detected: %v", err))
 		c.JSON(http.StatusInternalServerError, gin.H{

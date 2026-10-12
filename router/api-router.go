@@ -78,6 +78,10 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.UserAuth())
 			{
+				selfRoute.GET("/direct-ip-whitelist", controller.GetDirectIPAllowlist)
+				selfRoute.GET("/direct-ip-whitelist/current-ip", controller.GetDirectIPAllowlistCurrentIP)
+				selfRoute.POST("/direct-ip-whitelist", controller.AddDirectIPAllowlist)
+				selfRoute.DELETE("/direct-ip-whitelist/:id", controller.DeleteDirectIPAllowlist)
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.GET("/models", controller.GetUserModels)

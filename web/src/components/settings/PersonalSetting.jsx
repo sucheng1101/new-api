@@ -46,6 +46,7 @@ import WeChatBindModal from './personal/modals/WeChatBindModal';
 import AccountDeleteModal from './personal/modals/AccountDeleteModal';
 import ChangePasswordModal from './personal/modals/ChangePasswordModal';
 import SecureVerificationModal from '../common/modals/SecureVerificationModal';
+import DirectIPAllowlistSettings from './personal/cards/DirectIPAllowlistSettings';
 import { useSecureVerification } from '../../hooks/common/useSecureVerification';
 
 const PersonalSetting = () => {
@@ -595,6 +596,8 @@ const PersonalSetting = () => {
               saveNotificationSettings={saveNotificationSettings}
             />
           </div>
+
+          <DirectIPAllowlistSettings t={t} />
         </div>
       </div>
 
