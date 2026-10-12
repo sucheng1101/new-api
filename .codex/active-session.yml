@@ -1,0 +1,21 @@
+﻿task_id: null
+status: IDLE
+mode: none
+project_class: product/application + service/api
+operational_profile: hosted-service, data-sensitive
+branch: codex/token-endpoint-bar
+base_commit: 4b8db9abe6c24e183a16322c89e6baf01e4e4e64
+primary_writer: none
+primary_session: null
+review_session: null
+owned_paths: []
+preserved_paths: []
+docker:
+  runtime: TBD
+  start: TBD
+  test: TBD
+  build: TBD
+  health: TBD
+acceptance: []
+next_action: create task card before first edit
+last_updated: 2026-10-12
