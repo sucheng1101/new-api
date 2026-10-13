@@ -40,6 +40,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     topup: true,
     promotion: true,
     personal: true,
+    directIPWhitelist: true,
   },
   admin: {
     enabled: true,

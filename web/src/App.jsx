@@ -61,6 +61,7 @@ import Ops from './pages/Ops';
 import ExternalPage from './pages/External';
 import Setup from './pages/Setup';
 import SetupCheck from './components/layout/SetupCheck';
+import DirectIPWhitelist from './pages/DirectIPWhitelist';
 
 const Home = lazy(() => import('./pages/Home'));
 const Docs = lazy(() => import('./pages/Docs'));
@@ -377,6 +378,14 @@ function App() {
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <PersonalSetting />
               </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/direct-ip-whitelist'
+          element={
+            <PrivateRoute>
+              <DirectIPWhitelist />
             </PrivateRoute>
           }
         />

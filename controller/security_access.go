@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type securityIPBlockRequest struct {
@@ -85,7 +86,7 @@ func GetSecurityEvents(c *gin.Context) {
 	}
 	logs, total, err := model.GetAuditLogs(model.AuditLogFilter{
 		Category: c.Query("category"), Action: c.Query("action"), Ip: c.Query("ip"),
-		Username: c.Query("username"), StartTimestamp: start, EndTimestamp: end, Success: success,
+		Username: c.Query("username"), Query: c.Query("query"), StartTimestamp: start, EndTimestamp: end, Success: success,
 	}, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), c.GetInt("role"))
 	if err != nil {
 		common.ApiError(c, err)
@@ -96,10 +97,28 @@ func GetSecurityEvents(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+func GetSecurityEventDetail(c *gin.Context) {
+	eventID := strings.TrimSpace(c.Param("event_id"))
+	if eventID == "" || model.LOG_DB == nil {
+		common.ApiErrorMsg(c, "event_id invalid")
+		return
+	}
+	items, _, err := model.GetAuditLogs(model.AuditLogFilter{EventId: eventID}, 0, 1, c.GetInt("role"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if len(items) == 0 {
+		common.ApiError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	common.ApiSuccess(c, items[0])
+}
+
 func GetSecurityIPRisks(c *gin.Context) {
 	start, end := securityTimeRange(c)
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	risks, err := model.GetSecurityIPRisks(start, end, limit)
+	pageInfo := common.GetPageQuery(c)
+	risks, total, err := model.ListSecurityIPRisks(c.Query("query"), start, end, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -120,12 +139,14 @@ func GetSecurityIPRisks(c *gin.Context) {
 		}(i)
 	}
 	wg.Wait()
-	common.ApiSuccess(c, risks)
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(risks)
+	common.ApiSuccess(c, pageInfo)
 }
 
 func GetSecurityIPBlocks(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	items, total, err := model.ListSecurityIPBlocks(pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	items, total, err := model.ListSecurityIPBlocksFiltered(c.Query("query"), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return

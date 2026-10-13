@@ -1,35 +1,42 @@
 package common
 
 import (
-	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestDirectAPIHostsAndBaseURL(t *testing.T) {
-	t.Setenv("DIRECT_API_HOST", "https://GW.Example.com., gw.example.com:443")
-	t.Setenv("DIRECT_API_BASE_URL", "")
-	assert.Equal(t, []string{"gw.example.com"}, DirectAPIHosts())
-	assert.True(t, IsDirectAPIRequest("gw.example.com:443"))
-	assert.True(t, IsDirectAPIRequest("GW.EXAMPLE.COM."))
-	assert.False(t, IsDirectAPIRequest("api.example.com"))
-	assert.Equal(t, "https://gw.example.com", DirectAPIBaseURL())
-
-	t.Setenv("DIRECT_API_BASE_URL", "https://direct.example.com/")
-	assert.Equal(t, "https://direct.example.com", DirectAPIBaseURL())
+func TestNormalizeDirectAPIHostConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "normalizes and de-duplicates hosts", input: " HTTPS://API.Example.com/, api.example.com:443 ", want: "api.example.com"},
+		{name: "accepts a port", input: "api.example.com:8443", want: "api.example.com"},
+		{name: "rejects path", input: "https://api.example.com/v1", wantErr: true},
+		{name: "rejects ip address", input: "192.0.2.10", wantErr: true},
+		{name: "rejects invalid port", input: "api.example.com:70000", wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := NormalizeDirectAPIHostConfig(test.input)
+			if test.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.want, got)
+		})
+	}
 }
 
-func TestDirectAPIHostConfigurationCanBeDisabled(t *testing.T) {
-	previous, hadValue := os.LookupEnv("DIRECT_API_HOST")
-	t.Cleanup(func() {
-		if hadValue {
-			_ = os.Setenv("DIRECT_API_HOST", previous)
-		} else {
-			_ = os.Unsetenv("DIRECT_API_HOST")
-		}
-	})
-	_ = os.Unsetenv("DIRECT_API_HOST")
-	assert.Empty(t, DirectAPIHosts())
-	assert.False(t, IsDirectAPIRequest("gw.example.com"))
+func TestValidateDirectAPIBaseURL(t *testing.T) {
+	require.NoError(t, ValidateDirectAPIBaseURL("https://api.example.com/v1"))
+	require.NoError(t, ValidateDirectAPIBaseURL("http://127.0.0.1:5200"))
+	require.Error(t, ValidateDirectAPIBaseURL("api.example.com"))
+	require.Error(t, ValidateDirectAPIBaseURL("https://user:pass@api.example.com"))
+	require.Error(t, ValidateDirectAPIBaseURL("https://api.example.com?token=secret"))
+	require.Error(t, ValidateDirectAPIBaseURL("https://api.example.com:70000"))
 }

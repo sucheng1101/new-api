@@ -195,6 +195,12 @@ func SetApiRouter(router *gin.Engine) {
 			securityRoute.POST("/ip-blocks", controller.CreateSecurityIPBlock)
 			securityRoute.PATCH("/ip-blocks/:id", controller.UpdateSecurityIPBlock)
 			securityRoute.DELETE("/ip-blocks/:id", controller.DeleteSecurityIPBlock)
+			securityRoute.GET("/events/:event_id", controller.GetSecurityEventDetail)
+			securityRoute.GET("/direct-ip-whitelist", controller.GetAdminDirectIPAllowlists)
+			securityRoute.PATCH("/direct-ip-whitelist/:id", controller.UpdateAdminDirectIPAllowlist)
+			securityRoute.DELETE("/direct-ip-whitelist/:id", controller.DeleteAdminDirectIPAllowlist)
+			securityRoute.GET("/direct-api-config", controller.GetDirectAPIConfig)
+			securityRoute.PATCH("/direct-api-config", controller.UpdateDirectAPIConfig)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

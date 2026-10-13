@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
+	"gorm.io/gorm"
 )
 
 type Option struct {
@@ -252,6 +253,10 @@ func InitOptionMap() {
 	common.OptionMap["ChannelUsageTimezone"] = channelUsageTimezone
 	common.ChannelUsageTimezone = channelUsageTimezone
 	common.OptionMap["DefaultCollapseSidebar"] = strconv.FormatBool(common.DefaultCollapseSidebar)
+	common.OptionMap["DirectAPIHosts"] = strings.TrimSpace(os.Getenv("DIRECT_API_HOST"))
+	common.OptionMap["DirectAPIBaseURL"] = strings.TrimSpace(os.Getenv("DIRECT_API_BASE_URL"))
+	common.OptionMap["DirectAPIHostsConfigured"] = "false"
+	common.OptionMap["DirectAPIBaseURLConfigured"] = "false"
 	common.OptionMap["MjNotifyEnabled"] = strconv.FormatBool(setting.MjNotifyEnabled)
 	common.OptionMap["MjAccountFilterEnabled"] = strconv.FormatBool(setting.MjAccountFilterEnabled)
 	common.OptionMap["MjModeClearEnabled"] = strconv.FormatBool(setting.MjModeClearEnabled)
@@ -339,6 +344,56 @@ func UpdateOption(key string, value string) error {
 	return updateOptionMap(key, validatedValue)
 }
 
+// UpdateDirectAPIConfig stores both public endpoint settings together so a
+// transient database error cannot leave the active host and displayed URL out
+// of sync.
+func UpdateDirectAPIConfig(hosts, baseURL string) error {
+	values := map[string]string{
+		"DirectAPIHosts":   hosts,
+		"DirectAPIBaseURL": baseURL,
+	}
+	for key, value := range values {
+		validatedValue, err := validateOptionValue(key, value)
+		if err != nil {
+			return err
+		}
+		values[key] = validatedValue
+	}
+	if DB == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		for key, value := range values {
+			option := Option{Key: key}
+			if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+				return err
+			}
+			option.Value = value
+			if err := tx.Save(&option).Error; err != nil {
+				return err
+			}
+			configured := Option{Key: key + "Configured", Value: "true"}
+			if err := tx.Save(&configured).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	for key, value := range values {
+		common.OptionMap[key] = value
+		common.OptionMap[key+"Configured"] = "true"
+	}
+	common.OptionMapRWMutex.Unlock()
+	return nil
+}
+
 // ValidateLotterySettings validates a batch before any option is persisted.
 // The controller uses this to avoid partially applying a malformed settings
 // request when several lottery options are submitted together.
@@ -368,6 +423,9 @@ func updateOptionMap(key string, value string) (err error) {
 		common.OptionMap = make(map[string]string)
 	}
 	common.OptionMap[key] = validatedValue
+	if key == "DirectAPIHosts" || key == "DirectAPIBaseURL" {
+		common.OptionMap[key+"Configured"] = "true"
+	}
 
 	// 检查是否是模型配置 - 使用更规范的方式处理
 	if handleConfigUpdate(key, validatedValue) {

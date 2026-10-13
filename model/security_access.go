@@ -49,7 +49,15 @@ func IsSecurityIPBlocked(value string) (bool, error) {
 }
 
 func ListSecurityIPBlocks(offset, limit int) ([]*SecurityIPBlock, int64, error) {
+	return ListSecurityIPBlocksFiltered("", offset, limit)
+}
+
+func ListSecurityIPBlocksFiltered(search string, offset, limit int) ([]*SecurityIPBlock, int64, error) {
 	query := DB.Model(&SecurityIPBlock{}).Order("enabled DESC").Order("created_at DESC")
+	if strings.TrimSpace(search) != "" {
+		term := "%" + strings.TrimSpace(search) + "%"
+		query = query.Where("(address LIKE ? OR reason LIKE ?)", term, term)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -107,22 +115,28 @@ func SetSecurityIPBlockEnabled(id int, enabled bool) error {
 }
 
 type SecurityIPRisk struct {
-	Address    string `json:"address"`
-	UserCount  int64  `json:"user_count"`
-	EventCount int64  `json:"event_count"`
-	LastSeen   int64  `json:"last_seen"`
-	GeoStatus  string `json:"geo_status,omitempty"`
-	Country    string `json:"country,omitempty"`
-	Region     string `json:"region,omitempty"`
-	City       string `json:"city,omitempty"`
-	ISP        string `json:"isp,omitempty"`
-	ASN        string `json:"asn,omitempty"`
-	Timezone   string `json:"timezone,omitempty"`
+	Address    string   `json:"address"`
+	UserCount  int64    `json:"user_count"`
+	EventCount int64    `json:"event_count"`
+	LastSeen   int64    `json:"last_seen"`
+	Users      []string `json:"users,omitempty"`
+	GeoStatus  string   `json:"geo_status,omitempty"`
+	Country    string   `json:"country,omitempty"`
+	Region     string   `json:"region,omitempty"`
+	City       string   `json:"city,omitempty"`
+	ISP        string   `json:"isp,omitempty"`
+	ASN        string   `json:"asn,omitempty"`
+	Timezone   string   `json:"timezone,omitempty"`
 }
 
 func GetSecurityIPRisks(startTimestamp, endTimestamp int64, limit int) ([]SecurityIPRisk, error) {
+	rows, _, err := ListSecurityIPRisks("", startTimestamp, endTimestamp, 0, limit)
+	return rows, err
+}
+
+func ListSecurityIPRisks(search string, startTimestamp, endTimestamp int64, offset, limit int) ([]SecurityIPRisk, int64, error) {
 	if DB == nil && LOG_DB == nil {
-		return []SecurityIPRisk{}, nil
+		return []SecurityIPRisk{}, 0, nil
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -157,11 +171,14 @@ func GetSecurityIPRisks(startTimestamp, endTimestamp int64, limit int) ([]Securi
 			query = query.Where("created_at <= ?", endTimestamp)
 		}
 		if err := query.Scan(&users).Error; err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		for _, row := range users {
 			address := strings.TrimSpace(row.Address)
 			if address == "" {
+				continue
+			}
+			if strings.TrimSpace(search) != "" && !strings.Contains(strings.ToLower(address), strings.ToLower(strings.TrimSpace(search))) {
 				continue
 			}
 			aggregates[address] = &riskAggregate{
@@ -186,11 +203,14 @@ func GetSecurityIPRisks(startTimestamp, endTimestamp int64, limit int) ([]Securi
 			query = query.Where("created_at <= ?", endTimestamp)
 		}
 		if err := query.Group("ip").Scan(&audits).Error; err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		for _, row := range audits {
 			address := strings.TrimSpace(row.Address)
 			if address == "" {
+				continue
+			}
+			if strings.TrimSpace(search) != "" && !strings.Contains(strings.ToLower(address), strings.ToLower(strings.TrimSpace(search))) {
 				continue
 			}
 			aggregate, ok := aggregates[address]
@@ -229,10 +249,71 @@ func GetSecurityIPRisks(startTimestamp, endTimestamp int64, limit int) ([]Securi
 		}
 		return rows[i].Address < rows[j].Address
 	})
-	if len(rows) > limit {
-		rows = rows[:limit]
+	total := int64(len(rows))
+	if offset < 0 {
+		offset = 0
 	}
-	return rows, nil
+	if offset >= len(rows) {
+		return []SecurityIPRisk{}, total, nil
+	}
+	end := offset + limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	page := rows[offset:end]
+	if err := populateSecurityIPRiskUsers(page); err != nil {
+		return nil, 0, err
+	}
+	return page, total, nil
+}
+
+func populateSecurityIPRiskUsers(rows []SecurityIPRisk) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	addresses := make([]string, 0, len(rows))
+	usernamesByAddress := make(map[string]map[string]struct{}, len(rows))
+	for _, row := range rows {
+		addresses = append(addresses, row.Address)
+		usernamesByAddress[row.Address] = make(map[string]struct{})
+	}
+	type userNameRow struct {
+		Address  string
+		Username string
+	}
+	if DB != nil {
+		var names []userNameRow
+		if err := DB.Model(&User{}).Select("register_ip AS address, username").
+			Where("register_ip IN ? AND username <> ''", addresses).
+			Distinct().Scan(&names).Error; err != nil {
+			return err
+		}
+		for _, name := range names {
+			if _, ok := usernamesByAddress[name.Address]; ok && name.Username != "" {
+				usernamesByAddress[name.Address][name.Username] = struct{}{}
+			}
+		}
+	}
+	if LOG_DB != nil {
+		var names []userNameRow
+		if err := LOG_DB.Model(&AuditLog{}).Select("ip AS address, username").
+			Where("ip IN ? AND username <> ''", addresses).
+			Distinct().Scan(&names).Error; err != nil {
+			return err
+		}
+		for _, name := range names {
+			if _, ok := usernamesByAddress[name.Address]; ok && name.Username != "" {
+				usernamesByAddress[name.Address][name.Username] = struct{}{}
+			}
+		}
+	}
+	for i := range rows {
+		for username := range usernamesByAddress[rows[i].Address] {
+			rows[i].Users = append(rows[i].Users, username)
+		}
+		sort.Strings(rows[i].Users)
+	}
+	return nil
 }
 
 func CountAuditEvents(startTimestamp, endTimestamp int64) (int64, error) {

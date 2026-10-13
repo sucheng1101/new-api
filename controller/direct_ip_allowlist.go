@@ -17,6 +17,10 @@ type directIPAllowlistRequest struct {
 	Remark string `json:"remark"`
 }
 
+type directIPAllowlistAdminRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
 func GetDirectIPAllowlist(c *gin.Context) {
 	entries, err := model.GetDirectIPAllowlists(c.GetInt("id"))
 	if err != nil {
@@ -82,4 +86,94 @@ func DeleteDirectIPAllowlist(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+func GetAdminDirectIPAllowlists(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	var enabled *bool
+	if raw := strings.TrimSpace(c.Query("enabled")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			common.ApiErrorMsg(c, "enabled 参数错误")
+			return
+		}
+		enabled = &value
+	}
+	items, total, err := model.ListDirectIPAllowlists(model.DirectIPAllowlistFilter{
+		Query: c.Query("query"), Enabled: enabled,
+	}, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func UpdateAdminDirectIPAllowlist(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "白名单 ID 无效")
+		return
+	}
+	var req directIPAllowlistAdminRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil || req.Enabled == nil {
+		common.ApiErrorMsg(c, "缺少 enabled 参数")
+		return
+	}
+	if err := model.SetDirectIPAllowlistEnabled(id, *req.Enabled); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"id": id, "enabled": *req.Enabled})
+}
+
+func DeleteAdminDirectIPAllowlist(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "白名单 ID 无效")
+		return
+	}
+	if err := model.DB.Delete(&model.DirectIPAllowlist{}, id).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"id": id})
+}
+
+func GetDirectAPIConfig(c *gin.Context) {
+	common.OptionMapRWMutex.RLock()
+	hosts := common.OptionMap["DirectAPIHosts"]
+	baseURL := common.OptionMap["DirectAPIBaseURL"]
+	common.OptionMapRWMutex.RUnlock()
+	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
+}
+
+type directAPIConfigRequest struct {
+	Hosts   string `json:"hosts"`
+	BaseURL string `json:"base_url"`
+}
+
+func UpdateDirectAPIConfig(c *gin.Context) {
+	var req directAPIConfigRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	hosts, err := common.NormalizeDirectAPIHostConfig(req.Hosts)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	baseURL := strings.TrimSpace(req.BaseURL)
+	if err := common.ValidateDirectAPIBaseURL(baseURL); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if err := model.UpdateDirectAPIConfig(hosts, baseURL); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
 }

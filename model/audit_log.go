@@ -46,6 +46,7 @@ type AuditLog struct {
 type AuditLogFilter struct {
 	SelfView        bool
 	UserId          int
+	EventId         string
 	Username        string
 	Category        string
 	Action          string
@@ -56,6 +57,7 @@ type AuditLogFilter struct {
 	StartTimestamp  int64
 	EndTimestamp    int64
 	Success         *bool
+	Query           string
 }
 
 func AccessTokenFingerprint(token string) string {
@@ -125,6 +127,9 @@ func GetAuditLogs(filter AuditLogFilter, start, limit, viewerRole int) ([]*Audit
 	if filter.UserId > 0 {
 		query = query.Where("user_id = ?", filter.UserId)
 	}
+	if filter.EventId != "" {
+		query = query.Where("event_id = ?", filter.EventId)
+	}
 	if filter.Username != "" {
 		query = query.Where("username = ?", filter.Username)
 	}
@@ -154,6 +159,10 @@ func GetAuditLogs(filter AuditLogFilter, start, limit, viewerRole int) ([]*Audit
 	}
 	if filter.Success != nil {
 		query = query.Where("success = ?", *filter.Success)
+	}
+	if strings.TrimSpace(filter.Query) != "" {
+		term := "%" + strings.TrimSpace(filter.Query) + "%"
+		query = query.Where("(username LIKE ? OR ip LIKE ? OR action LIKE ? OR route LIKE ? OR content LIKE ?)", term, term, term, term, term)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

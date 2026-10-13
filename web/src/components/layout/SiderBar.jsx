@@ -57,6 +57,7 @@ const routerMap = {
   monitorGroups: '/console/monitor-groups',
   dashboard: '/console/dashboard',
   security: '/console/security',
+  directIPWhitelist: '/console/direct-ip-whitelist',
   taskPlugin: '/console/task-plugin',
 };
 
@@ -159,6 +160,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('个人设置'),
         itemKey: 'personal',
         to: '/personal',
+      },
+      {
+        text: t('直连白名单'),
+        itemKey: 'directIPWhitelist',
+        to: '/console/direct-ip-whitelist',
       },
     ];
 

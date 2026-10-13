@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -335,6 +336,17 @@ func migrateDB() error {
 		&DirectIPAllowlist{},
 	)
 	if err != nil {
+		return err
+	}
+	var allowlistMigration Option
+	if err := DB.Where(commonKeyCol+" = ?", "DirectIPAllowlistEnabledMigrated").First(&allowlistMigration).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := DB.Model(&DirectIPAllowlist{}).Where("enabled IS NULL").Update("enabled", true).Error; err != nil {
+			return err
+		}
+		if err := DB.Create(&Option{Key: "DirectIPAllowlistEnabledMigrated", Value: "true"}).Error; err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	if common.UsingSQLite {

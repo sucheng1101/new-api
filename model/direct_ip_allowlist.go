@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -20,6 +21,8 @@ type DirectIPAllowlist struct {
 	UserId       int    `json:"user_id" gorm:"not null;index;uniqueIndex:idx_direct_ip_allowlist_user_ip,priority:1"`
 	IP           string `json:"ip" gorm:"column:ip;type:varchar(45);not null;uniqueIndex:idx_direct_ip_allowlist_user_ip,priority:2"`
 	Remark       string `json:"remark" gorm:"type:varchar(255);default:''"`
+	Enabled      bool   `json:"enabled" gorm:"default:true;index"`
+	Username     string `json:"username" gorm:"-"`
 	CreatedAt    int64  `json:"created_at" gorm:"bigint;not null;index"`
 	LastAccessAt int64  `json:"last_access_at" gorm:"bigint;default:0;index"`
 }
@@ -43,6 +46,70 @@ func GetDirectIPAllowlists(userId int) ([]DirectIPAllowlist, error) {
 	var entries []DirectIPAllowlist
 	err := DB.Where("user_id = ?", userId).Order("id asc").Find(&entries).Error
 	return entries, err
+}
+
+type DirectIPAllowlistFilter struct {
+	Query   string
+	UserID  int
+	Enabled *bool
+}
+
+func ListDirectIPAllowlists(filter DirectIPAllowlistFilter, start, limit int) ([]DirectIPAllowlist, int64, error) {
+	query := DB.Model(&DirectIPAllowlist{}).
+		Joins("LEFT JOIN users ON users.id = direct_ip_allowlists.user_id").
+		Select("direct_ip_allowlists.*, users.username AS username").
+		Order("direct_ip_allowlists.created_at DESC")
+	if filter.UserID > 0 {
+		query = query.Where("user_id = ?", filter.UserID)
+	}
+	if filter.Enabled != nil {
+		query = query.Where("enabled = ?", *filter.Enabled)
+	}
+	if strings.TrimSpace(filter.Query) != "" {
+		value := strings.TrimSpace(filter.Query)
+		term := "%" + value + "%"
+		if userID, err := strconv.Atoi(value); err == nil && userID > 0 {
+			query = query.Where("(direct_ip_allowlists.ip LIKE ? OR direct_ip_allowlists.remark LIKE ? OR users.username LIKE ? OR direct_ip_allowlists.user_id = ?)", term, term, term, userID)
+		} else {
+			query = query.Where("(direct_ip_allowlists.ip LIKE ? OR direct_ip_allowlists.remark LIKE ? OR users.username LIKE ?)", term, term, term)
+		}
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	type directIPAllowlistListRow struct {
+		DirectIPAllowlist
+		Username string `gorm:"column:username"`
+	}
+	rows := make([]directIPAllowlistListRow, 0)
+	if err := query.Offset(start).Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	items := make([]DirectIPAllowlist, 0, len(rows))
+	for _, row := range rows {
+		item := row.DirectIPAllowlist
+		item.Username = row.Username
+		items = append(items, item)
+	}
+	return items, total, nil
+}
+
+func SetDirectIPAllowlistEnabled(id int, enabled bool) error {
+	if id <= 0 {
+		return errors.New("invalid direct IP allowlist id")
+	}
+	result := DB.Model(&DirectIPAllowlist{}).Where("id = ?", id).Updates(map[string]any{"enabled": enabled})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		var existing DirectIPAllowlist
+		if err := DB.Select("id").First(&existing, id).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func CreateDirectIPAllowlist(userId int, rawIP, remark string) (*DirectIPAllowlist, error) {
@@ -73,7 +140,7 @@ func CreateDirectIPAllowlist(userId int, rawIP, remark string) (*DirectIPAllowli
 			return err
 		}
 		now := common.GetTimestamp()
-		entry = DirectIPAllowlist{UserId: userId, IP: ip, Remark: remark, CreatedAt: now}
+		entry = DirectIPAllowlist{UserId: userId, IP: ip, Remark: remark, Enabled: true, CreatedAt: now}
 		return tx.Create(&entry).Error
 	})
 	if err != nil {
@@ -114,7 +181,7 @@ func CheckAndTouchDirectIPAllowlist(userId int, rawIP string) (bool, error) {
 		return false, err
 	}
 	var entry DirectIPAllowlist
-	err = DB.Where("user_id = ? AND ip = ?", userId, ip).First(&entry).Error
+	err = DB.Where("user_id = ? AND ip = ? AND enabled = ?", userId, ip, true).First(&entry).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, nil
 	}

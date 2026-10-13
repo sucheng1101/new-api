@@ -15,7 +15,7 @@ func setupDirectIPAllowlistTest(t *testing.T) {
 	previousDB := DB
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, database.AutoMigrate(&DirectIPAllowlist{}))
+	require.NoError(t, database.AutoMigrate(&User{}, &DirectIPAllowlist{}))
 	DB = database
 	t.Cleanup(func() { DB = previousDB })
 }
