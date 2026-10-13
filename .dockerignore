@@ -8,3 +8,15 @@ docs
 .eslintcache
 .gocache
 /web/node_modules
+
+# Local runtime state and release artifacts are mounted or generated at runtime.
+data
+logs
+formal-backups
+backups
+*.db
+*.db-*
+*.exe
+new-api*
+one-api*
+.codex
