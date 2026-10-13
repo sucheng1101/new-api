@@ -1,152 +1,124 @@
-# 本地源码开发启动手册
+# 本地源码开发运行手册（Docker 唯一运行时）
 
-本文档用于 `new-api-v0.13.2` 的日常开发。开发运行态由三个独立
-进程组成：Docker Desktop 中的 MySQL、Redis 和 MinIO 对象存储、从 Go 源码
-启动的后端、以及从 Vite 源码启动的前端。
+本手册是 `newapi` 本地开发、测试和调试的唯一运行入口。Windows 仅作为 Docker
+编排主机；同一 checkout 同一时间只允许一个运行时组：`docker`、经记录批准的
+`windows-native` 例外，或 `none`。不得同时启动 Docker 和 Windows 原生版本，也
+不得为同一 checkout 启动第二个 Compose project。
 
-不要在日常开发中使用当前的 `make` / `make dev`。它仍会构建后端，且
-默认端口与本手册的本地开发端口不同。嵌入前端的一体化二进制仅用于
-发布或生产化验收。
+## 1. 运行边界
 
-## 本地端口与数据
+| 项目 | 值 |
+|---|---|
+| Compose 文件 | `docker-compose.dev.yml` |
+| Compose project | `newapi-dev` |
+| 应用 | `http://127.0.0.1:5200` |
+| MySQL | `127.0.0.1:13306` |
+| Redis | `127.0.0.1:16379` |
+| MinIO | `127.0.0.1:19000`，控制台 `19001` |
+| 运行锁 | `.git/new-api-dev/runtime-lock.json` |
+| 数据卷 | `new-api-dev-mysql-data`、`new-api-dev-redis-data`、`new-api-dev-minio-data`（版本切换时保持稳定） |
+| 容器名 | `new-api-${VERSION}-app`、`new-api-${VERSION}-mysql`、`new-api-${VERSION}-redis`、`new-api-${VERSION}-minio` |
 
-| 组件          | 地址或端口               | 用途                                      |
-| ------------- | ------------------------ | ----------------------------------------- |
-| MySQL         | `127.0.0.1:13306`        | Docker 服务，数据库为 `new-api-local-dev` |
-| Redis         | `127.0.0.1:16379`        | Docker 服务                               |
-| MinIO API     | `127.0.0.1:19000`        | Docker 服务，保存成功视频等任务制品       |
-| MinIO Console | `http://127.0.0.1:19001` | 本地对象存储管理界面                      |
-| Go 后端       | `http://127.0.0.1:5200`  | API、任务处理和管理端 API                 |
-| Vite 前端     | `http://127.0.0.1:5173`  | 日常开发页面，代理 API 到 5200            |
+启动脚本读取根目录 `VERSION`，并将版本号写入容器名、镜像名和运行时 label。数据卷属于本地开发数据。停止或重建应用不得删除数据卷；禁止使用
+`docker compose down -v`。
 
-MySQL、Redis 和 MinIO 的 Docker 卷会保留已导入的本地数据快照和任务制品。
-停止容器不会删除数据；不要执行 `docker compose down -v`。
+首次启动时，脚本按修改时间选择 `formal-backups/`、`backups/` 和仓库根目录中最新的有效 SQLite 数据库快照。仅当 `data/one-api.db` 不存在且 MySQL 数据库没有表时才复制快照；已有 SQLite 或 MySQL 数据会原样保留，不会被新快照覆盖。没有有效快照且数据库为空时启动会中止，避免静默创建全新实例。
 
-## 首次准备
+## 2. 会话和运行锁
 
-`main.go` 使用 `//go:embed web/dist`。即使日常页面由 Vite 直接从
-`web/src` 提供，Go 首次编译仍要求 `web/dist` 存在。因此仅在以下场景
-执行一次前端生产构建：首次拉取、手动清理了 `web/dist`、前端依赖变更，
-或需要制作一体化验收包。
+一个任务只有一个主写入会话和一个 `runtime_owner`。其他 Codex、WorkBuddy、测试或
+审查会话只读检查，不得启动、停止、重建或切换运行时。启动前必须读取运行锁：
 
-```bash
-ROOT=/Users/Zhuanz1/Desktop/privateProjects/ssh/workspace/new-api-v0.13.2
-
-cd "$ROOT/web"
-bun install
-bun run build
+```json
+{
+  "runtime_mode": "docker",
+  "runtime_owner": "SESSION_ID",
+  "runtime_id": "newapi-dev",
+  "runtime_commit": "GIT_COMMIT",
+  "runtime_ports": [5200, 13306, 16379, 19000, 19001],
+  "updated_at": "UTC_ISO_TIMESTAMP"
+}
 ```
 
-日常修改 React 页面后不需要再次执行 `bun run build`。
+- 锁的 owner 与当前会话相同：可以继续并刷新锁。
+- owner 不同且 Compose 应用、依赖容器或项目端口仍在运行：保持现状，通知锁持有者。
+- owner 不同但运行组已经不存在：只有锁超过 30 分钟且没有项目进程/端口占用时才视为
+  `stale`，接管前记录旧 owner、旧 commit 和接管原因。
+- 运行组归属不明确时，不停止进程或容器。
+- 任务结束或切换到 `none` 时释放锁；若运行时继续给另一任务使用，交接 owner 并写入
+  `docs/WORK-BOARD.md`。
 
-## 日常启动
+`scripts/local-start.ps1` 负责检查和获取锁，`scripts/local-check.ps1` 只做验收，
+不会替其他会话接管运行时。
 
-### 1. 启动数据库容器
+## 3. 日常启动、修改和重建
 
-在 Docker Desktop 已运行的前提下执行：
+在仓库根目录执行：
 
-```bash
-ROOT=/Users/Zhuanz1/Desktop/privateProjects/ssh/workspace/new-api-v0.13.2
-cd "$ROOT"
-
-docker compose -f docker-compose.local.yml up -d mysql redis minio minio-init
-docker compose -f docker-compose.local.yml ps
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSION_ID
 ```
 
-预期 `new-api-mysql` 和 `new-api-redis` 显示为 `healthy`，`new-api-minio`
-显示为 `running`，`new-api-minio-init` 成功退出（`Exited (0)`）。
+该命令会依次检查 Docker、Compose 配置、项目端口和原生进程归属，然后执行：
 
-### 2. 启动 Go 后端源码
-
-在一个独立终端执行。命令从 Docker 容器读取本地 MySQL 密码到当前 shell
-变量，不会输出该值。显式设置的 `SQL_DSN` 和 `REDIS_CONN_STRING` 会覆盖
-仓库 `.env` 或 shell 中遗留的连接配置。
-
-```bash
-ROOT=/Users/Zhuanz1/Desktop/privateProjects/ssh/workspace/new-api-v0.13.2
-cd "$ROOT"
-
-MYSQL_ROOT_PASSWORD="$(
-  docker inspect new-api-mysql \
-    --format '{{range .Config.Env}}{{println .}}{{end}}' |
-    sed -n 's/^MYSQL_ROOT_PASSWORD=//p'
-)"
-
-env -u SQL_DSN -u REDIS_CONN_STRING \
-  PORT=5200 \
-  SQL_DSN="root:${MYSQL_ROOT_PASSWORD}@tcp(127.0.0.1:13306)/new-api-local-dev?charset=utf8mb4&parseTime=true&loc=Local" \
-  REDIS_CONN_STRING='redis://127.0.0.1:16379/0' \
-  TASK_ARTIFACT_STORE_MODE=s3 \
-  TASK_ARTIFACT_STORE_S3_ENDPOINT=http://127.0.0.1:19000 \
-  TASK_ARTIFACT_STORE_S3_BUCKET=new-api-task-artifacts \
-  TASK_ARTIFACT_STORE_S3_REGION=us-east-1 \
-  TASK_ARTIFACT_STORE_S3_ACCESS_KEY=new-api-local \
-  TASK_ARTIFACT_STORE_S3_SECRET_KEY=new-api-local-artifacts \
-  go run . --log-dir .git/new-api-dev/source-logs
+```powershell
+docker compose -p newapi-dev -f .\docker-compose.dev.yml up -d --build --force-recreate
+powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)
 ```
 
-`go run .` 直接运行当前源码。它会使用 Go 的临时构建缓存，但不会生成或
-替换发布二进制。修改 Go 代码后，在此终端按 `Ctrl+C`，再重复本节命令即可。
+源码或 Docker 构建输入（`Dockerfile`、Compose、`web/package.json`、锁文件、配置等）
+发生变化后，必须再次 `build + force-recreate`。只执行 `restart` 不会更新镜像中的
+嵌入式后端和前端，不作为验收依据。
 
-### 3. 启动 Vite 前端源码
+## 4. 验收证据
 
-在另一个独立终端执行：
-
-```bash
-ROOT=/Users/Zhuanz1/Desktop/privateProjects/ssh/workspace/new-api-v0.13.2
-cd "$ROOT/web"
-
-VITE_PROXY_TARGET=http://127.0.0.1:5200 \
-  bun run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```powershell
+docker compose -p newapi-dev -f .\docker-compose.dev.yml ps
+powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)
 ```
 
-开发时访问 `http://127.0.0.1:5173`。Vite 会将 `/api`、`/mj` 和 `/pg`
-代理到 5200；修改前端源码后由 HMR 自动刷新，不需要重启后端或重新构建
-`web/dist`。
+验收必须同时证明：
 
-## 启动验证
+1. `/api/status` 返回成功；
+2. `/api/status/latest-release` 可访问；
+3. `/` 返回 HTTP 200；
+4. 应用容器 label `com.newapi.runtime.commit` 等于当前 `git rev-parse HEAD`；
+5. 应用容器 label 的运行模式为 `docker`；
+6. 5200 没有 Windows 原生 `new-api`、`go run`、Bun 或 Node 应用监听；
+7. Compose project、容器名称和端口均属于本 checkout。
 
-```bash
-ROOT=/Users/Zhuanz1/Desktop/privateProjects/ssh/workspace/new-api-v0.13.2
-docker compose -f "$ROOT/docker-compose.local.yml" ps
-curl -fsS -o /dev/null -w 'backend: %{http_code}\n' http://127.0.0.1:5200/api/status
-curl -fsS -o /dev/null -w 'frontend: %{http_code}\n' http://127.0.0.1:5173/
+## 5. 模式切换
+
+### 原生进程切换到 Docker
+
+先确认监听 5200 的 PID、可执行路径和命令行都属于本仓库；只停止该进程组，确认
+端口释放后再执行 `local-start.ps1`。不得仅凭进程名 `go` 或 `node` 停止进程。
+
+### Docker 例外切换到 Windows-native
+
+只有任务卡明确记录原因、owner、端口和回切步骤时才允许。先停止 `newapi-dev` 的
+应用组，确认 5200 释放，原生启动命令和日志路径写入工作板；审查、发布或线上同步
+前必须回到 Docker 并完成当前 commit 的重建验收。
+
+## 6. WorkBuddy 使用方式
+
+Codex 先建立任务卡、分支、基线 commit、允许修改路径和验收标准，再把单一边界任务
+交给 WorkBuddy。WorkBuddy 必须先读本手册、项目 skill、`AGENTS.md`、工作板和运行锁；
+只有任务卡将其列为 `runtime_owner` 时才可控制 Docker。WorkBuddy 返回文件清单、精确
+命令、通过/失败结果、commit 候选和未决风险，由 Codex 进行审查、整合、发布或线上
+版本同步。
+
+## 7. 停止与数据保留
+
+```powershell
+docker compose -p newapi-dev -f .\docker-compose.dev.yml stop
 ```
 
-预期两个 HTTP 检查均返回 `200`。后端日志位于
-`.git/new-api-dev/source-logs`，可用以下命令跟踪：
+需要释放资源时停止容器即可；不要删除命名卷。任何归属不明的容器、端口或进程都保留
+现状并记录，待确认后处理。
 
-```bash
-tail -F .git/new-api-dev/source-logs/oneapi-*.log
-```
+## 8. 线上版本同步边界
 
-## 停止
-
-1. 分别在 Go 和 Vite 终端按 `Ctrl+C`。
-2. 下班或需要释放 Docker 资源时再停止数据库容器：
-
-```bash
-ROOT=/Users/Zhuanz1/Desktop/privateProjects/ssh/workspace/new-api-v0.13.2
-cd "$ROOT"
-docker compose -f docker-compose.local.yml stop mysql redis minio
-```
-
-停止容器会保留数据卷。重新执行“日常启动”即可恢复。
-
-## 发布或一体化验收
-
-只有需要由单个后端端口提供嵌入式前端时，才执行生产构建。顺序必须是先
-构建前端，再构建 Go 二进制：
-
-```bash
-ROOT=/Users/Zhuanz1/Desktop/privateProjects/ssh/workspace/new-api-v0.13.2
-
-cd "$ROOT/web"
-bun run build
-
-cd "$ROOT"
-go build -o bin/new-api-local .
-```
-
-该模式与日常 Vite 开发模式分开使用，不要同时启动同端口的旧版二进制或
-`launchd` 任务。
+线上服务器只更新已验证的 commit、镜像或发布制品时，归类为 `ONLINE_SYNC`，不因为
+服务器版本变化而触发源代码发布或 Gitee 操作。它必须单独记录目标、备份、健康检查和
+回滚制品；代码发布、GitHub 推送和线上同步是三个独立决策。

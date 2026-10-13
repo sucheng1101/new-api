@@ -1,0 +1,116 @@
+services:
+  new-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VCS_REF: ${GIT_COMMIT:-unknown}
+    image: new-api:local-dev-${NEW_API_VERSION:-dev}
+    container_name: new-api-${NEW_API_VERSION:-dev}-app
+    restart: unless-stopped
+    command: ["--log-dir", "/app/logs"]
+    ports:
+      - "5200:3000"
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs
+    environment:
+      SQL_DSN: "${NEW_API_SQL_DSN:-root:123456@tcp(mysql:3306)/new-api-local-dev?charset=utf8mb4&parseTime=true&loc=Local}"
+      REDIS_CONN_STRING: redis://redis:6379/0
+      TASK_ARTIFACT_STORE_MODE: s3
+      TASK_ARTIFACT_STORE_S3_ENDPOINT: http://minio:9000
+      TASK_ARTIFACT_STORE_S3_BUCKET: new-api-task-artifacts
+      TASK_ARTIFACT_STORE_S3_REGION: us-east-1
+      TASK_ARTIFACT_STORE_S3_ACCESS_KEY: new-api-local
+      TASK_ARTIFACT_STORE_S3_SECRET_KEY: new-api-local-artifacts
+      TZ: Asia/Shanghai
+      NODE_NAME: new-api-${NEW_API_VERSION:-dev}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    labels:
+      com.newapi.runtime.mode: docker
+      com.newapi.runtime.project: newapi
+      com.newapi.runtime.commit: ${GIT_COMMIT:-unknown}
+      com.newapi.runtime.version: ${NEW_API_VERSION:-dev}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":\\s*true' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mysql:
+    image: mysql:8.2
+    container_name: new-api-${NEW_API_VERSION:-dev}-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: new-api-local-dev
+      MYSQL_ROOT_PASSWORD: 123456
+      TZ: Asia/Shanghai
+    ports:
+      - "13306:3306"
+    volumes:
+      - new-api-dev-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p123456 --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  redis:
+    image: redis:7
+    container_name: new-api-${NEW_API_VERSION:-dev}-redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    volumes:
+      - new-api-dev-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: new-api-${NEW_API_VERSION:-dev}-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: new-api-local
+      MINIO_ROOT_PASSWORD: new-api-local-artifacts
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - new-api-dev-minio-data:/data
+
+  minio-init:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: new-api-${NEW_API_VERSION:-dev}-minio-init
+    depends_on:
+      - minio
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: new-api-local
+      MINIO_ROOT_PASSWORD: new-api-local-artifacts
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 1; done
+        mc mb --ignore-existing local/new-api-task-artifacts
+
+volumes:
+  new-api-dev-mysql-data:
+  new-api-dev-redis-data:
+  new-api-dev-minio-data:
