@@ -1,5 +1,5 @@
 task_id: OPS-2026-10-13-newapi-sop-runtime
-status: REVIEW
+status: DONE
 mode: governance + local-runtime + release-scenario-separation
 project_class: product/application + service/api
 operational_profile: hosted-service, data-sensitive
@@ -38,5 +38,5 @@ acceptance:
   - native project runtime is absent
   - focused controller test passes in Docker Go container
   - Codex review complete before commit
-next_action: create scoped governance commit; no release, push, or deployment
+next_action: reconcile legacy AGENTS Gitee requirement before any formal production publication; online sync remains a separate decision
 last_updated: 2026-10-13

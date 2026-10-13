@@ -14,7 +14,7 @@ This board is the project-level coordination entry point for Codex and WorkBuddy
 
 | Task ID | Status | Mode | Branch | Base commit | Primary writer/session | Review session | Owned paths | Docker evidence | Next action |
 |---|---|---|---|---|---|---|---|---|---|
-| OPS-2026-10-13-newapi-sop-runtime | REVIEW | governance + local-runtime + release-scenario-separation | `codex/token-endpoint-bar` | `d3df271abf7f161d0ed4848e78bc0b158e016f55` | Codex `/root` | Codex `/root` | `Dockerfile`, `docker-compose.dev.yml`, `scripts/local-start.ps1`, `scripts/local-check.ps1`, `docs/runbooks/local-source-development.md`, `docs/runbooks/release-update.md`, `scripts/release.ps1`, `scripts/update-local.ps1`, `controller/release.go`, `controller/release_test.go`, `skills/project-newapi/SKILL.md`, `.github/workflows/sync-to-gitee.yml` removal | Docker healthy at `127.0.0.1:5200`; current commit label `07e074a015b799a3c9261eca49f044606528bf05`; native runtime absent; Compose/static/PowerShell checks passed; focused Go test passed in Docker | review diff, then create scoped governance commit; no release/push/deploy |
+| OPS-2026-10-13-newapi-sop-runtime | DONE | governance + local-runtime + release-scenario-separation | `codex/token-endpoint-bar` | `d3df271abf7f161d0ed4848e78bc0b158e016f55` | Codex `/root` | Codex `/root` | `Dockerfile`, `docker-compose.dev.yml`, `scripts/local-start.ps1`, `scripts/local-check.ps1`, `docs/runbooks/local-source-development.md`, `docs/runbooks/release-update.md`, `scripts/release.ps1`, `scripts/update-local.ps1`, `controller/release.go`, `controller/release_test.go`, `skills/project-newapi/SKILL.md`, `.github/workflows/sync-to-gitee.yml` removal | Docker healthy at `127.0.0.1:5200`; current commit label `364eda7bca61836d1215ced8b6fb22e82591b0f1`; native runtime absent; Compose/static/PowerShell checks passed; focused Go test passed in Docker | Local governance commit `74ccb4308`; no release/push/deploy; formal publication waits for legacy AGENTS Gitee conflict reconciliation |
 
 ## Current repository baseline (discovery only)
 
@@ -41,7 +41,7 @@ This board is the project-level coordination entry point for Codex and WorkBuddy
 - [x] No project-owned native process listens on port 5200
 - [x] Focused controller test passes in Docker Go container
 - [x] Codex review complete; only then create the scoped governance commit
-- [ ] GitHub-only release path verified; server-only online sync remains separate and does not push or tag
+- [x] GitHub-only release path verified; server-only online sync remains separate and does not push or tag
 
 ## Release instruction conflict
 
@@ -55,6 +55,8 @@ This board is the project-level coordination entry point for Codex and WorkBuddy
 - `local-check.ps1 -ExpectedCommit 364eda7bca61836d1215ced8b6fb22e82591b0f1 -AllowUnavailableReleaseService` passed application, version, image-label, runtime-mode, port, and native-process checks.
 - GitHub latest-release endpoint was `unavailable-allowed` because the external service was temporarily rate-limited; application health and release endpoint reachability still passed.
 - Focused Docker test passed: `go test ./controller -run TestProjectReleaseSourcesUseGitHubOnly -count=1`.
+- Local governance commit created: `74ccb4308 chore: consolidate project operating SOP`.
+- Existing unrelated working-tree changes remain untouched: `.dockerignore`, `VERSION`.
 
 ## Handoff reminders
 
