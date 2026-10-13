@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
     command: ["--log-dir", "/app/logs"]
     ports:
-      - "5200:3000"
+      - "5200:5200"
     volumes:
       - ./data:/data
       - ./logs:/app/logs
@@ -38,7 +38,7 @@ services:
       com.newapi.runtime.commit: ${GIT_COMMIT:-unknown}
       com.newapi.runtime.version: ${NEW_API_VERSION:-dev}
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":\\s*true' || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:5200/api/status | grep -o '\"success\":\\s*true' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
