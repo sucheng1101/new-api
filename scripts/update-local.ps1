@@ -4,18 +4,13 @@ param(
     [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$')]
     [string]$Tag,
     [string]$InstallPath = '.\bin\new-api.exe',
-    [string]$Source = 'github',
     [string]$AssetName = '',
     [switch]$StopProcess
 )
 
 $ErrorActionPreference = 'Stop'
 $project = 'sucheng1101/new-api'
-$sourceBase = switch ($Source.ToLowerInvariant()) {
-    'github' { "https://github.com/$project/releases/download/$Tag" }
-    'gitee' { "https://gitee.com/$project/releases/download/$Tag" }
-    default { throw "Unsupported release source '$Source'. Use github or gitee." }
-}
+$sourceBase = "https://github.com/$project/releases/download/$Tag"
 
 $resolvedInstallPath = [System.IO.Path]::GetFullPath($InstallPath)
 $installDir = Split-Path -Parent $resolvedInstallPath

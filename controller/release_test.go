@@ -32,3 +32,9 @@ func TestFetchLatestReleaseRejectsNonSuccess(t *testing.T) {
 	_, err := fetchLatestRelease(context.Background(), http.DefaultClient, server.URL)
 	require.Error(t, err)
 }
+
+func TestProjectReleaseSourcesUseGitHubOnly(t *testing.T) {
+	require.Len(t, projectReleaseSources, 1)
+	require.Equal(t, "github", projectReleaseSources[0].Name)
+	require.Contains(t, projectReleaseSources[0].URL, "api.github.com")
+}

@@ -22,7 +22,6 @@ type releaseSource struct {
 
 var projectReleaseSources = []releaseSource{
 	{Name: "github", URL: "https://api.github.com/repos/sucheng1101/new-api/releases/latest"},
-	{Name: "gitee", URL: "https://gitee.com/api/v5/repos/sucheng1101/new-api/releases/latest"},
 }
 
 var releaseCache struct {
@@ -51,7 +50,7 @@ type latestRelease struct {
 }
 
 // GetLatestRelease returns the newest project-owned release. The UI calls this
-// endpoint instead of reaching a forge directly so source fallback stays
+// endpoint instead of reaching the forge directly so the project source stays
 // consistent between local and production instances.
 func GetLatestRelease(c *gin.Context) {
 	releaseCache.RLock()

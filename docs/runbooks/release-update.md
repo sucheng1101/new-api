@@ -1,88 +1,89 @@
-# Git Release 更新与回滚流程
+﻿# 发布、线上同步与回滚 SOP
 
-这套流程把本地开发、副本更新、GitHub/Gitee 发布和线上切换统一到同一个
-版本 Tag。当前工作区已经接入查询接口和发布脚本；本轮不连接生产服务器。
+本手册把本地 Docker 验证、GitHub 代码发布、线上版本同步和回滚拆成四种场景。Gitee 不属于本项目流程；`origin` 等上游远端只读。
 
-## 版本契约
+## 1. 场景分类
 
-- 版本使用 SemVer 风格 Tag，例如 `v1.2.3` 或 `v1.2.3-promotion.1`。
-- Release 的提交必须先在项目自有 GitHub 和 Gitee 的目标分支对齐。
-- GitHub Release 由 `.github/workflows/release.yml` 构建 Linux amd64、Linux arm64、
-  macOS 和 Windows 制品，并生成每个制品的 SHA-256 与 `release-manifest.json`。
-- Gitee Release 由 `.github/workflows/sync-to-gitee.yml` 同步。启用前需要先创建
-  `sucheng1101/new-api` Gitee 仓库，并在 GitHub Actions 配置 `GITEE_TOKEN`。
-  当前检查显示该 Gitee 仓库尚未创建，所以暂不添加或推送 `gitee` 远程。
-- `origin` 保持上游只读，项目发布远程使用 `github` 和 `gitee`。
+| 场景 | 代码/构建输入变化 | GitHub 推送 | 线上变更 | 说明 |
+|---|---:|---:|---:|---|
+| 本地开发/测试 | 可能 | 否 | 否 | 只在 Docker Compose 中验证 |
+| 代码发布 | 是 | 是，项目自有 GitHub | 可选 | 生成可追溯 Release 制品 |
+| 线上版本同步 | 否 | 否 | 是 | 使用已验证的 Commit、镜像或制品 |
+| 生产配置/数据操作 | 否 | 否 | 是 | 只改已批准的配置或数据范围 |
+| 回滚 | 否 | 否 | 是 | 恢复已验证的版本或备份 |
 
-## 本地发布预检
+**判断规则：**
+1. 修改了源代码、依赖、Dockerfile、Compose、构建配置或其他受 Git 跟踪的构建输入：归类为“代码发布”。
+2. 只把已经存在且已经验证的版本放到服务器：归类为“线上版本同步”。
+3. 仅服务器版本号变化，不触发 GitHub 推送、Tag 创建或新制品构建。
+4. Gitee 不参与本地、测试、发布、线上同步或回滚。
 
-在仓库根目录执行：
+## 2. 代码发布（GitHub-only）
+
+### 发布前
 
 ```powershell
-pwsh ./scripts/release.ps1 -Version v1.2.3 -Build
+# 在仓库根目录执行；默认使用当前分支，避免写死分支名
+pwsh ./scripts/release.ps1 -Version v1.2.3 -Build -RuntimeOwner SESSION_ID
 ```
 
-脚本会检查工作区干净、分支正确、GitHub 远程存在，并运行后端测试和前端构建。
-它不会创建 Tag，也不会推送远程。
+发布前必须满足：
 
-完成代码审查、创建 Gitee 仓库并确认两个远程可写后，再执行：
+- 工作区只包含本次任务已审查的变更；
+- 当前分支、任务卡、基线 Commit 和拥有路径已写入 `docs/WORK-BOARD.md`；
+- Docker Compose 配置通过，应用由当前 Commit 构建并完成健康检查；
+- 后端测试、前端构建及项目专项验收已记录；
+- 生产目标、备份位置、健康检查和回滚命令已明确。
+
+### 创建 Tag 并推送 GitHub
 
 ```powershell
 pwsh ./scripts/release.ps1 -Version v1.2.3 -CreateTag -Push
 ```
 
-脚本会推送目标分支和 Tag，并核对 GitHub/Gitee 分支哈希与本地 `HEAD` 一致。
-GitHub Actions 完成后，发布页应同时存在制品、各平台 checksums 和 manifest。
+脚本只推送项目自有 GitHub 的当前分支和 Tag，并核对远端分支与本地 `HEAD` 一致。脚本不会访问或推送 Gitee。
 
-## New API 更新检查
+GitHub Actions `release.yml` 负责构建 Linux amd64、Linux arm64、macOS、Windows 制品，并生成 SHA-256 与 `release-manifest.json`。Windows 制品只用于本地 Windows 场景；Ubuntu 服务器必须选择对应 Linux 架构制品或已验证容器镜像。
 
-`GET /api/status/latest-release` 按 GitHub → Gitee 顺序读取项目自己的最新公开
-Release，返回来源、Tag、正文、详情地址和制品清单。管理后台“检查更新”只调用
-这个本机接口，不再直接请求上游仓库或在浏览器中处理跨域。
+## 3. 线上版本同步（独立于代码发布）
 
-没有公开 Release 时接口返回失败信息，这是预期状态，不代表本地代码不可用。
+适用条件：服务器只需要切换到已经存在的 Release、Commit、镜像 Tag 或制品，源代码和构建输入没有新增变更。
 
-## 本地副本更新
+最小记录：
 
-Windows 本地副本按 manifest 下载并校验后替换，原二进制保存在同目录的 `backups`：
+- 目标版本/Commit/镜像摘要；
+- 该版本已通过本地 Docker 验证的证据；
+- 目标主机、服务或 Compose 项目；
+- 变更前健康状态；
+- 数据库和应用回滚备份位置；
+- 切换命令、切换后健康检查和回滚结果；
+- `GitHub push: not applicable for server-only sync`。
 
-```powershell
-pwsh ./scripts/update-local.ps1 -Tag v1.2.3 -InstallPath .\bin\new-api.exe
-```
+线上同步不创建新 Tag、不重新编译 Windows 二进制、不因版本变化触发源代码发布，也不访问 Gitee。若同步过程中发现源代码或构建输入有差异，立即停止并重新归类为“代码发布”。
 
-如果副本正在运行，先由操作者停止对应进程；需要脚本停止同名进程时显式增加
-`-StopProcess`。脚本校验二进制 `--version` 输出，不匹配会自动恢复备份。
+### Compose 线上同步原则
 
-## 线上切换顺序
+1. 先核对目标 Compose 项目、服务名、镜像 Tag 和摘要。
+2. 备份数据库、应用配置和当前镜像引用。
+3. 只切换目标应用服务，不重启无关业务。
+4. 运行 `/api/status`、业务 smoke test 和依赖服务检查。
+5. 验收通过后清理临时上传目录、临时制品和缓存；保留回滚备份与应用数据。
 
-线上使用 `scripts/production-update.sh`，脚本假设 New API 以 systemd 服务运行，
-且应用二进制位于 `APP_ROOT/new-api`。实际部署若是 Docker，应先把同样的步骤接入
-Compose 镜像切换脚本，不要直接套用二进制路径。
+## 4. 回滚
 
-发布前准备数据库备份命令，并通过 `PRE_UPDATE_HOOK` 传入；脚本只备份应用二进制、
-`.env` 和回滚目录，不猜测数据库类型或数据路径。示例：
+回滚只恢复已记录的上一版本镜像/制品或备份，不自动创建发布、不推送远端。回滚后必须重新执行健康检查、版本身份检查和关键业务 smoke test，并把事故原因与后续修复另开代码任务记录。
 
-```bash
-RELEASE_TAG=v1.2.3 \
-CONFIRM_RELEASE=YES \
-APP_ROOT=/opt/new-api \
-SERVICE_NAME=new-api \
-HEALTH_URL=http://127.0.0.1:3000/api/status \
-PRE_UPDATE_HOOK='mysqldump ... > /var/backups/new-api/pre-release.sql' \
-bash scripts/production-update.sh
-```
+## 5. 发布验收清单
 
-脚本执行顺序为：锁定更新、下载 manifest、校验 SHA-256、创建回滚备份、执行备份
-Hook、停止服务、替换二进制、启动服务、健康检查。启动或健康检查失败会恢复旧
-二进制并重新启动服务；成功后保留回滚备份，清理临时下载目录。
+- [ ] 任务分类正确：代码发布 / 线上版本同步 / 配置数据 / 回滚。
+- [ ] 当前分支、基线 Commit、主写会话和运行锁已记录。
+- [ ] Docker Compose 使用当前工作区 Commit 构建，镜像标签/摘要可追溯。
+- [ ] `/api/status`、`/api/status/latest-release`、前端根路径通过。
+- [ ] 目标架构制品与服务器架构匹配。
+- [ ] 备份可读，回滚命令可执行。
+- [ ] 线上只影响目标服务，邻近服务保持健康。
+- [ ] 临时制品和缓存已清理，回滚备份和应用数据已保留。
 
-## 上线前验收清单
+## 6. 失败处理
 
-1. 后端 `go test -count=1 ./...` 通过，前端 `bun run build` 通过。
-2. GitHub/Gitee 目标分支指向同一提交，Release Tag 指向同一提交。
-3. GitHub 和 Gitee 的 manifest、制品和 SHA-256 一致。
-4. 生产数据库备份可读取，应用备份目录可回滚。
-5. `/api/status` 返回成功且版本等于 Release Tag。
-6. 推广、抽奖、赠送、充值、减少余额和任务插件做一次回归验收。
-7. 验收成功后删除临时上传目录、临时二进制和本地 Release 压缩包；保留回滚备份
-   与应用数据。
+Docker 构建、测试、健康检查或制品校验失败时，保留日志并停止发布门禁。不要改用 Windows 原生编译冒充 Docker 验证；修复 Docker 工作流或等待网络/镜像依赖恢复后再继续。

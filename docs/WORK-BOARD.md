@@ -14,14 +14,47 @@ This board is the project-level coordination entry point for Codex and WorkBuddy
 
 | Task ID | Status | Mode | Branch | Base commit | Primary writer/session | Review session | Owned paths | Docker evidence | Next action |
 |---|---|---|---|---|---|---|---|---|---|
-| — | IDLE | — | — | — | — | — | — | — | Create a task card before the next write |
+| OPS-2026-10-13-newapi-sop-runtime | REVIEW | governance + local-runtime + release-scenario-separation | `codex/token-endpoint-bar` | `d3df271abf7f161d0ed4848e78bc0b158e016f55` | Codex `/root` | Codex `/root` | `Dockerfile`, `docker-compose.dev.yml`, `scripts/local-start.ps1`, `scripts/local-check.ps1`, `docs/runbooks/local-source-development.md`, `docs/runbooks/release-update.md`, `scripts/release.ps1`, `scripts/update-local.ps1`, `controller/release.go`, `controller/release_test.go`, `skills/project-newapi/SKILL.md`, `.github/workflows/sync-to-gitee.yml` removal | Docker healthy at `127.0.0.1:5200`; current commit label `07e074a015b799a3c9261eca49f044606528bf05`; native runtime absent; Compose/static/PowerShell checks passed; focused Go test passed in Docker | review diff, then create scoped governance commit; no release/push/deploy |
 
 ## Current repository baseline (discovery only)
 
-- Observed branch: $branch
-- Observed HEAD: $head
+- Observed branch: `codex/token-endpoint-bar`
+- Observed HEAD: `364eda7bca61836d1215ced8b6fb22e82591b0f1`
 - Board initialized: 2026-10-12
-- Existing working-tree changes are preserved and are not assigned to this board row.
+- Existing working-tree changes are reviewed and assigned only to the paths listed above; unrelated paths remain untouched.
+
+## Runtime handoff
+
+- Canonical mode: `docker`
+- Runtime owner: Codex `/root` while this task is in VERIFYING
+- Runtime lock: `.git/new-api-dev/runtime-lock.json`
+- Native Windows process: must be absent before Docker acceptance
+- Docker rebuild rule: source/build-input changes require `up -d --build --force-recreate`
+- Lock takeover: different sessions wait; stale takeover requires no active runtime and lock age > 30 minutes
+
+## Acceptance checklist
+
+- [x] `docker compose -p newapi-dev -f docker-compose.dev.yml config -q`
+- [x] PowerShell parser checks for `scripts/local-start.ps1` and `scripts/local-check.ps1`
+- [x] Current commit equals application image label `com.newapi.runtime.commit`
+- [x] `/api/status`, `/api/status/latest-release`, and `/` pass
+- [x] No project-owned native process listens on port 5200
+- [x] Focused controller test passes in Docker Go container
+- [x] Codex review complete; only then create the scoped governance commit
+- [ ] GitHub-only release path verified; server-only online sync remains separate and does not push or tag
+
+## Release instruction conflict
+
+- The repository-level `AGENTS.md` still contains a legacy requirement to push both GitHub and Gitee.
+- The confirmed project SOP, project skill, and release scripts now define GitHub-only publication and no Gitee workflow.
+- Formal production publication remains paused until the repository instruction is reconciled with the confirmed SOP; this local governance task does not push, tag, release, or deploy.
+
+## Latest verification evidence
+
+- Docker rebuild completed from workspace commit `364eda7bca61836d1215ced8b6fb22e82591b0f1` with `up -d --build --force-recreate`.
+- `local-check.ps1 -ExpectedCommit 364eda7bca61836d1215ced8b6fb22e82591b0f1 -AllowUnavailableReleaseService` passed application, version, image-label, runtime-mode, port, and native-process checks.
+- GitHub latest-release endpoint was `unavailable-allowed` because the external service was temporarily rate-limited; application health and release endpoint reachability still passed.
+- Focused Docker test passed: `go test ./controller -run TestProjectReleaseSourcesUseGitHubOnly -count=1`.
 
 ## Handoff reminders
 

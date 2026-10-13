@@ -1,21 +1,42 @@
-﻿task_id: null
-status: IDLE
-mode: none
+task_id: OPS-2026-10-13-newapi-sop-runtime
+status: REVIEW
+mode: governance + local-runtime + release-scenario-separation
 project_class: product/application + service/api
 operational_profile: hosted-service, data-sensitive
 branch: codex/token-endpoint-bar
-base_commit: 4b8db9abe6c24e183a16322c89e6baf01e4e4e64
-primary_writer: none
-primary_session: null
-review_session: null
-owned_paths: []
+base_commit: d3df271abf7f161d0ed4848e78bc0b158e016f55
+primary_writer: codex
+primary_session: /root
+review_session: pending
+owned_paths:
+  - Dockerfile
+  - docker-compose.dev.yml
+  - scripts/local-start.ps1
+  - scripts/local-check.ps1
+  - docs/runbooks/local-source-development.md
+  - skills/project-newapi/SKILL.md
+  - scripts/release.ps1
+  - scripts/update-local.ps1
+  - controller/release.go
+  - controller/release_test.go
+  - docs/runbooks/release-update.md
+  - .github/workflows/sync-to-gitee.yml (removed)
 preserved_paths: []
 docker:
-  runtime: TBD
-  start: TBD
-  test: TBD
-  build: TBD
-  health: TBD
-acceptance: []
-next_action: create task card before first edit
-last_updated: 2026-10-12
+  runtime: docker
+  project: newapi-dev
+  compose_file: docker-compose.dev.yml
+  runtime_lock: .git/new-api-dev/runtime-lock.json
+  start: powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSION_ID
+  test: powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)
+  build: docker compose -p newapi-dev -f docker-compose.dev.yml up -d --build --force-recreate
+  health: /api/status, /api/status/latest-release, /
+acceptance:
+  - docker config validates
+  - PowerShell scripts parse
+  - container commit label matches current HEAD
+  - native project runtime is absent
+  - focused controller test passes in Docker Go container
+  - Codex review complete before commit
+next_action: create scoped governance commit; no release, push, or deployment
+last_updated: 2026-10-13

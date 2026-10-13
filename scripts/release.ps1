@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$')]
     [string]$Version,
-    [string]$Branch = 'feature/promotion-system',
+    [string]$Branch = '',
+    [string]$RuntimeOwner = $env:CODEX_SESSION_ID,
     [switch]$Build,
     [switch]$CreateTag,
     [switch]$Push
@@ -26,6 +27,7 @@ if ((git status --porcelain)) {
 }
 
 $currentBranch = (git branch --show-current).Trim()
+if ([string]::IsNullOrWhiteSpace($Branch)) { $Branch = $currentBranch }
 if ($currentBranch -ne $Branch) {
     throw "Expected branch '$Branch', found '$currentBranch'."
 }
@@ -35,26 +37,18 @@ if (-not $githubRemote) {
     throw "Project-owned GitHub remote 'github' is not configured."
 }
 
-if (-not (git remote get-url gitee 2>$null)) {
-    Write-Warning "Project-owned Gitee remote is not configured; dual-remote push is unavailable."
-}
-
 if ($Build) {
-    Write-Host 'Running backend tests...'
-    & go test -count=1 ./...
-    if ($LASTEXITCODE -ne 0) { throw 'Backend tests failed.' }
+    if ([string]::IsNullOrWhiteSpace($RuntimeOwner)) {
+        throw '-Build requires -RuntimeOwner or CODEX_SESSION_ID so Docker runtime ownership remains explicit.'
+    }
+    Write-Host 'Running Docker build and local acceptance checks...'
+    $localStart = Join-Path $repoRoot 'scripts\local-start.ps1'
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $localStart -Owner $RuntimeOwner
+    if ($LASTEXITCODE -ne 0) { throw 'Docker build or local acceptance checks failed.' }
 
-    Push-Location (Join-Path $repoRoot 'web')
-    try {
-        Write-Host 'Building frontend...'
-        & bun install
-        if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
-        & bun run build
-        if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
-    }
-    finally {
-        Pop-Location
-    }
+    Write-Host 'Running backend tests inside Docker...'
+    & docker run --rm -v "${repoRoot}:/src" -w /src golang:1.26.1-alpine /usr/local/go/bin/go test -count=1 ./...
+    if ($LASTEXITCODE -ne 0) { throw 'Docker backend tests failed.' }
 }
 
 if (git tag --list $Version) {
@@ -70,22 +64,15 @@ if ($Push) {
     if (-not $CreateTag) {
         throw '-Push requires -CreateTag so the branch and tag are published together.'
     }
-    if (-not (git remote get-url gitee 2>$null)) {
-        throw "Project-owned Gitee remote 'gitee' is required before pushing a release."
-    }
-
     Invoke-Git @('push', 'github', "HEAD:refs/heads/$Branch")
-    Invoke-Git @('push', 'gitee', "HEAD:refs/heads/$Branch")
     Invoke-Git @('push', 'github', $Version)
-    Invoke-Git @('push', 'gitee', $Version)
 
     $localHead = (git rev-parse HEAD).Trim()
     $githubHead = (git ls-remote github "refs/heads/$Branch").Split("`t")[0]
-    $giteeHead = (git ls-remote gitee "refs/heads/$Branch").Split("`t")[0]
-    if ($githubHead -ne $localHead -or $giteeHead -ne $localHead) {
-        throw 'Remote release branch hashes do not match local HEAD.'
+    if ($githubHead -ne $localHead) {
+        throw 'GitHub release branch hash does not match local HEAD.'
     }
-    Write-Host "Both release remotes point to $localHead."
+    Write-Host "GitHub release branch points to $localHead."
 }
 
 Write-Host "Release preflight complete for $Version."
