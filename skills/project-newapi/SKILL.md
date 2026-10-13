@@ -20,7 +20,7 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Read `AGENTS.md` before edits; its project rules are authoritative.
 - Check `git status --short --branch` and preserve unrelated user changes.
 - Confirm the current branch and remotes before commits or releases.
-- Treat upstream remotes as read-only. Local development and online version sync do not publish to Gitee; formal release remotes follow the repository `AGENTS.md` policy.
+- Treat upstream remotes as read-only. GitHub is the only project publication source. Local development and online version sync never publish source changes; formal release uses the verified project-owned GitHub remote only.
 - Search with `rg` and follow existing Router -> Controller -> Service -> Model boundaries.
 
 ## Project Map
@@ -38,16 +38,10 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 
 ## Development Commands
 
-- Backend run: `go run main.go` (documented, unverified in this draft).
-- Backend tests: `go test ./...` (standard project gate, unverified in this draft).
-- Frontend install: `cd web; bun install` (documented, unverified in this draft).
-- Frontend dev: `cd web; bun run dev` (documented, unverified in this draft).
-- Frontend build: `cd web; bun run build` (documented, unverified in this draft).
-- Frontend format check: `cd web; bun run lint` (documented, unverified in this draft).
-- Frontend ESLint: `cd web; bun run eslint` (documented, unverified in this draft).
-- Frontend i18n: `bun run i18n:extract`, `bun run i18n:sync`, `bun run i18n:lint` from `web/`.
-- Local Docker startup/rebuild: `powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1` (uses `docker-compose.dev.yml`, project `newapi-dev`, port `5200`).
-- Local Docker acceptance: `powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1`.
+- Local runtime/start/rebuild: `powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSION_ID` (uses `docker-compose.dev.yml`, project `newapi-dev`, port `5200`).
+- Local acceptance: `powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)`.
+- Backend tests: run inside a disposable Go container or the project Docker build; do not use a Windows-native Go process as release evidence.
+- Frontend install/build/lint/i18n: run inside the project Docker build or a disposable Bun container mounted to `web/`; do not use a Windows-native Bun process as release evidence.
 - Docker status: `docker compose -p newapi-dev -f docker-compose.dev.yml ps`.
 - Docker source refresh: `docker compose -p newapi-dev -f docker-compose.dev.yml up -d --build --force-recreate`.
 
@@ -75,7 +69,7 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 | Redis | `127.0.0.1:16379`, stable volume `new-api-dev-redis-data` |
 | MinIO API/console | `127.0.0.1:19000` / `127.0.0.1:19001`, stable volume `new-api-dev-minio-data` |
 | Container names | `new-api-${VERSION}-app/mysql/redis/minio` |
-| Database bootstrap | Latest valid SQLite backup is restored only when `data/one-api.db` and MySQL are empty; existing data is never overwritten |
+| Database bootstrap | Each start compares the latest valid SQLite backup with `data/one-api.db`; a newer backup is restored after preserving the current file under `data/runtime-backups`, while a newer/current database is kept. MySQL is used only when no usable SQLite database is available |
 | Runtime lock | `.git/new-api-dev/runtime-lock.json` |
 | Build identity | `org.opencontainers.image.revision` label and `git rev-parse HEAD` |
 
@@ -151,7 +145,7 @@ To switch from native to Docker, stop only the project-owned native process grou
 
 - Do not place credentials, tokens, cookies, private configuration, or database dumps in the repository or this skill.
 - During one deployment, retain supplied credentials only in process memory and reuse them for retries.
-- For formal production release, follow `AGENTS.md` remote requirements. For server-only online version sync, do not publish or push solely because the server version changed.
+- For formal production release, push and verify the project-owned GitHub remote only. For server-only online version sync, do not publish or push solely because the server version changed; Gitee is not contacted.
 - After verified deployment, remove local release archives, temporary binaries, caches, and remote staging directories; preserve rollback backups and application data.
 - Before packaging or sharing, scrub local secrets, logs, session files, dumps, and generated artifacts.
 

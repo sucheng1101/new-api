@@ -5,7 +5,8 @@ param(
   [int]$Port = 5200,
   [int]$WaitSeconds = 60,
   [string]$ExpectedCommit = '',
-  [string]$Owner = ''
+  [string]$Owner = '',
+  [switch]$AllowUnavailableReleaseService
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -30,7 +31,15 @@ do {
 } while ((Get-Date) -lt $deadline)
 if (-not $status -or -not $status.success) { throw "Backend health check failed at http://127.0.0.1:$Port/api/status" }
 $release = Invoke-RestMethod "http://127.0.0.1:$Port/api/status/latest-release" -TimeoutSec 10
-if (-not $release.success) { throw "Release check failed: $($release.message)" }
+$releaseCheck = 'passed'
+if (-not $release.success) {
+  if ($AllowUnavailableReleaseService -and $release.message -match '(?i)temporarily unavailable|rate-limited') {
+    $releaseCheck = 'unavailable-allowed'
+    Write-Warning "Release service check is unavailable or rate-limited; continuing because AllowUnavailableReleaseService was supplied."
+  } else {
+    throw "Release check failed: $($release.message)"
+  }
+}
 $page = Invoke-WebRequest "http://127.0.0.1:$Port/" -UseBasicParsing -TimeoutSec 10
 if ($page.StatusCode -ne 200) { throw "Frontend check failed with HTTP $($page.StatusCode)" }
 
@@ -57,6 +66,7 @@ if ($nativeProcesses) { throw "Native project processes are also running: $($nat
 
 Write-Host "Docker project is healthy: http://127.0.0.1:$Port"
 Write-Host "Version: $($status.data.version); Latest release: $($release.data.release.tag_name)"
+Write-Host "Release service check: $releaseCheck"
 Write-Host "Container: $containerName"
 Write-Host "Container commit: $($labels.'com.newapi.runtime.commit')"
 Write-Host 'Runtime mode: docker; native application mode: absent'

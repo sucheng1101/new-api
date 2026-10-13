@@ -22,7 +22,7 @@
 启动脚本读取根目录 `VERSION`，并将版本号写入容器名、镜像名和运行时 label。数据卷属于本地开发数据。停止或重建应用不得删除数据卷；禁止使用
 `docker compose down -v`。
 
-首次启动时，脚本按修改时间选择 `formal-backups/`、`backups/` 和仓库根目录中最新的有效 SQLite 数据库快照。仅当 `data/one-api.db` 不存在且 MySQL 数据库没有表时才复制快照；已有 SQLite 或 MySQL 数据会原样保留，不会被新快照覆盖。没有有效快照且数据库为空时启动会中止，避免静默创建全新实例。
+每次启动时，脚本按修改时间选择 `formal-backups/`、`backups/` 和仓库根目录中最新的有效 SQLite 数据库快照。若快照比 `data/one-api.db` 更新，脚本先停止本项目应用容器，将当前数据库保存到 `data/runtime-backups/one-api.db.before-restore-*.db`，再恢复快照；当前数据库更新或没有快照时继续使用当前数据库。只有在没有可用 SQLite 数据时才回退到已有 MySQL 数据；没有有效快照且数据库为空时启动会中止，避免静默创建全新实例。
 
 ## 2. 会话和运行锁
 
@@ -35,6 +35,14 @@
   "runtime_owner": "SESSION_ID",
   "runtime_id": "newapi-dev",
   "runtime_commit": "GIT_COMMIT",
+  "database_source": "PATH_OR_MYSQL_DATABASE",
+  "database_restored": false,
+  "database_preserved": null,
+  "database_comparison": {
+    "latest_backup_path": "PATH_OR_NULL",
+    "backup_newer": false,
+    "decision": "keep-current-database"
+  },
   "runtime_ports": [5200, 13306, 16379, 19000, 19001],
   "updated_at": "UTC_ISO_TIMESTAMP"
 }
@@ -76,6 +84,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedComm
 docker compose -p newapi-dev -f .\docker-compose.dev.yml ps
 powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)
 ```
+
+若外部 GitHub Release API 暂时返回 403 或限流，可在确认本地应用检查均正常后使用
+`-AllowUnavailableReleaseService` 重跑本地验收；该开关只放宽外部发布服务检查，不放宽
+应用、前端、容器版本、端口或原生进程检查。
 
 验收必须同时证明：
 
@@ -120,5 +132,5 @@ docker compose -p newapi-dev -f .\docker-compose.dev.yml stop
 ## 8. 线上版本同步边界
 
 线上服务器只更新已验证的 commit、镜像或发布制品时，归类为 `ONLINE_SYNC`，不因为
-服务器版本变化而触发源代码发布或 Gitee 操作。它必须单独记录目标、备份、健康检查和
+服务器版本变化而触发源代码发布或仓库操作。它必须单独记录目标、备份、健康检查和
 回滚制品；代码发布、GitHub 推送和线上同步是三个独立决策。
