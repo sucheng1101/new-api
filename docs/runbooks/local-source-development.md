@@ -90,9 +90,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSIO
 该命令会依次检查 Docker、Compose 配置、项目端口和原生进程归属，先通过数据库备份门禁，再由脚本内部执行：
 
 ```text
-[脚本内部动作，不得手工复制绕过门禁]
-docker compose -p newapi-dev -f .\docker-compose.dev.yml up -d --build --force-recreate
-powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)
+[受控脚本内部流程，不是可执行命令]
+1. 创建并校验实际数据库备份，写入 runtime lock。
+2. 通过备份门禁后，由 local-start.ps1 执行 Compose build/recreate。
+3. 写入待验收状态，运行 local-check.ps1 完成健康、版本、端口、进程与备份证据验收。
+4. 验收通过后将 runtime lock 标记为 passed；失败则不得宣称运行时已就绪。
 ```
 
 源码或 Docker 构建输入（`Dockerfile`、Compose、`web/package.json`、锁文件、配置等）
