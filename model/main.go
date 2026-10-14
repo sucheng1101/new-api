@@ -339,7 +339,15 @@ func migrateDB() error {
 		return err
 	}
 	var allowlistMigration Option
-	if err := DB.Where(commonKeyCol+" = ?", "DirectIPAllowlistEnabledMigrated").First(&allowlistMigration).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+	keyColumn := commonKeyCol
+	if keyColumn == "" {
+		if common.UsingPostgreSQL {
+			keyColumn = `"key"`
+		} else {
+			keyColumn = "`key`"
+		}
+	}
+	if err := DB.Where(keyColumn+" = ?", "DirectIPAllowlistEnabledMigrated").First(&allowlistMigration).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		if err := DB.Model(&DirectIPAllowlist{}).Where("enabled IS NULL").Update("enabled", true).Error; err != nil {
 			return err
 		}

@@ -33,6 +33,7 @@ func GetDirectIPAllowlist(c *gin.Context) {
 		"max":          model.DirectIPAllowlistMaxEntries,
 		"base_url":     common.DirectAPIBaseURL(),
 		"direct_hosts": common.DirectAPIHosts(),
+		"endpoints":    common.EnabledDirectAPIEndpoints(),
 	})
 }
 
@@ -147,12 +148,182 @@ func GetDirectAPIConfig(c *gin.Context) {
 	hosts := common.OptionMap["DirectAPIHosts"]
 	baseURL := common.OptionMap["DirectAPIBaseURL"]
 	common.OptionMapRWMutex.RUnlock()
-	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
+	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "endpoints": common.DirectAPIEndpoints(), "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
 }
 
 type directAPIConfigRequest struct {
-	Hosts   string `json:"hosts"`
-	BaseURL string `json:"base_url"`
+	Hosts     *string                     `json:"hosts"`
+	BaseURL   *string                     `json:"base_url"`
+	Endpoints *[]common.DirectAPIEndpoint `json:"endpoints"`
+}
+
+type directAPIEndpointRequest struct {
+	Name        string `json:"name"`
+	Endpoint    string `json:"endpoint"`
+	Description string `json:"description"`
+	Enabled     *bool  `json:"enabled"`
+	SortOrder   *int   `json:"sort_order"`
+}
+
+type directAPIEndpointPatchRequest struct {
+	Name        *string `json:"name"`
+	Endpoint    *string `json:"endpoint"`
+	Description *string `json:"description"`
+	Enabled     *bool   `json:"enabled"`
+	SortOrder   *int    `json:"sort_order"`
+}
+
+func parseDirectAPIEndpointID(c *gin.Context) (int, bool) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "endpoint ID 无效")
+		return 0, false
+	}
+	return id, true
+}
+
+func upsertDirectAPIEndpoint(c *gin.Context, id int) {
+	var req directAPIEndpointRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorMsg(c, "endpoint 参数无效")
+		return
+	}
+	endpoints := common.DirectAPIEndpoints()
+	if id == 0 {
+		item := common.DirectAPIEndpoint{Name: req.Name, Endpoint: req.Endpoint, Description: req.Description, Enabled: true}
+		if req.Enabled != nil {
+			item.Enabled = *req.Enabled
+		}
+		if req.SortOrder != nil {
+			item.SortOrder = *req.SortOrder
+		}
+		endpoints = append(endpoints, item)
+	} else {
+		found := false
+		for i := range endpoints {
+			if endpoints[i].ID != id {
+				continue
+			}
+			found = true
+			endpoints[i].Name, endpoints[i].Endpoint, endpoints[i].Description = req.Name, req.Endpoint, req.Description
+			if req.Enabled != nil {
+				endpoints[i].Enabled = *req.Enabled
+			}
+			if req.SortOrder != nil {
+				endpoints[i].SortOrder = *req.SortOrder
+			}
+			break
+		}
+		if !found {
+			common.ApiErrorMsg(c, "未找到 endpoint")
+			return
+		}
+	}
+	validated, err := common.ValidateDirectAPIEndpoints(endpoints)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if err := model.UpdateDirectAPIEndpoints(validated); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if id == 0 && len(validated) > 0 {
+		common.ApiSuccess(c, validated[len(validated)-1])
+		return
+	}
+	for _, item := range validated {
+		if item.ID == id {
+			common.ApiSuccess(c, item)
+			return
+		}
+	}
+	common.ApiSuccess(c, nil)
+}
+
+func ListDirectAPIEndpoints(c *gin.Context)  { common.ApiSuccess(c, common.DirectAPIEndpoints()) }
+func CreateDirectAPIEndpoint(c *gin.Context) { upsertDirectAPIEndpoint(c, 0) }
+func UpdateDirectAPIEndpoint(c *gin.Context) {
+	if id, ok := parseDirectAPIEndpointID(c); ok {
+		upsertDirectAPIEndpoint(c, id)
+	}
+}
+
+func PatchDirectAPIEndpoint(c *gin.Context) {
+	id, ok := parseDirectAPIEndpointID(c)
+	if !ok {
+		return
+	}
+	var req directAPIEndpointPatchRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorMsg(c, "endpoint 参数无效")
+		return
+	}
+	endpoints := common.DirectAPIEndpoints()
+	var updated *common.DirectAPIEndpoint
+	for i := range endpoints {
+		if endpoints[i].ID != id {
+			continue
+		}
+		if req.Name != nil {
+			endpoints[i].Name = *req.Name
+		}
+		if req.Endpoint != nil {
+			endpoints[i].Endpoint = *req.Endpoint
+		}
+		if req.Description != nil {
+			endpoints[i].Description = *req.Description
+		}
+		if req.Enabled != nil {
+			endpoints[i].Enabled = *req.Enabled
+		}
+		if req.SortOrder != nil {
+			endpoints[i].SortOrder = *req.SortOrder
+		}
+		copy := endpoints[i]
+		updated = &copy
+		break
+	}
+	if updated == nil {
+		common.ApiErrorMsg(c, "未找到 endpoint")
+		return
+	}
+	if err := model.UpdateDirectAPIEndpoints(endpoints); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	for _, item := range common.DirectAPIEndpoints() {
+		if item.ID == id {
+			common.ApiSuccess(c, item)
+			return
+		}
+	}
+	common.ApiSuccess(c, *updated)
+}
+func DeleteDirectAPIEndpoint(c *gin.Context) {
+	id, ok := parseDirectAPIEndpointID(c)
+	if !ok {
+		return
+	}
+	endpoints := common.DirectAPIEndpoints()
+	filtered := make([]common.DirectAPIEndpoint, 0, len(endpoints))
+	found := false
+	for _, item := range endpoints {
+		if item.ID == id {
+			found = true
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if !found {
+		common.ApiErrorMsg(c, "未找到 endpoint")
+		return
+	}
+	if err := model.UpdateDirectAPIEndpoints(filtered); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"id": id})
 }
 
 func UpdateDirectAPIConfig(c *gin.Context) {
@@ -161,19 +332,38 @@ func UpdateDirectAPIConfig(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	hosts, err := common.NormalizeDirectAPIHostConfig(req.Hosts)
+	common.OptionMapRWMutex.RLock()
+	hostsValue := common.OptionMap["DirectAPIHosts"]
+	baseURLValue := common.OptionMap["DirectAPIBaseURL"]
+	common.OptionMapRWMutex.RUnlock()
+	if req.Hosts != nil {
+		hostsValue = *req.Hosts
+	}
+	if req.BaseURL != nil {
+		baseURLValue = *req.BaseURL
+	}
+	hosts, err := common.NormalizeDirectAPIHostConfig(hostsValue)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	baseURL := strings.TrimSpace(req.BaseURL)
+	baseURL := strings.TrimSpace(baseURLValue)
 	if err := common.ValidateDirectAPIBaseURL(baseURL); err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	if err := model.UpdateDirectAPIConfig(hosts, baseURL); err != nil {
+	var endpointArgs []common.DirectAPIEndpoint
+	if req.Endpoints != nil {
+		endpointArgs = *req.Endpoints
+	}
+	if req.Endpoints != nil {
+		if err := model.UpdateDirectAPIConfig(hosts, baseURL, endpointArgs); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	} else if err := model.UpdateDirectAPIConfig(hosts, baseURL); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
+	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "endpoints": common.DirectAPIEndpoints(), "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
 }

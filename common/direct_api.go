@@ -5,9 +5,120 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
+
+// DirectAPIEndpoint describes an additional OpenAI-compatible endpoint that
+// can be exposed to users alongside the primary gateway address.
+type DirectAPIEndpoint struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Endpoint    string `json:"endpoint"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	SortOrder   int    `json:"sort_order"`
+}
+
+// DirectAPIEndpoints returns the administrator-managed endpoint list. Invalid
+// persisted JSON is treated as an empty list so a malformed optional setting
+// cannot prevent the rest of the console from loading.
+func DirectAPIEndpoints() []DirectAPIEndpoint {
+	OptionMapRWMutex.RLock()
+	raw := OptionMap["DirectAPIEndpoints"]
+	OptionMapRWMutex.RUnlock()
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var endpoints []DirectAPIEndpoint
+	if err := UnmarshalJsonStr(raw, &endpoints); err != nil || endpoints == nil {
+		return nil
+	}
+	return endpoints
+}
+
+// EnabledDirectAPIEndpoints returns only endpoints currently visible to users.
+func EnabledDirectAPIEndpoints() []DirectAPIEndpoint {
+	endpoints := DirectAPIEndpoints()
+	result := make([]DirectAPIEndpoint, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		if endpoint.Enabled {
+			result = append(result, endpoint)
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].SortOrder == result[j].SortOrder {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].SortOrder < result[j].SortOrder
+	})
+	return result
+}
+
+// NormalizeDirectAPIEndpoint validates and canonicalizes an endpoint URL.
+// The URL must be absolute HTTP(S), must not contain credentials, query
+// parameters, or fragments, and is normalized without a trailing slash.
+func NormalizeDirectAPIEndpoint(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("API endpoint is required")
+	}
+	if err := ValidateDirectAPIBaseURL(raw); err != nil {
+		return "", err
+	}
+	parsed, _ := url.Parse(raw)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+// ValidateDirectAPIEndpoints validates and normalizes a complete endpoint
+// collection, assigning IDs when a new item has no ID and preserving stable
+// IDs for updates.
+func ValidateDirectAPIEndpoints(input []DirectAPIEndpoint) ([]DirectAPIEndpoint, error) {
+	result := make([]DirectAPIEndpoint, 0, len(input))
+	seenIDs := make(map[int]struct{}, len(input))
+	seenEndpoints := make(map[string]struct{}, len(input))
+	nextID := 1
+	for _, item := range input {
+		item.Name = strings.TrimSpace(item.Name)
+		item.Description = strings.TrimSpace(item.Description)
+		if item.Name == "" {
+			return nil, fmt.Errorf("direct API endpoint name is required")
+		}
+		if len(item.Name) > 100 || len(item.Description) > 500 {
+			return nil, fmt.Errorf("direct API endpoint name or description is too long")
+		}
+		endpoint, err := NormalizeDirectAPIEndpoint(item.Endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid direct API endpoint %q: %w", item.Endpoint, err)
+		}
+		item.Endpoint = endpoint
+		if item.ID <= 0 {
+			for {
+				if _, exists := seenIDs[nextID]; !exists {
+					item.ID = nextID
+					nextID++
+					break
+				}
+				nextID++
+			}
+		}
+		if _, exists := seenIDs[item.ID]; exists {
+			return nil, fmt.Errorf("duplicate direct API endpoint id: %d", item.ID)
+		}
+		if _, exists := seenEndpoints[strings.ToLower(item.Endpoint)]; exists {
+			return nil, fmt.Errorf("duplicate direct API endpoint URL: %s", item.Endpoint)
+		}
+		seenIDs[item.ID] = struct{}{}
+		seenEndpoints[strings.ToLower(item.Endpoint)] = struct{}{}
+		if item.SortOrder < 0 {
+			return nil, fmt.Errorf("direct API endpoint sort_order must be non-negative")
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
 
 // DirectAPIHosts returns the host names that are served by the DNS-only direct
 // API entry point. DIRECT_API_HOST accepts a comma-separated list and may also

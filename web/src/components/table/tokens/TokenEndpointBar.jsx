@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconCopy } from '@douyinfe/semi-icons';
 import PropTypes from 'prop-types';
@@ -26,6 +26,7 @@ import {
   getServerAddress,
   normalizeServerAddress,
 } from '../../../helpers/token';
+import { API } from '../../../helpers';
 
 const EndpointItem = ({ label, url, onCopy, copyLabel }) => (
   <div className='flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center'>
@@ -59,7 +60,25 @@ EndpointItem.propTypes = {
 };
 
 const TokenEndpointBar = ({ copyText, t }) => {
-  const serverAddress = normalizeServerAddress(getServerAddress());
+  const [customEndpoints, setCustomEndpoints] = useState([]);
+  const [configuredBaseUrl, setConfiguredBaseUrl] = useState('');
+  useEffect(() => {
+    let mounted = true;
+    API.get('/api/user/direct-ip-whitelist')
+      .then((response) => {
+        if (mounted && response.data?.success) {
+          const data = response.data.data || {};
+          setConfiguredBaseUrl(normalizeServerAddress(data.base_url || ''));
+          setCustomEndpoints(data.endpoints || []);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  const serverAddress =
+    configuredBaseUrl || normalizeServerAddress(getServerAddress());
   const openAIEndpoint = buildApiEndpoint(serverAddress, '/v1');
 
   return (
@@ -78,6 +97,17 @@ const TokenEndpointBar = ({ copyText, t }) => {
           onCopy={copyText}
           copyLabel={t('复制地址')}
         />
+        {customEndpoints
+          .filter((item) => item.enabled && item.endpoint)
+          .map((item) => (
+            <EndpointItem
+              key={item.id || item.endpoint}
+              label={item.name || t('自定义端点')}
+              url={item.endpoint}
+              onCopy={copyText}
+              copyLabel={t('复制地址')}
+            />
+          ))}
       </div>
     </div>
   );

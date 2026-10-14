@@ -1,0 +1,8 @@
+gofmt: passed (no files listed).
+focused Go tests: passed.
+full Go tests: passed on rerun; first run had a transient pkg/jsplugin timeout, preserved in go-test-all-first-run.txt.
+frontend Prettier: passed.
+frontend ESLint: passed, no diagnostics.
+frontend Vite build: passed.
+i18next-cli lint: repository baseline failed with 465 issues; no DomainManagement entries were reported; see i18n-lint.txt.
+git diff --check: passed.

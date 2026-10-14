@@ -74,6 +74,32 @@ func validateOptionValue(key string, value string) (string, error) {
 			return "", fmt.Errorf("invalid ChannelUsageTimezone %q: %w", timezone, err)
 		}
 		return timezone, nil
+	case "DirectAPIHosts":
+		return common.NormalizeDirectAPIHostConfig(value)
+	case "DirectAPIBaseURL":
+		value = strings.TrimSpace(value)
+		if err := common.ValidateDirectAPIBaseURL(value); err != nil {
+			return "", err
+		}
+		return value, nil
+	case "DirectAPIEndpoints":
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return "[]", nil
+		}
+		var endpoints []common.DirectAPIEndpoint
+		if err := common.UnmarshalJsonStr(value, &endpoints); err != nil {
+			return "", fmt.Errorf("DirectAPIEndpoints must be valid JSON: %w", err)
+		}
+		validated, err := common.ValidateDirectAPIEndpoints(endpoints)
+		if err != nil {
+			return "", err
+		}
+		encoded, err := common.Marshal(validated)
+		if err != nil {
+			return "", err
+		}
+		return string(encoded), nil
 	default:
 		return value, nil
 	}
@@ -255,8 +281,10 @@ func InitOptionMap() {
 	common.OptionMap["DefaultCollapseSidebar"] = strconv.FormatBool(common.DefaultCollapseSidebar)
 	common.OptionMap["DirectAPIHosts"] = strings.TrimSpace(os.Getenv("DIRECT_API_HOST"))
 	common.OptionMap["DirectAPIBaseURL"] = strings.TrimSpace(os.Getenv("DIRECT_API_BASE_URL"))
+	common.OptionMap["DirectAPIEndpoints"] = "[]"
 	common.OptionMap["DirectAPIHostsConfigured"] = "false"
 	common.OptionMap["DirectAPIBaseURLConfigured"] = "false"
+	common.OptionMap["DirectAPIEndpointsConfigured"] = "false"
 	common.OptionMap["MjNotifyEnabled"] = strconv.FormatBool(setting.MjNotifyEnabled)
 	common.OptionMap["MjAccountFilterEnabled"] = strconv.FormatBool(setting.MjAccountFilterEnabled)
 	common.OptionMap["MjModeClearEnabled"] = strconv.FormatBool(setting.MjModeClearEnabled)
@@ -347,10 +375,23 @@ func UpdateOption(key string, value string) error {
 // UpdateDirectAPIConfig stores both public endpoint settings together so a
 // transient database error cannot leave the active host and displayed URL out
 // of sync.
-func UpdateDirectAPIConfig(hosts, baseURL string) error {
+func UpdateDirectAPIConfig(hosts, baseURL string, endpoints ...[]common.DirectAPIEndpoint) error {
+	endpointValue := common.DirectAPIEndpoints()
+	if len(endpoints) > 0 {
+		validatedEndpoints, err := common.ValidateDirectAPIEndpoints(endpoints[0])
+		if err != nil {
+			return err
+		}
+		endpointValue = validatedEndpoints
+	}
+	encodedEndpoints, err := common.Marshal(endpointValue)
+	if err != nil {
+		return err
+	}
 	values := map[string]string{
-		"DirectAPIHosts":   hosts,
-		"DirectAPIBaseURL": baseURL,
+		"DirectAPIHosts":     hosts,
+		"DirectAPIBaseURL":   baseURL,
+		"DirectAPIEndpoints": string(encodedEndpoints),
 	}
 	for key, value := range values {
 		validatedValue, err := validateOptionValue(key, value)
@@ -372,7 +413,11 @@ func UpdateDirectAPIConfig(hosts, baseURL string) error {
 			if err := tx.Save(&option).Error; err != nil {
 				return err
 			}
-			configured := Option{Key: key + "Configured", Value: "true"}
+			configured := Option{Key: key + "Configured"}
+			if err := tx.FirstOrCreate(&configured, Option{Key: configured.Key}).Error; err != nil {
+				return err
+			}
+			configured.Value = "true"
 			if err := tx.Save(&configured).Error; err != nil {
 				return err
 			}
@@ -390,6 +435,52 @@ func UpdateDirectAPIConfig(hosts, baseURL string) error {
 		common.OptionMap[key] = value
 		common.OptionMap[key+"Configured"] = "true"
 	}
+	common.OptionMapRWMutex.Unlock()
+	return nil
+}
+
+// UpdateDirectAPIEndpoints persists the complete endpoint collection in one
+// portable transaction and refreshes the in-memory option map immediately.
+func UpdateDirectAPIEndpoints(endpoints []common.DirectAPIEndpoint) error {
+	validated, err := common.ValidateDirectAPIEndpoints(endpoints)
+	if err != nil {
+		return err
+	}
+	encoded, err := common.Marshal(validated)
+	if err != nil {
+		return err
+	}
+	value, err := validateOptionValue("DirectAPIEndpoints", string(encoded))
+	if err != nil {
+		return err
+	}
+	if DB == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		option := Option{Key: "DirectAPIEndpoints"}
+		if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
+			return err
+		}
+		option.Value = value
+		if err := tx.Save(&option).Error; err != nil {
+			return err
+		}
+		configured := Option{Key: "DirectAPIEndpointsConfigured"}
+		if err := tx.FirstOrCreate(&configured, Option{Key: configured.Key}).Error; err != nil {
+			return err
+		}
+		configured.Value = "true"
+		return tx.Save(&configured).Error
+	}); err != nil {
+		return err
+	}
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap["DirectAPIEndpoints"] = value
+	common.OptionMap["DirectAPIEndpointsConfigured"] = "true"
 	common.OptionMapRWMutex.Unlock()
 	return nil
 }

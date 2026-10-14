@@ -40,3 +40,48 @@ func TestValidateDirectAPIBaseURL(t *testing.T) {
 	require.Error(t, ValidateDirectAPIBaseURL("https://api.example.com?token=secret"))
 	require.Error(t, ValidateDirectAPIBaseURL("https://api.example.com:70000"))
 }
+
+func TestValidateDirectAPIEndpoints(t *testing.T) {
+	items, err := ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{
+		Name:      "OpenAI mirror",
+		Endpoint:  "https://api.example.com/v1/",
+		Enabled:   true,
+		SortOrder: 0,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, 1, items[0].ID)
+	require.Equal(t, "https://api.example.com/v1", items[0].Endpoint)
+
+	_, err = ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{Name: "bad", Endpoint: "https://api.example.com/v1?token=secret"}})
+	require.Error(t, err)
+	_, err = ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{Name: "bad", Endpoint: ""}})
+	require.Error(t, err)
+	_, err = ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{ID: 1, Name: "a", Endpoint: "https://api.example.com/v1"}, {ID: 1, Name: "b", Endpoint: "https://api.example.com/v2"}})
+	require.Error(t, err)
+	_, err = ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{Name: "a", Endpoint: "https://api.example.com/v1", SortOrder: -1}})
+	require.Error(t, err)
+}
+
+func TestEnabledDirectAPIEndpointsSortsAndFilters(t *testing.T) {
+	OptionMapRWMutex.Lock()
+	previous := OptionMap
+	OptionMap = map[string]string{}
+	encoded, err := Marshal([]DirectAPIEndpoint{
+		{ID: 2, Name: "second", Endpoint: "https://api.example.com/second", Enabled: true, SortOrder: 2},
+		{ID: 1, Name: "disabled", Endpoint: "https://api.example.com/disabled", Enabled: false, SortOrder: 0},
+		{ID: 3, Name: "first", Endpoint: "https://api.example.com/first", Enabled: true, SortOrder: 1},
+	})
+	require.NoError(t, err)
+	OptionMap["DirectAPIEndpoints"] = string(encoded)
+	OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		OptionMapRWMutex.Lock()
+		OptionMap = previous
+		OptionMapRWMutex.Unlock()
+	})
+
+	items := EnabledDirectAPIEndpoints()
+	require.Len(t, items, 2)
+	require.Equal(t, "first", items[0].Name)
+	require.Equal(t, "second", items[1].Name)
+}
