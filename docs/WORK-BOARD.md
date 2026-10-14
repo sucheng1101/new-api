@@ -63,3 +63,32 @@ This board is the project-level coordination entry point for Codex and WorkBuddy
 - WorkBuddy returns implementation/test evidence to Codex.
 - Codex performs review, integration, GitHub publication, release, online sync, rollback, and closure.
 - When two task branches reach REVIEW or RELEASE_READY, create an integration session before starting another writer on the same paths.
+
+## 新 SOP 接管记录（2026-10-14）
+
+| Task ID | Status | Mode | Branch | Base commit | Primary writer/session | Review session | Worktree | Owned paths | Runtime owner | Progress | Elapsed | Next action |
+|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|
+| NA-20261014-SECURITY-UI-CLI | PLATFORM_CHECK | implementation + UI/API review | codex/security-direct-allowlist | c1658df57 | WorkBuddy CLI CLI-NA-01（待派发） | Codex thread 01a13613-c2b4-7af1-92c8-7192ba92502c | current checkout（规划已完成，CLI 写入前保持单写入者） | web/src/pages/SecurityAccess/index.jsx, web/src/pages/DirectIPWhitelist/index.jsx, related security API/types, backend security detail endpoints/tests only when required | CLI-NA-RUNTIME-01（newapi-dev / 5200） | 0% | 0m | 将已生成提示词粘贴到 WorkBuddy；CLI 执行 8788 preflight |
+
+- 原安全与访问需求目前只有规划结果，未进入实现；规划会话改为只读 spec/审核角色，后续实现交给 CLI-NA-01。
+- CLI 只能在本分支、Docker 单运行时和任务卡列出的路径内工作；不得同时启动 Windows-native newapi。
+- 安全页面、异常 IP 详情、白名单和 API 配置保持清晰边界；涉及 API、权限、数据库或运行时冲突时暂停并回报 Codex。
+- 每次 CLI 汇报必须包含 progress_percent、elapsed_time、started_at、last_checkpoint、current_step、blocked_reason、next_action。
+- 仓库级 AGENTS 的旧 Gitee 双推要求与新 SOP 冲突，暂不进行生产发布；本任务只做本地 CLI 实现和 Docker 验收。
+
+
+- CLI 通过本任务 Docker/测试验收后，建立仅包含本任务的 scoped feature checkpoint commit；不得混入其他 dirty diff，不执行 push/release/deploy。
+
+
+## SOP v2026.10.14-cli-8788 发布与新会话（2026-10-14）
+
+- 当前生效执行器：`OpenCode CLI`；模型：`DeepSeek`；唯一代理：`http://127.0.0.1:8788/v1`。
+- `8789` 已退出标准流程；旧记录只保留作历史上下文，不得使用。
+- 旧Codex Docker/测试/浏览器检查不作为新版CLI验收证据；安全访问任务必须重新由OpenCode CLI接管。
+- 新Codex规划/审核会话：`01a13900-1c44-77f1-8e09-139cd88c7d04`。
+
+| Task ID | Status | Executor | Branch | Base commit | Runtime owner | CLI session | Next action |
+|---|---|---|---|---|---|---|---|
+| NA-20261014-SECURITY-UI-OPENCODE | PLATFORM_CHECK | OpenCode CLI / DeepSeek / 8788 | codex/security-direct-allowlist | c1658df57 | CLI-NA-RUNTIME-01 | CLI-NA-OP-01 pending | 8788 preflight, then Docker/UI/API acceptance |
+
+NewAPI必须保持Docker单运行时；Codex只规划、派发和审核，缺少CLI证据时退回CLI_VERIFYING。

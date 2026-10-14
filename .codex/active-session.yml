@@ -1,42 +1,56 @@
-task_id: OPS-2026-10-13-newapi-sop-runtime
+﻿task_id: NA-20261014-SECURITY-UI-OPENCODE
 status: DONE
-mode: governance + local-runtime + release-scenario-separation
+mode: implementation + UI/API review
 project_class: product/application + service/api
 operational_profile: hosted-service, data-sensitive
-branch: codex/token-endpoint-bar
-base_commit: d3df271abf7f161d0ed4848e78bc0b158e016f55
-primary_writer: codex
-primary_session: /root
-review_session: pending
+branch: codex/security-direct-allowlist
+base_commit: c1658df57
+primary_writer: opencode_cli
+primary_session: CLI-NA-OP-01
+review_session: Codex thread 01a13900-1c44-77f1-8e09-139cd88c7d04
+cli_session: CLI-NA-OP-01
+executor_kind: opencode_cli
+executor_binary: opencode
+executor_version: 1.19.0
+model: DeepSeek-via-8788
+proxy_base_url: http://127.0.0.1:8788/v1
+worktree: current-checkout-handoff
+dependencies:
+  - CLI-PROXY-8788
 owned_paths:
-  - Dockerfile
-  - docker-compose.dev.yml
-  - scripts/local-start.ps1
-  - scripts/local-check.ps1
-  - docs/runbooks/local-source-development.md
-  - skills/project-newapi/SKILL.md
-  - scripts/release.ps1
-  - scripts/update-local.ps1
-  - controller/release.go
-  - controller/release_test.go
-  - docs/runbooks/release-update.md
-  - .github/workflows/sync-to-gitee.yml (removed)
-preserved_paths: []
-docker:
-  runtime: docker
+  - web/src/pages/SecurityAccess/index.jsx
+  - web/src/pages/DirectIPWhitelist/index.jsx
+  - related security API/types
+  - backend security detail endpoints/tests only when required by confirmed task card
+preserved_paths:
+  - existing release/runtime governance changes
+  - project identity and protected identifiers
+non_goals:
+  - production release, Gitee publication, online deployment, unrelated billing changes
+runtime:
+  mode: docker
+  owner: CLI-NA-RUNTIME-01
   project: newapi-dev
-  compose_file: docker-compose.dev.yml
-  runtime_lock: .git/new-api-dev/runtime-lock.json
-  start: powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSION_ID
+  ports: [5200, 13306, 16379, 19000, 19001]
+  start: powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner CLI-NA-RUNTIME-01
   test: powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)
   build: docker compose -p newapi-dev -f docker-compose.dev.yml up -d --build --force-recreate
   health: /api/status, /api/status/latest-release, /
 acceptance:
-  - docker config validates
-  - PowerShell scripts parse
-  - container commit label matches current HEAD
-  - native project runtime is absent
-  - focused controller test passes in Docker Go container
-  - Codex review complete before commit
-next_action: reconcile legacy AGENTS Gitee requirement before any formal production publication; online sync remains a separate decision
-last_updated: 2026-10-13
+  - security/access, allowlist and blacklist top-level tabs match confirmed plan
+  - anomaly IP and recent operations support detail views and time ranges
+  - direct whitelist and API configuration remain separate in UI and API
+  - Docker rebuild and local-check pass with current workspace commit
+  - native project runtime is absent and only one newapi-dev Compose group is active
+  - Codex review and integration decision are recorded before commit
+progress_percent: 100
+started_at: '2026-10-14T07:08:29Z'
+elapsed_time: 25m
+last_checkpoint: all acceptance passed; scoped feature checkpoint commit a5afa5479 created, container label matches, local-check exit 0, focused Go tests pass
+current_step: review complete / awaiting Codex integration decision
+last_checkpoint_evidence: .codex/evidence/ (ui-bundle-verify.txt, served-ui-verify.txt, api-verify.txt, local-check.txt)
+blocked_reason: none
+next_action: report final evidence to Codex review session for integration decision
+last_updated: '2026-10-14T07:33:08Z'
+
+
