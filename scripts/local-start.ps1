@@ -293,6 +293,31 @@ if ($LASTEXITCODE -ne 0) { throw 'Docker daemon is not available.' }
 $commit = (& git -C $root rev-parse HEAD).Trim()
 if ([string]::IsNullOrWhiteSpace($commit)) { throw 'Unable to resolve current Git commit.' }
 
+# A database backup is a hard gate for every local runtime transition.  The
+# backup script detects the database actually in use (running MySQL/PostgreSQL
+# or the local SQLite file), writes an atomic dump/snapshot and records its
+# checksum without persisting credentials.  If it cannot produce a validated
+# backup, do not stop processes or recreate containers.
+$backupMetadataPath = Join-Path $runtime 'database-backup-latest.json'
+$backupScript = Join-Path $PSScriptRoot 'database-backup.ps1'
+if (-not (Test-Path -LiteralPath $backupScript -PathType Leaf)) { throw "Database backup script not found: $backupScript" }
+Write-Host 'Creating a validated database backup before changing local runtime state.'
+& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $backupScript -ComposeFile $ComposeFile -ProjectName $ProjectName -MetadataPath $backupMetadataPath
+if ($LASTEXITCODE -ne 0) { throw "Database backup gate failed with exit code $LASTEXITCODE. Runtime state was not changed." }
+if (-not (Test-Path -LiteralPath $backupMetadataPath -PathType Leaf)) { throw "Database backup metadata was not created: $backupMetadataPath" }
+$databaseBackup = Get-Content -LiteralPath $backupMetadataPath -Raw | ConvertFrom-Json
+if ($databaseBackup.validation.status -ne 'passed' -or [string]::IsNullOrWhiteSpace([string]$databaseBackup.sha256) -or -not (Test-Path -LiteralPath ([string]$databaseBackup.backup_path) -PathType Leaf)) {
+  throw "Database backup metadata failed validation: $backupMetadataPath"
+}
+$backupItem = Get-Item -LiteralPath ([string]$databaseBackup.backup_path) -ErrorAction Stop
+$backupHash = (Get-FileHash -LiteralPath $backupItem.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($backupHash -ne ([string]$databaseBackup.sha256).ToLowerInvariant()) {
+  throw "Database backup SHA-256 mismatch: $($backupItem.FullName)"
+}
+if ([int64]$backupItem.Length -ne [int64]$databaseBackup.size_bytes) {
+  throw "Database backup size mismatch: $($backupItem.FullName)"
+}
+
 Assert-RuntimeOwnership
 
 $listener = Get-NetTCPConnection -State Listen -LocalPort 5200 -ErrorAction SilentlyContinue
@@ -305,9 +330,6 @@ $database = Initialize-LocalDatabase
 $env:GIT_COMMIT = $commit
 Invoke-DockerCompose @('config','-q')
 Invoke-DockerCompose @('up','-d','--build','--force-recreate')
-& (Join-Path $PSScriptRoot 'local-check.ps1') -ComposeFile $ComposeFile -ProjectName $ProjectName -ExpectedCommit $commit -Owner $Owner -AllowUnavailableReleaseService:$AllowUnavailableReleaseService
-if ($LASTEXITCODE -ne 0) { throw 'Local Docker acceptance failed.' }
-
 $lock = [ordered]@{
   runtime_mode = 'docker'
   runtime_owner = $Owner
@@ -321,7 +343,25 @@ $lock = [ordered]@{
   database_restored = $database.restored
   database_preserved = $database.preserved
   database_comparison = $database.comparison
+  database_backup = [ordered]@{
+    metadata_path = [System.IO.Path]::GetFullPath($backupMetadataPath)
+    backup_path = [System.IO.Path]::GetFullPath([string]$databaseBackup.backup_path)
+    mode = [string]$databaseBackup.mode
+    sha256 = $backupHash
+    size_bytes = [int64]$backupItem.Length
+    created_at_utc = [string]$databaseBackup.created_at_utc
+    validation = $databaseBackup.validation
+    rollback_path = [string]$databaseBackup.rollback_path
+    restore_method = [string]$databaseBackup.restore_method
+  }
+  acceptance_status = 'pending'
   updated_at = (Get-Date).ToUniversalTime().ToString('o')
 }
-$lock | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $lockPath -Encoding UTF8
+$lock | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $lockPath -Encoding UTF8
+& (Join-Path $PSScriptRoot 'local-check.ps1') -ComposeFile $ComposeFile -ProjectName $ProjectName -ExpectedCommit $commit -Owner $Owner -AllowUnavailableReleaseService:$AllowUnavailableReleaseService
+if ($LASTEXITCODE -ne 0) { throw 'Local Docker acceptance failed.' }
+$lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+$lock | Add-Member -NotePropertyName acceptance_status -NotePropertyValue 'passed' -Force
+$lock | Add-Member -NotePropertyName accepted_at -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
+$lock | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $lockPath -Encoding UTF8
 Write-Host "Docker runtime ready: $ProjectName @ $commit (version $version, database $($database.mode))"

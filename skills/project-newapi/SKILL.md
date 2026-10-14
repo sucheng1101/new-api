@@ -43,7 +43,7 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Backend tests: run inside a disposable Go container or the project Docker build; do not use a Windows-native Go process as release evidence.
 - Frontend install/build/lint/i18n: run inside the project Docker build or a disposable Bun container mounted to `web/`; do not use a Windows-native Bun process as release evidence.
 - Docker status: `docker compose -p newapi-dev -f docker-compose.dev.yml ps`.
-- Docker source refresh: `docker compose -p newapi-dev -f docker-compose.dev.yml up -d --build --force-recreate`.
+- Docker source refresh: `powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSION_ID` (the wrapper performs the database-backup gate before Compose changes).
 
 ## Local Runtime Safety Standard
 
@@ -52,11 +52,21 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - `scripts/local-start.ps1` owns the runtime lock at `.git/new-api-dev/runtime-lock.json`, checks Docker and port ownership, stops only the identified newapi native process group, and rebuilds/recreates the current workspace in Docker.
 - The start wrapper validates `runtime_owner`; a different owner can take over only after the Compose runtime is absent and the lock is older than 30 minutes. Ambiguous or active ownership is left untouched.
 - Native process matching requires the executable/command line to point into this checkout; a generic `go`, `node`, or `bun` process is never stopped by name alone.
-- After every source or build-input change, use `docker compose ... up -d --build --force-recreate`; plain `restart` is not sufficient for the baked-in application image.
+- After every source or build-input change, rerun `scripts/local-start.ps1`; it performs the required backup gate and then runs `docker compose ... up -d --build --force-recreate`. Plain `restart` is not sufficient for the baked-in application image.
 - Every start/restart must verify `/api/status`, `/api/status/latest-release`, the embedded frontend root, the current workspace commit, image revision label, ports, and absence of a native process.
 - If a port, container, or process cannot be attributed to this checkout, leave it running and report the owner instead of stopping it.
 - Only the task's runtime-owner session may start, stop, rebuild, or switch the runtime; other sessions perform read-only checks.
 - Treat stale processes and browser caches as runtime evidence issues: inspect ownership and loaded image revision before changing application code.
+
+### Runtime Database Backup Gate (mandatory)
+
+- Incident root cause to preserve: the former `local-start.ps1` only selected SQLite snapshots while the active runtime used MySQL, and a direct Compose `up --build --force-recreate` bypassed the wrapper. A SQLite snapshot is not evidence for a MySQL/PostgreSQL runtime; all state changes must pass the unified gate.
+- Before every restart, rebuild, recreate, runtime-mode switch, release publication, deployment, or rollback, back up and verify the database actually used by the live app. Detect the engine and instance from runtime configuration; do not assume that a SQLite snapshot covers a MySQL or PostgreSQL runtime.
+- `scripts/local-start.ps1` is the only approved local entrypoint for state-changing Compose operations. Do not hand-run `docker compose up`, `restart`, `stop`, `down`, `rm`, or equivalent commands to bypass the gate; `ps`, `config`, `logs`, and `inspect` remain read-only diagnostics.
+- `scripts/production-update-compose.sh` and `scripts/production-update.sh` are subject to the same gate: before `pull`/`up` or `systemctl stop/start`, they must invoke `DB_BACKUP_COMMAND` (or an equivalent unified database-backup workflow), verify instance-matched/checksum-verified evidence, and fail closed when proof is absent. Direct Compose or `systemctl` state changes outside those guarded scripts are non-compliant.
+- The gate must fail closed before any container stop/recreate or mode switch when the backup is missing, empty, corrupt, stale, tied to another instance, or not integrity/read verified. Never use `docker compose down -v` or delete named volumes.
+- Runtime lock and release evidence must contain the engine/instance, backup artifact path, UTC timestamp, SHA-256, integrity/restore-read result, and concrete rollback path. Keep dumps and metadata outside Git commits, and scrub credentials, tokens, cookies, and private configuration.
+- `local-check.ps1` and release acceptance must show the backup artifact, checksum, verification result, runtime-instance match, and rollback path in addition to health, commit, image, port, and process checks.
 
 ### Docker runtime inventory
 
@@ -69,13 +79,13 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 | Redis | `127.0.0.1:16379`, stable volume `new-api-dev-redis-data` |
 | MinIO API/console | `127.0.0.1:19000` / `127.0.0.1:19001`, stable volume `new-api-dev-minio-data` |
 | Container names | `new-api-${VERSION}-app/mysql/redis/minio` |
-| Database bootstrap | Each start compares the latest valid SQLite backup with `data/one-api.db`; a newer backup is restored after preserving the current file under `data/runtime-backups`, while a newer/current database is kept. MySQL is used only when no usable SQLite database is available |
+| Database bootstrap | Before any state-changing start/rebuild/switch, the backup gate captures and verifies the actual runtime database (SQLite, MySQL, or PostgreSQL). SQLite snapshot selection/restoration remains supported; a MySQL/PostgreSQL runtime is never covered by a SQLite-only snapshot, and the current instance is preserved before any restore |
 | Runtime lock | `.git/new-api-dev/runtime-lock.json` |
 | Build identity | `org.opencontainers.image.revision` label and `git rev-parse HEAD` |
 
 ### Mode switch contract
 
-To switch from native to Docker, stop only the project-owned native process group, verify ports are free, then run `local-start.ps1`. To use a native exception, stop the `newapi-dev` Compose application group first, record the reason and owner in the board, and restore Docker before review/release. Do not use `docker compose down -v`; named data volumes are preserved.
+To switch from native to Docker, stop only the project-owned native process group, verify ports are free, then run `local-start.ps1` (including its database-backup gate). To use a native exception, complete the same backup preflight and use the approved runtime-owner procedure to stop the `newapi-dev` Compose application group; record the reason and owner in the board, and restore Docker before review/release. Do not use `docker compose down -v`; named data volumes are preserved.
 
 ## Engineering Rules
 
@@ -134,6 +144,12 @@ To switch from native to Docker, stop only the project-owned native process grou
   unchanged.
 
 ## Release Safety
+
+### Database Backup Preflight
+
+- A release, publication, deployment, or rollback MUST have a verified backup of the actual target database before any service restart or replacement. Record engine/instance, artifact, SHA-256, integrity/read verification, retention, and rollback location with the release evidence.
+- If the backup gate fails, stop the operation before uploading, replacing, restarting, or switching anything. Preserve the backup needed for rollback; remove only unrelated temporary release artifacts after verification.
+- `scripts/production-update-compose.sh` and `scripts/production-update.sh` must leave the backup artifact, checksum, validation result, and rollback location in their release evidence before reporting a healthy update.
 
 ### Platform Release Matrix
 

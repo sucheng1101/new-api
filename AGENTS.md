@@ -134,3 +134,13 @@ For request structs that are parsed from client JSON and then re-marshaled to up
 ### Rule 7: Billing Expression System — Read `pkg/billingexpr/expr.md`
 
 When working on tiered/dynamic billing (expression-based pricing), you MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language (variables, functions, examples), full system architecture (editor → storage → pre-consume → settlement → log display), token normalization rules (`p`/`c` auto-exclusion), quota conversion, and expression versioning. All code changes to the billing expression system must follow the patterns described in that document.
+
+### Rule 8: Runtime Database Backup Gate
+
+Any operation that can change the running state or persistent data — including restart, rebuild, recreate, runtime-mode switch, release publication, deployment, or rollback — MUST first create and verify a backup of the database actually used by the running application. The gate must detect the active engine and instance rather than assuming SQLite; SQLite, MySQL, and PostgreSQL are all in scope.
+
+- `scripts/local-start.ps1` is the canonical local entrypoint and owns the backup gate before a state-changing Compose operation. Do not bypass it with hand-run state-changing Compose commands such as `up`, `restart`, `stop`, `down`, `rm`, or equivalent commands. Read-only inspection (`ps`, `config`, `logs`, `inspect`) is allowed.
+- `scripts/production-update-compose.sh` and `scripts/production-update.sh` are covered by the same gate: each MUST invoke `DB_BACKUP_COMMAND` (or an equivalent unified database-backup workflow) and verify its instance-matched, checksum-verified evidence before `pull`/`up` or `systemctl stop/start`. Direct Compose or `systemctl` state changes outside those guarded scripts are non-compliant.
+- The gate is fail-closed: a missing, empty, corrupt, stale, instance-mismatched, or unverified backup MUST abort before stopping, recreating, switching, publishing, or deploying. `docker compose down -v`, `docker volume rm`, and any other named-volume deletion are forbidden.
+- Evidence MUST record the database engine and instance, backup path, UTC timestamp, SHA-256, validation or restore-read check, and the concrete rollback path in the runtime lock or release record. Backups, dumps, and metadata stay outside commits and MUST NOT contain credentials, tokens, cookies, or private configuration.
+- Acceptance is incomplete until the backup artifact exists, its checksum and integrity/read verification pass, it is tied to the actual runtime database, and the documented rollback path is available. A health check alone is not backup evidence.
