@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Button,
   Card,
@@ -27,19 +33,30 @@ import {
   Input,
   Modal,
   Switch,
+  Table,
   Tag,
   Toast,
 } from '@douyinfe/semi-ui';
-import { Check, Copy, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
-import {
-  buildApiEndpoint,
-  getServerAddress,
-  normalizeServerAddress,
-} from '../../helpers/token';
+import { buildApiEndpoint, normalizeServerAddress } from '../../helpers/token';
 
+const PAGE_SIZE = 8;
 const emptyConfig = { hosts: '', base_url: '', resolved_base_url: '' };
+
+const runtimeOrigin = () =>
+  normalizeServerAddress(
+    typeof window !== 'undefined' ? window.location.origin : '',
+  );
 
 const AddressRow = ({ label, url, copyKey, copiedKey, onCopy, copyLabel }) => (
   <div className='flex min-w-0 items-center gap-2 rounded-lg bg-semi-color-fill-0 px-3 py-2'>
@@ -110,7 +127,16 @@ const EditableDescription = ({ value, onSave, placeholder }) => {
   );
 };
 
-const DomainManagementPanel = () => {
+const DomainManagementPanel = ({
+  showConfigForm = true,
+  showDerivedAddresses = true,
+  searchable = false,
+  paginated = false,
+  title = '',
+  description = '',
+  emptyTitle = '',
+  emptyDescription = '',
+}) => {
   const { t } = useTranslation();
   const [config, setConfig] = useState(emptyConfig);
   const [endpoints, setEndpoints] = useState([]);
@@ -118,6 +144,9 @@ const DomainManagementPanel = () => {
   const [editing, setEditing] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [copiedKey, setCopiedKey] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
   const copyTimer = useRef(null);
 
   useEffect(() => () => clearTimeout(copyTimer.current), []);
@@ -147,7 +176,7 @@ const DomainManagementPanel = () => {
         base_url: data.base_url || '',
         resolved_base_url: data.resolved_base_url || '',
       });
-      setEndpoints(data.endpoints || []);
+      setEndpoints(Array.isArray(data.endpoints) ? data.endpoints : []);
     } catch (error) {
       Toast.error(
         error?.response?.data?.message || error.message || t('加载失败'),
@@ -162,12 +191,10 @@ const DomainManagementPanel = () => {
   }, [load]);
 
   const gatewayAddress = normalizeServerAddress(
-    config.resolved_base_url || getServerAddress(),
+    config.resolved_base_url || runtimeOrigin(),
   );
   const openAIEndpoint = buildApiEndpoint(gatewayAddress, '/v1');
-  const enabledEndpoints = endpoints.filter(
-    (item) => item.enabled && item.endpoint,
-  );
+  const hasRecords = endpoints.length > 0;
 
   const saveConfig = async (values) => {
     try {
@@ -244,168 +271,245 @@ const DomainManagementPanel = () => {
       },
     });
 
+  const openCreate = () => {
+    setEditing(null);
+    setModalVisible(true);
+  };
+
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return endpoints;
+    return endpoints.filter((item) =>
+      [item.name, item.endpoint, item.description]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(keyword)),
+    );
+  }, [endpoints, query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, endpoints.length]);
+
+  const displayRecords = paginated
+    ? filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    : filtered;
+
   return (
     <div className='flex flex-col gap-5'>
-      <div className='flex justify-end'>
-        <Button
-          theme='light'
-          icon={<RefreshCw size={15} />}
-          loading={loading}
-          onClick={load}
+      {showConfigForm && (
+        <Card
+          className='!rounded-2xl border-0 shadow-sm'
+          title={t('直连域名配置')}
         >
-          {t('刷新')}
-        </Button>
-      </div>
+          {showDerivedAddresses && !hasRecords && (
+            <div className='flex flex-col gap-2'>
+              <AddressRow
+                label={t('网关地址')}
+                url={gatewayAddress}
+                copyKey='gateway'
+                copiedKey={copiedKey}
+                onCopy={copy}
+                copyLabel={t('复制地址')}
+              />
+              <AddressRow
+                label={t('OpenAI兼容地址')}
+                url={openAIEndpoint}
+                copyKey='openai'
+                copiedKey={copiedKey}
+                onCopy={copy}
+                copyLabel={t('复制地址')}
+              />
+            </div>
+          )}
+          {showDerivedAddresses && !hasRecords && <Divider margin='16px' />}
+          <Form
+            initValues={{ hosts: config.hosts, base_url: config.base_url }}
+            key={`${config.hosts}|${config.base_url}`}
+            onSubmit={saveConfig}
+            layout='vertical'
+          >
+            <div className='grid gap-4 md:grid-cols-2'>
+              <Form.Input
+                field='hosts'
+                label={t('直连域名')}
+                placeholder={t('直连域名示例')}
+              />
+              <Form.Input
+                field='base_url'
+                label={t('API 地址')}
+                placeholder='https://api.example.com'
+              />
+            </div>
+            <div className='flex justify-end'>
+              <Button type='primary' htmlType='submit'>
+                {t('保存配置')}
+              </Button>
+            </div>
+          </Form>
+        </Card>
+      )}
 
-      <Card
-        className='!rounded-2xl border-0 shadow-sm'
-        title={t('直连域名配置')}
-      >
-        <div className='flex flex-col gap-2'>
-          <AddressRow
-            label={t('网关地址')}
-            url={gatewayAddress}
-            copyKey='gateway'
-            copiedKey={copiedKey}
-            onCopy={copy}
-            copyLabel={t('复制地址')}
-          />
-          <AddressRow
-            label={t('OpenAI兼容地址')}
-            url={openAIEndpoint}
-            copyKey='openai'
-            copiedKey={copiedKey}
-            onCopy={copy}
-            copyLabel={t('复制地址')}
-          />
-          {enabledEndpoints.map((item) => (
-            <AddressRow
-              key={item.id || item.endpoint}
-              label={item.name || t('自定义端点')}
-              url={item.endpoint}
-              copyKey={`endpoint-${item.id || item.endpoint}`}
-              copiedKey={copiedKey}
-              onCopy={copy}
-              copyLabel={t('复制地址')}
-            />
-          ))}
-        </div>
-        <Divider margin='16px' />
-        <Form
-          initValues={{ hosts: config.hosts, base_url: config.base_url }}
-          key={`${config.hosts}|${config.base_url}`}
-          onSubmit={saveConfig}
-          layout='vertical'
-        >
-          <div className='grid gap-4 md:grid-cols-2'>
-            <Form.Input
-              field='hosts'
-              label={t('直连域名')}
-              placeholder={t('直连域名示例')}
-            />
-            <Form.Input
-              field='base_url'
-              label={t('API 地址')}
-              placeholder='https://api.example.com'
-            />
+      <Card className='!rounded-2xl border-0 shadow-sm'>
+        <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+          <div className='min-w-0'>
+            <div className='font-semibold'>
+              {title || t('OpenAI 兼容端点')}{' '}
+              <span className='text-xs text-semi-color-text-2'>
+                {t('共 {{total}} 条', { total: endpoints.length })}
+              </span>
+            </div>
+            {description ? (
+              <div className='mt-1 text-xs text-semi-color-text-2'>
+                {description}
+              </div>
+            ) : null}
           </div>
-          <div className='flex justify-end'>
-            <Button type='primary' htmlType='submit'>
-              {t('保存配置')}
+          <div className='flex shrink-0 gap-2'>
+            <Button
+              theme='light'
+              icon={<RefreshCw size={15} />}
+              loading={loading}
+              onClick={load}
+            >
+              {t('刷新')}
             </Button>
-          </div>
-        </Form>
-      </Card>
-
-      <Card
-        className='!rounded-2xl border-0 shadow-sm'
-        title={
-          <div className='flex items-center justify-between gap-3'>
-            <span>{t('OpenAI 兼容端点')}</span>
             <Button
               type='primary'
               size='small'
               icon={<Plus size={14} />}
-              onClick={() => {
-                setEditing(null);
-                setModalVisible(true);
-              }}
+              onClick={openCreate}
             >
               {t('新增端点')}
             </Button>
           </div>
-        }
-      >
-        {endpoints.length === 0 ? (
-          <Empty
-            title={t('暂无自定义端点')}
-            description={t('新增端点后即可在此管理启停与排序')}
-            style={{ padding: '24px 0' }}
-          >
+        </div>
+
+        {searchable && (
+          <div className='mt-4 flex min-w-[220px] gap-2'>
+            <Input
+              prefix={<Search size={15} />}
+              value={searchInput}
+              onChange={setSearchInput}
+              onEnterPress={() => setQuery(searchInput)}
+              placeholder={t('搜索名称、地址或描述')}
+              showClear
+              className='flex-1'
+            />
             <Button
-              type='primary'
-              icon={<Plus size={14} />}
-              onClick={() => {
-                setEditing(null);
-                setModalVisible(true);
-              }}
+              theme='light'
+              icon={<Search size={15} />}
+              onClick={() => setQuery(searchInput)}
             >
-              {t('新增端点')}
+              {t('搜索')}
             </Button>
-          </Empty>
-        ) : (
-          <div className='flex w-full flex-col gap-2'>
-            {endpoints.map((record) => (
-              <div
-                key={record.id}
-                className='flex w-full flex-col gap-2 rounded-xl border border-solid border-semi-color-border px-3 py-2.5 sm:flex-row sm:items-center'
+          </div>
+        )}
+
+        <Table
+          size='small'
+          loading={loading}
+          className='mt-4'
+          dataSource={displayRecords}
+          rowKey='id'
+          pagination={
+            paginated
+              ? {
+                  currentPage: page,
+                  pageSize: PAGE_SIZE,
+                  total: filtered.length,
+                  onPageChange: setPage,
+                }
+              : false
+          }
+          empty={
+            <Empty
+              title={emptyTitle || t('暂无自定义端点')}
+              description={
+                emptyDescription || t('新增端点后即可在此管理启停与排序')
+              }
+              style={{ padding: '24px 0' }}
+            >
+              <Button
+                type='primary'
+                icon={<Plus size={14} />}
+                onClick={openCreate}
               >
-                <div className='flex min-w-0 flex-1 flex-col gap-1.5'>
-                  <div className='flex min-w-0 items-center gap-2'>
-                    <span className='shrink-0 truncate font-medium'>
-                      {record.name}
+                {t('新增端点')}
+              </Button>
+            </Empty>
+          }
+          scroll={{ x: 760 }}
+          columns={[
+            {
+              title: t('名称'),
+              dataIndex: 'name',
+              width: 150,
+              render: (value) => (
+                <span className='block max-w-[150px] truncate font-medium'>
+                  {value || '-'}
+                </span>
+              ),
+            },
+            {
+              title: t('地址'),
+              dataIndex: 'endpoint',
+              render: (value, record) => (
+                <Button
+                  theme='borderless'
+                  className='!px-0 font-mono text-xs'
+                  disabled={!value}
+                  onClick={() => copy(`endpoint-${record.id}`, value)}
+                >
+                  <span className='flex min-w-0 items-center gap-1'>
+                    <span className='max-w-[260px] truncate'>
+                      {value || '-'}
                     </span>
-                    <span
-                      className='min-w-0 flex-1 truncate font-mono text-xs text-semi-color-text-2'
-                      title={record.endpoint}
-                    >
-                      {record.endpoint}
-                    </span>
-                    <Button
-                      theme='borderless'
-                      size='small'
-                      disabled={!record.endpoint}
-                      aria-label={t('复制地址')}
-                      icon={
-                        copiedKey === `endpoint-${record.id}` ? (
-                          <Check size={14} className='text-green-500' />
-                        ) : (
-                          <Copy size={14} />
-                        )
-                      }
-                      onClick={() =>
-                        copy(`endpoint-${record.id}`, record.endpoint)
-                      }
-                    />
-                  </div>
-                  <EditableDescription
-                    value={record.description}
-                    placeholder={t('展示给用户的说明，可编辑')}
-                    onSave={(description) =>
-                      patchEndpoint(record, { description })
-                    }
-                  />
-                </div>
-                <div className='flex shrink-0 items-center gap-3'>
-                  <span className='text-xs text-semi-color-text-2'>
-                    {t('排序')} {record.sort_order ?? 0}
+                    {copiedKey === `endpoint-${record.id}` ? (
+                      <Check size={13} className='shrink-0 text-green-500' />
+                    ) : (
+                      <Copy size={13} className='shrink-0' />
+                    )}
                   </span>
-                  <Switch
-                    checked={record.enabled}
-                    onChange={(checked) =>
-                      patchEndpoint(record, { enabled: checked })
-                    }
-                  />
+                </Button>
+              ),
+            },
+            {
+              title: t('描述'),
+              dataIndex: 'description',
+              render: (value, record) => (
+                <EditableDescription
+                  value={value}
+                  placeholder={t('展示给用户的说明，可编辑')}
+                  onSave={(description) =>
+                    patchEndpoint(record, { description })
+                  }
+                />
+              ),
+            },
+            {
+              title: t('状态'),
+              dataIndex: 'enabled',
+              width: 90,
+              render: (value, record) => (
+                <Switch
+                  checked={value}
+                  onChange={(checked) =>
+                    patchEndpoint(record, { enabled: checked })
+                  }
+                />
+              ),
+            },
+            {
+              title: t('排序'),
+              dataIndex: 'sort_order',
+              width: 80,
+              render: (value) => value ?? 0,
+            },
+            {
+              title: t('操作'),
+              width: 160,
+              render: (_, record) => (
+                <div className='flex items-center gap-1'>
                   <Button
                     theme='borderless'
                     icon={<Pencil size={14} />}
@@ -423,10 +527,10 @@ const DomainManagementPanel = () => {
                     onClick={() => removeEndpoint(record)}
                   />
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ),
+            },
+          ]}
+        />
       </Card>
 
       <Modal

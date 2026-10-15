@@ -4293,6 +4293,12 @@
     "OpenAI兼容地址": "OpenAI-compatible URL",
     "复制地址": "Copy URL",
     "暂无自定义端点": "No custom endpoints yet",
-    "新增端点后即可在此管理启停与排序": "Add an endpoint to manage its status and order here."
+    "新增端点后即可在此管理启停与排序": "Add an endpoint to manage its status and order here.",
+    "搜索": "Search",
+    "共 {{total}} 条": "{{total}} records",
+    "搜索名称、地址或描述": "Search name, address, or description",
+    "直连域名记录": "Direct domain records",
+    "直连域名记录可在此启停、排序与编辑说明": "Enable, reorder, and edit the description of direct domain records here.",
+    "暂无直连域名记录": "No direct domain records yet"
   }
 }

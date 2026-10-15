@@ -23,7 +23,6 @@ import { IconCopy } from '@douyinfe/semi-icons';
 import PropTypes from 'prop-types';
 import {
   buildApiEndpoint,
-  getServerAddress,
   normalizeServerAddress,
 } from '../../../helpers/token';
 import { API } from '../../../helpers';
@@ -61,14 +60,12 @@ EndpointItem.propTypes = {
 
 const TokenEndpointBar = ({ copyText, t }) => {
   const [customEndpoints, setCustomEndpoints] = useState([]);
-  const [configuredBaseUrl, setConfiguredBaseUrl] = useState('');
   useEffect(() => {
     let mounted = true;
     API.get('/api/user/direct-ip-whitelist')
       .then((response) => {
         if (mounted && response.data?.success) {
           const data = response.data.data || {};
-          setConfiguredBaseUrl(normalizeServerAddress(data.base_url || ''));
           setCustomEndpoints(data.endpoints || []);
         }
       })
@@ -77,8 +74,13 @@ const TokenEndpointBar = ({ copyText, t }) => {
       mounted = false;
     };
   }, []);
-  const serverAddress =
-    configuredBaseUrl || normalizeServerAddress(getServerAddress());
+  // Always derive the displayed gateway and /v1 endpoint from the origin the
+  // operator is actually using. Do not read the cached status server_address
+  // or a configured direct address, which can stay stale (for example an old
+  // 127.0.0.1:1004 value).
+  const serverAddress = normalizeServerAddress(
+    typeof window !== 'undefined' ? window.location.origin : '',
+  );
   const openAIEndpoint = buildApiEndpoint(serverAddress, '/v1');
 
   return (

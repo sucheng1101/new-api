@@ -405,14 +405,16 @@ const SecurityAccess = () => {
           </Typography.Title>
         </div>
         <div className='flex gap-2'>
-          <Button
-            theme='light'
-            icon={<RefreshCw size={15} />}
-            loading={loading}
-            onClick={load}
-          >
-            刷新
-          </Button>
+          {activeTab !== 'domain' && (
+            <Button
+              theme='light'
+              icon={<RefreshCw size={15} />}
+              loading={loading}
+              onClick={load}
+            >
+              刷新
+            </Button>
+          )}
           <Button
             type='primary'
             icon={<Plus size={15} />}
@@ -782,6 +784,16 @@ const SecurityAccess = () => {
                 ]}
               />
             </Card>
+            <DomainManagementPanel
+              showConfigForm={false}
+              showDerivedAddresses={false}
+              searchable
+              paginated
+              title={t('直连域名记录')}
+              description={t('直连域名记录可在此启停、排序与编辑说明')}
+              emptyTitle={t('暂无直连域名记录')}
+              emptyDescription={t('新增端点后即可在此管理启停与排序')}
+            />
           </div>
         </Tabs.TabPane>
         <Tabs.TabPane itemKey='blacklist' tab='黑名单'>
