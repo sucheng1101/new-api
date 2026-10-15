@@ -175,10 +175,12 @@ function Preserve-CurrentDatabase {
   return $destination
 }
 
-function Initialize-LocalDatabase {
+function Resolve-LocalDatabasePlan {
+  # Decide which database the local runtime will actually use WITHOUT changing
+  # any state.  The backup gate uses this decision so the recorded backup
+  # engine/instance always matches the database the application will run on.
   $dataDir = Join-Path $root 'data'
   $target = Join-Path $dataDir 'one-api.db'
-  New-Item -ItemType Directory -Force $dataDir | Out-Null
   $backup = Get-LatestSqliteBackup
   $targetExists = Test-Path -LiteralPath $target -PathType Leaf
   $targetItem = if ($targetExists) { Get-Item -LiteralPath $target } else { $null }
@@ -199,33 +201,27 @@ function Initialize-LocalDatabase {
   $shouldRestore = $backup -and (-not $targetValid -or -not $targetItem -or $backupIsNewer)
 
   if ($shouldRestore) {
-    $preserved = $null
-    if ($targetExists) {
-      Stop-ApplicationForDatabaseSwitch
-      $preserved = Preserve-CurrentDatabase -Path $target
-    }
-    Write-Host "Restoring latest valid local backup: $($backup.FullName)"
-    Copy-Item -LiteralPath $backup.FullName -Destination $target -Force
-    if (-not (Test-SqliteFile $target)) { throw "Restored SQLite backup failed validation: $target" }
-    $env:NEW_API_SQL_DSN = 'local'
-    $comparison.decision = if ($targetValid) { 'restore-newer-backup' } else { 'restore-available-backup' }
     return [ordered]@{
       mode = 'sqlite'
-      source = $backup.FullName
-      restored = $true
-      preserved = $preserved
+      restore = $true
+      target = $target
+      snapshot = $backup
+      target_exists = $targetExists
+      target_valid = $targetValid
+      instance = [System.IO.Path]::GetFullPath($target)
       comparison = $comparison
     }
   }
 
   if ($targetValid) {
-    $env:NEW_API_SQL_DSN = 'local'
-    $comparison.decision = if ($backup) { 'keep-current-database' } else { 'keep-current-database-no-backup' }
     return [ordered]@{
       mode = 'sqlite'
-      source = $target
-      restored = $false
-      preserved = $null
+      restore = $false
+      target = $target
+      snapshot = $null
+      target_exists = $targetExists
+      target_valid = $targetValid
+      instance = [System.IO.Path]::GetFullPath($target)
       comparison = $comparison
     }
   }
@@ -235,6 +231,26 @@ function Initialize-LocalDatabase {
     if ($size -gt 0) { throw "Local SQLite database exists but is not valid, and no usable newer backup is available: $target" }
   }
   if (Test-MySqlHasApplicationData) {
+    return [ordered]@{
+      mode = 'mysql'
+      restore = $false
+      target = $target
+      snapshot = $null
+      target_exists = $targetExists
+      target_valid = $targetValid
+      comparison = $comparison
+    }
+  }
+  throw 'No valid SQLite backup was found and the local MySQL database is empty. Refusing to start a fresh database.'
+}
+
+function Apply-LocalDatabasePlan {
+  param([Parameter(Mandatory = $true)]$Plan)
+  $dataDir = Join-Path $root 'data'
+  New-Item -ItemType Directory -Force $dataDir | Out-Null
+  $comparison = $Plan.comparison
+
+  if ($Plan.mode -eq 'mysql') {
     Remove-Item Env:NEW_API_SQL_DSN -ErrorAction SilentlyContinue
     $comparison.decision = 'use-existing-mysql'
     return [ordered]@{
@@ -245,7 +261,36 @@ function Initialize-LocalDatabase {
       comparison = $comparison
     }
   }
-  throw 'No valid SQLite backup was found and the local MySQL database is empty. Refusing to start a fresh database.'
+
+  if ($Plan.restore) {
+    $preserved = $null
+    if ($Plan.target_exists) {
+      Stop-ApplicationForDatabaseSwitch
+      $preserved = Preserve-CurrentDatabase -Path $Plan.target
+    }
+    Write-Host "Restoring latest valid local backup: $($Plan.snapshot.FullName)"
+    Copy-Item -LiteralPath $Plan.snapshot.FullName -Destination $Plan.target -Force
+    if (-not (Test-SqliteFile $Plan.target)) { throw "Restored SQLite backup failed validation: $Plan.target" }
+    $env:NEW_API_SQL_DSN = 'local'
+    $comparison.decision = if ($Plan.target_valid) { 'restore-newer-backup' } else { 'restore-available-backup' }
+    return [ordered]@{
+      mode = 'sqlite'
+      source = $Plan.snapshot.FullName
+      restored = $true
+      preserved = $preserved
+      comparison = $comparison
+    }
+  }
+
+  $env:NEW_API_SQL_DSN = 'local'
+  $comparison.decision = if ($Plan.snapshot) { 'keep-current-database' } else { 'keep-current-database-no-backup' }
+  return [ordered]@{
+    mode = 'sqlite'
+    source = $Plan.target
+    restored = $false
+    preserved = $null
+    comparison = $comparison
+  }
 }
 
 function Assert-RuntimeOwnership {
@@ -293,21 +338,39 @@ if ($LASTEXITCODE -ne 0) { throw 'Docker daemon is not available.' }
 $commit = (& git -C $root rev-parse HEAD).Trim()
 if ([string]::IsNullOrWhiteSpace($commit)) { throw 'Unable to resolve current Git commit.' }
 
-# A database backup is a hard gate for every local runtime transition.  The
-# backup script detects the database actually in use (running MySQL/PostgreSQL
-# or the local SQLite file), writes an atomic dump/snapshot and records its
-# checksum without persisting credentials.  If it cannot produce a validated
-# backup, do not stop processes or recreate containers.
+# A database backup is a hard gate for every local runtime transition.  Resolve
+# the database the runtime will actually use FIRST, then back up that exact
+# engine/instance, so the recorded evidence can never describe a different
+# database than the one the application runs on.  If the gate cannot produce a
+# validated backup, do not stop processes or recreate containers.
+$databasePlan = Resolve-LocalDatabasePlan
 $backupMetadataPath = Join-Path $runtime 'database-backup-latest.json'
 $backupScript = Join-Path $PSScriptRoot 'database-backup.ps1'
 if (-not (Test-Path -LiteralPath $backupScript -PathType Leaf)) { throw "Database backup script not found: $backupScript" }
-Write-Host 'Creating a validated database backup before changing local runtime state.'
-& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $backupScript -ComposeFile $ComposeFile -ProjectName $ProjectName -MetadataPath $backupMetadataPath
+$backupArgs = @(
+  '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $backupScript,
+  '-ComposeFile', $ComposeFile,
+  '-ProjectName', $ProjectName,
+  '-MetadataPath', $backupMetadataPath,
+  '-DatabaseMode', $databasePlan.mode
+)
+if ($databasePlan.mode -eq 'sqlite') {
+  # When a snapshot is about to be restored, back up that snapshot because it
+  # is the database the runtime will use; otherwise back up the live file.
+  $sqliteBackupSource = if ($databasePlan.restore -and $databasePlan.snapshot) { $databasePlan.snapshot.FullName } else { $databasePlan.target }
+  $backupArgs += @('-SqlitePath', $sqliteBackupSource)
+}
+Write-Host "Creating a validated $($databasePlan.mode) database backup before changing local runtime state."
+& powershell.exe @backupArgs
 if ($LASTEXITCODE -ne 0) { throw "Database backup gate failed with exit code $LASTEXITCODE. Runtime state was not changed." }
 if (-not (Test-Path -LiteralPath $backupMetadataPath -PathType Leaf)) { throw "Database backup metadata was not created: $backupMetadataPath" }
 $databaseBackup = Get-Content -LiteralPath $backupMetadataPath -Raw | ConvertFrom-Json
 if ($databaseBackup.validation.status -ne 'passed' -or [string]::IsNullOrWhiteSpace([string]$databaseBackup.sha256) -or -not (Test-Path -LiteralPath ([string]$databaseBackup.backup_path) -PathType Leaf)) {
   throw "Database backup metadata failed validation: $backupMetadataPath"
+}
+$backupEngine = ([string]$databaseBackup.mode).Trim().ToLowerInvariant()
+if ($backupEngine -ne $databasePlan.mode.ToLowerInvariant()) {
+  throw "Database backup evidence engine '$backupEngine' does not match the runtime database engine '$($databasePlan.mode)'."
 }
 $backupItem = Get-Item -LiteralPath ([string]$databaseBackup.backup_path) -ErrorAction Stop
 $backupHash = (Get-FileHash -LiteralPath $backupItem.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -326,7 +389,18 @@ if ($listener -and -not (Test-ProjectPortPublished -Port 5200)) {
   throw "Port 5200 is occupied by an unowned process PID $($listener[0].OwningProcess) ($($ownerProcess.ProcessName))."
 }
 
-$database = Initialize-LocalDatabase
+$database = Apply-LocalDatabasePlan -Plan $databasePlan
+if ($database.mode -ne $backupEngine) {
+  throw "Runtime database engine '$($database.mode)' no longer matches the validated backup engine '$backupEngine'."
+}
+# The instance identity must survive `up --force-recreate`, which replaces the
+# container id, so a server-backed engine is identified by its stable Compose
+# project/service rather than a transient container id.
+$databaseInstance = if ($database.mode -eq 'sqlite') {
+  [string]$databasePlan.instance
+} else {
+  "$ProjectName/$($database.mode)"
+}
 $env:GIT_COMMIT = $commit
 Invoke-DockerCompose @('config','-q')
 Invoke-DockerCompose @('up','-d','--build','--force-recreate')
@@ -346,7 +420,12 @@ $lock = [ordered]@{
   database_backup = [ordered]@{
     metadata_path = [System.IO.Path]::GetFullPath($backupMetadataPath)
     backup_path = [System.IO.Path]::GetFullPath([string]$databaseBackup.backup_path)
-    mode = [string]$databaseBackup.mode
+    engine = [string]$database.mode
+    instance = $databaseInstance
+    database_name = [string]$databaseBackup.database_name
+    source = [string]$databaseBackup.source
+    mode = [string]$database.mode
+    verified = $true
     sha256 = $backupHash
     size_bytes = [int64]$backupItem.Length
     created_at_utc = [string]$databaseBackup.created_at_utc
