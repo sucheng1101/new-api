@@ -15,7 +15,7 @@ services:
       - ./data:/data
       - ./logs:/app/logs
     environment:
-      SQL_DSN: "${NEW_API_SQL_DSN:-root:123456@tcp(mysql:3306)/new-api-local-dev?charset=utf8mb4&parseTime=true&loc=Local}"
+      SQL_DSN: "$${NEW_API_SQL_DSN:-local}"
       REDIS_CONN_STRING: redis://redis:6379/0
       TASK_ARTIFACT_STORE_MODE: s3
       TASK_ARTIFACT_STORE_S3_ENDPOINT: http://minio:9000
@@ -26,8 +26,6 @@ services:
       TZ: Asia/Shanghai
       NODE_NAME: new-api-${NEW_API_VERSION:-dev}
     depends_on:
-      mysql:
-        condition: service_healthy
       redis:
         condition: service_healthy
       minio-init:

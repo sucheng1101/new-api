@@ -26,16 +26,9 @@ type SetupRequest struct {
 
 func GetSetup(c *gin.Context) {
 	setup := Setup{
-		Status: constant.Setup,
+		Status:   constant.Setup,
+		RootInit: model.RootUserExists(),
 	}
-	if constant.Setup {
-		c.JSON(200, gin.H{
-			"success": true,
-			"data":    setup,
-		})
-		return
-	}
-	setup.RootInit = model.RootUserExists()
 	if common.UsingMySQL {
 		setup.DatabaseType = "mysql"
 	}
