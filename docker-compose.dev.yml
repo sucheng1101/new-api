@@ -15,7 +15,7 @@ services:
       - ./data:/data
       - ./logs:/app/logs
     environment:
-      SQL_DSN: "$${NEW_API_SQL_DSN:-local}"
+      SQL_DSN: "${NEW_API_SQL_DSN:-local}"
       REDIS_CONN_STRING: redis://redis:6379/0
       TASK_ARTIFACT_STORE_MODE: s3
       TASK_ARTIFACT_STORE_S3_ENDPOINT: http://minio:9000
