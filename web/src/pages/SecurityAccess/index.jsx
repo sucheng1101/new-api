@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
+import DomainManagementPanel from '../../components/security/DomainManagementPanel';
 
 const PAGE_SIZE = 8;
 const RANGE_OPTIONS = [
@@ -883,6 +884,9 @@ const SecurityAccess = () => {
               ]}
             />
           </Card>
+        </Tabs.TabPane>
+        <Tabs.TabPane itemKey='domain' tab='域名管理'>
+          <DomainManagementPanel />
         </Tabs.TabPane>
       </Tabs>
       <Modal

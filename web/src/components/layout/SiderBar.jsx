@@ -57,7 +57,6 @@ const routerMap = {
   monitorGroups: '/console/monitor-groups',
   dashboard: '/console/dashboard',
   security: '/console/security',
-  domainManagement: '/console/domain-management',
   directIPWhitelist: '/console/direct-ip-whitelist',
   taskPlugin: '/console/task-plugin',
 };
@@ -238,12 +237,6 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('安全与访问'),
         itemKey: 'security',
         to: '/console/security',
-        className: isAdmin() ? '' : 'tableHiddle',
-      },
-      {
-        text: t('域名管理'),
-        itemKey: 'domainManagement',
-        to: '/console/domain-management',
         className: isAdmin() ? '' : 'tableHiddle',
       },
     ];
