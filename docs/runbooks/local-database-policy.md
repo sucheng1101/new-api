@@ -23,6 +23,34 @@ same `data/one-api.db` file.
 6. Direct `docker compose up`, `restart`, `stop`, `down`, volume deletion, or
    manual DSN switching is outside the workflow.
 
+## Backup gate
+
+Every restart, rebuild, recreate, runtime-mode switch, release, and rollback
+must first back up the actual live database used by the running application.
+The gate is fail-closed against the database instance actually serving traffic,
+not an assumed or previously recorded engine.
+
+For a SQLite runtime, the following fields must all be nonblank and the source
+and instance paths must each resolve, from the repository root, to the
+canonical live database `root\data\one-api.db`:
+
+- `runtime-lock.database_source`
+- `runtime-lock.database_backup.instance`
+- `runtime-lock.database_backup.source`
+- `database-backup` metadata `source`
+- `runtime-lock.database_backup.backup_path`
+- `database-backup` metadata `backup_path`
+
+The runtime-lock backup `backup_path` and the metadata `backup_path` must be
+independent files that are distinct from the live database; a path equal to
+`root\data\one-api.db` is rejected. The runtime-lock `database_mode` is
+mandatory and must equal the engine derived from the container `SQL_DSN`.
+
+Missing, blank, or mismatched evidence fails the check before any container is
+stopped, rebuilt, recreated, switched, released, or rolled back. Existing
+SHA-256, size, validation, engine, MySQL, and PostgreSQL cross-checks remain in
+force.
+
 ## Verification
 
 After a runtime transition, verify:

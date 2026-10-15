@@ -153,8 +153,12 @@ function Assert-DatabaseBackupEvidence {
     mode = $engineValue
     engine = $engineValue
     instance = $instanceValue
+    evidence_instance = [string]$evidence.instance
     database_name = $databaseNameValue
     source = $metadataSource
+    evidence_source = $evidenceSource
+    metadata_source = $metadataSource
+    metadata_backup_path = [string]$metadataBackupPath
     sha256 = $actualHash
     size_bytes = $actualSize
     validation_status = [string]$validation.status
@@ -211,8 +215,13 @@ if ($runtimeEngine -ne ([string]$databaseBackup.engine).ToLowerInvariant()) {
 }
 $runtimeLockPath = Join-Path $root '.git\new-api-dev\runtime-lock.json'
 $runtimeLock = Get-Content -LiteralPath $runtimeLockPath -Raw | ConvertFrom-Json
-if (-not [string]::IsNullOrWhiteSpace([string]$runtimeLock.database_mode) -and
-    ([string]$runtimeLock.database_mode).ToLowerInvariant() -ne $runtimeEngine) {
+# database_mode is mandatory: a blank or missing value must fail closed rather
+# than silently skipping the engine cross-check.
+$lockDatabaseMode = ([string]$runtimeLock.database_mode).Trim().ToLowerInvariant()
+if ([string]::IsNullOrWhiteSpace($lockDatabaseMode)) {
+  throw 'Runtime lock must record database_mode.'
+}
+if ($lockDatabaseMode -ne $runtimeEngine) {
   throw "Runtime lock database_mode '$($runtimeLock.database_mode)' does not match the running database engine '$runtimeEngine'."
 }
 $lockDatabaseSource = [string]$runtimeLock.database_source
@@ -233,9 +242,39 @@ if (-not [string]::IsNullOrWhiteSpace([string]$databaseBackup.source)) {
 }
 if ($runtimeEngine -eq 'sqlite') {
   $expectedSqlite = [System.IO.Path]::GetFullPath((Join-Path $root 'data\one-api.db'))
-  $instancePath = Resolve-ProjectPath ([string]$databaseBackup.instance)
-  if ($instancePath -ne $expectedSqlite) {
-    throw "Database backup instance '$instancePath' does not match the running SQLite database '$expectedSqlite'."
+  # Every SQLite source/instance field must be present and must resolve from the
+  # script root to the live canonical database; blank or divergent evidence
+  # fails closed before any rebuild or restart is trusted.
+  $sqlitePathFields = [ordered]@{
+    'runtime-lock.database_source' = $lockDatabaseSource
+    'database_backup.instance'     = [string]$databaseBackup.evidence_instance
+    'database_backup.source'       = [string]$databaseBackup.evidence_source
+    'metadata.source'              = [string]$databaseBackup.metadata_source
+  }
+  foreach ($fieldName in $sqlitePathFields.Keys) {
+    $fieldValue = [string]$sqlitePathFields[$fieldName]
+    if ([string]::IsNullOrWhiteSpace($fieldValue)) {
+      throw "SQLite runtime requires nonblank $fieldName."
+    }
+    $resolvedField = Resolve-ProjectPath $fieldValue
+    if ($resolvedField -ne $expectedSqlite) {
+      throw "$fieldName '$resolvedField' does not match the live SQLite database '$expectedSqlite'."
+    }
+  }
+  # The recorded backups must be independent files, never the live database.
+  if ([string]::IsNullOrWhiteSpace([string]$databaseBackup.backup_path)) {
+    throw 'SQLite runtime requires nonblank database_backup.backup_path.'
+  }
+  $resolvedRuntimeBackup = Resolve-ProjectPath ([string]$databaseBackup.backup_path)
+  if ($resolvedRuntimeBackup -eq $expectedSqlite) {
+    throw "database_backup.backup_path '$resolvedRuntimeBackup' must be distinct from the live SQLite database '$expectedSqlite'."
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$databaseBackup.metadata_backup_path)) {
+    throw 'SQLite runtime requires nonblank metadata.backup_path.'
+  }
+  $resolvedMetadataBackup = Resolve-ProjectPath ([string]$databaseBackup.metadata_backup_path)
+  if ($resolvedMetadataBackup -eq $expectedSqlite) {
+    throw "metadata.backup_path '$resolvedMetadataBackup' must be distinct from the live SQLite database '$expectedSqlite'."
   }
 } else {
   $serviceName = if ($runtimeEngine -eq 'postgresql') { 'postgres' } else { $runtimeEngine }
