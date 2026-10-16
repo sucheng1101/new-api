@@ -148,7 +148,14 @@ func GetDirectAPIConfig(c *gin.Context) {
 	hosts := common.OptionMap["DirectAPIHosts"]
 	baseURL := common.OptionMap["DirectAPIBaseURL"]
 	common.OptionMapRWMutex.RUnlock()
-	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "endpoints": common.DirectAPIEndpoints(), "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
+	common.ApiSuccess(c, gin.H{
+		"hosts":             hosts,
+		"base_url":          baseURL,
+		"records":           common.DirectAPIEndpoints(),
+		"endpoints":         common.DirectAPIEndpoints(),
+		"resolved_hosts":    common.DirectAPIHosts(),
+		"resolved_base_url": common.DirectAPIBaseURL(),
+	})
 }
 
 type directAPIConfigRequest struct {
@@ -158,6 +165,7 @@ type directAPIConfigRequest struct {
 }
 
 type directAPIEndpointRequest struct {
+	Kind        string `json:"kind"`
 	Name        string `json:"name"`
 	Endpoint    string `json:"endpoint"`
 	Description string `json:"description"`
@@ -166,6 +174,7 @@ type directAPIEndpointRequest struct {
 }
 
 type directAPIEndpointPatchRequest struct {
+	Kind        *string `json:"kind"`
 	Name        *string `json:"name"`
 	Endpoint    *string `json:"endpoint"`
 	Description *string `json:"description"`
@@ -190,7 +199,7 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 	}
 	endpoints := common.DirectAPIEndpoints()
 	if id == 0 {
-		item := common.DirectAPIEndpoint{Name: req.Name, Endpoint: req.Endpoint, Description: req.Description, Enabled: true}
+		item := common.DirectAPIEndpoint{Kind: req.Kind, Name: req.Name, Endpoint: req.Endpoint, Description: req.Description, Enabled: true, UpdatedAt: common.GetTimestamp()}
 		if req.Enabled != nil {
 			item.Enabled = *req.Enabled
 		}
@@ -205,6 +214,9 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 				continue
 			}
 			found = true
+			if req.Kind != "" {
+				endpoints[i].Kind = req.Kind
+			}
 			endpoints[i].Name, endpoints[i].Endpoint, endpoints[i].Description = req.Name, req.Endpoint, req.Description
 			if req.Enabled != nil {
 				endpoints[i].Enabled = *req.Enabled
@@ -212,6 +224,7 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 			if req.SortOrder != nil {
 				endpoints[i].SortOrder = *req.SortOrder
 			}
+			endpoints[i].UpdatedAt = common.GetTimestamp()
 			break
 		}
 		if !found {
@@ -265,6 +278,9 @@ func PatchDirectAPIEndpoint(c *gin.Context) {
 		if endpoints[i].ID != id {
 			continue
 		}
+		if req.Kind != nil {
+			endpoints[i].Kind = *req.Kind
+		}
 		if req.Name != nil {
 			endpoints[i].Name = *req.Name
 		}
@@ -280,6 +296,7 @@ func PatchDirectAPIEndpoint(c *gin.Context) {
 		if req.SortOrder != nil {
 			endpoints[i].SortOrder = *req.SortOrder
 		}
+		endpoints[i].UpdatedAt = common.GetTimestamp()
 		copy := endpoints[i]
 		updated = &copy
 		break
@@ -310,6 +327,10 @@ func DeleteDirectAPIEndpoint(c *gin.Context) {
 	found := false
 	for _, item := range endpoints {
 		if item.ID == id {
+			if common.DirectAPIRecordKind(item) != common.DirectAPIRecordKindEndpoint {
+				common.ApiErrorMsg(c, "系统入口记录不可删除")
+				return
+			}
 			found = true
 			continue
 		}

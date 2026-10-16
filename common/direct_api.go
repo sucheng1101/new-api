@@ -10,20 +10,52 @@ import (
 	"strings"
 )
 
-// DirectAPIEndpoint describes an additional OpenAI-compatible endpoint that
-// can be exposed to users alongside the primary gateway address.
+// Record kinds stored in the unified DirectAPIEndpoints collection. Legacy
+// records without a kind are treated as OpenAI-compatible endpoints, which
+// keeps previously persisted JSON fully backward compatible.
+const (
+	DirectAPIRecordKindHost     = "host"
+	DirectAPIRecordKindBaseURL  = "base_url"
+	DirectAPIRecordKindEndpoint = "endpoint"
+)
+
+// DirectAPIRecordsMigratedOption marks that the legacy DirectAPIHosts and
+// DirectAPIBaseURL settings have been folded into the unified record list.
+const DirectAPIRecordsMigratedOption = "DirectAPIRecordsMigrated"
+
+// DirectAPIEndpoint describes a single administrator-managed domain record.
+// A record may be a DNS host (kind=host), the public base URL (kind=base_url),
+// or an additional OpenAI-compatible endpoint (kind=endpoint). The zero value
+// kind is interpreted as an endpoint for backward compatibility.
 type DirectAPIEndpoint struct {
 	ID          int    `json:"id"`
+	Kind        string `json:"kind,omitempty"`
 	Name        string `json:"name"`
 	Endpoint    string `json:"endpoint"`
 	Description string `json:"description"`
 	Enabled     bool   `json:"enabled"`
 	SortOrder   int    `json:"sort_order"`
+	UpdatedAt   int64  `json:"updated_at,omitempty"`
 }
 
-// DirectAPIEndpoints returns the administrator-managed endpoint list. Invalid
-// persisted JSON is treated as an empty list so a malformed optional setting
-// cannot prevent the rest of the console from loading.
+// DirectAPIRecordKind normalizes a record kind. Unknown kinds are returned
+// lower-cased so validation can reject them explicitly.
+func DirectAPIRecordKind(item DirectAPIEndpoint) string {
+	switch kind := strings.ToLower(strings.TrimSpace(item.Kind)); kind {
+	case DirectAPIRecordKindHost:
+		return DirectAPIRecordKindHost
+	case DirectAPIRecordKindBaseURL:
+		return DirectAPIRecordKindBaseURL
+	case "", DirectAPIRecordKindEndpoint:
+		return DirectAPIRecordKindEndpoint
+	default:
+		return kind
+	}
+}
+
+// DirectAPIEndpoints returns the administrator-managed unified record list.
+// Invalid persisted JSON is treated as an empty list so a malformed optional
+// setting cannot prevent the rest of the console from loading.
 func DirectAPIEndpoints() []DirectAPIEndpoint {
 	OptionMapRWMutex.RLock()
 	raw := OptionMap["DirectAPIEndpoints"]
@@ -38,11 +70,25 @@ func DirectAPIEndpoints() []DirectAPIEndpoint {
 	return endpoints
 }
 
-// EnabledDirectAPIEndpoints returns only endpoints currently visible to users.
+// directAPIRecordsMigrated reports whether the unified record list became the
+// authoritative source for direct hosts and the public base URL.
+func directAPIRecordsMigrated() bool {
+	OptionMapRWMutex.RLock()
+	migrated := OptionMap[DirectAPIRecordsMigratedOption] == "true"
+	OptionMapRWMutex.RUnlock()
+	return migrated
+}
+
+// EnabledDirectAPIEndpoints returns only OpenAI-compatible endpoint records
+// currently visible to users. Host and base URL records are excluded because
+// they are not additional endpoints.
 func EnabledDirectAPIEndpoints() []DirectAPIEndpoint {
 	endpoints := DirectAPIEndpoints()
 	result := make([]DirectAPIEndpoint, 0, len(endpoints))
 	for _, endpoint := range endpoints {
+		if DirectAPIRecordKind(endpoint) != DirectAPIRecordKindEndpoint {
+			continue
+		}
 		if endpoint.Enabled {
 			result = append(result, endpoint)
 		}
@@ -72,28 +118,78 @@ func NormalizeDirectAPIEndpoint(raw string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
-// ValidateDirectAPIEndpoints validates and normalizes a complete endpoint
-// collection, assigning IDs when a new item has no ID and preserving stable
-// IDs for updates.
+// ValidateDirectAPIEndpoints validates and normalizes a complete unified
+// domain record collection, assigning IDs when a new item has no ID and
+// preserving stable IDs for updates. Each record kind has its own validation
+// rules so hosts, the public base URL, and OpenAI-compatible endpoints can
+// coexist in one list.
 func ValidateDirectAPIEndpoints(input []DirectAPIEndpoint) ([]DirectAPIEndpoint, error) {
 	result := make([]DirectAPIEndpoint, 0, len(input))
 	seenIDs := make(map[int]struct{}, len(input))
-	seenEndpoints := make(map[string]struct{}, len(input))
+	seenValues := make(map[string]struct{}, len(input))
 	nextID := 1
+	baseURLCount := 0
+	now := GetTimestamp()
 	for _, item := range input {
+		kind := DirectAPIRecordKind(item)
+		item.Kind = kind
 		item.Name = strings.TrimSpace(item.Name)
 		item.Description = strings.TrimSpace(item.Description)
-		if item.Name == "" {
-			return nil, fmt.Errorf("direct API endpoint name is required")
+		switch kind {
+		case DirectAPIRecordKindHost:
+			hostConfig, err := NormalizeDirectAPIHostConfig(item.Endpoint)
+			if err != nil {
+				return nil, err
+			}
+			if hostConfig == "" || strings.Contains(hostConfig, ",") {
+				return nil, fmt.Errorf("direct API host record must contain exactly one host")
+			}
+			item.Endpoint = hostConfig
+			if item.Name == "" {
+				item.Name = hostConfig
+			}
+			if _, exists := seenValues["host:"+hostConfig]; exists {
+				return nil, fmt.Errorf("duplicate direct API host: %s", hostConfig)
+			}
+			seenValues["host:"+hostConfig] = struct{}{}
+		case DirectAPIRecordKindBaseURL:
+			value := strings.TrimSpace(item.Endpoint)
+			if value == "" {
+				return nil, fmt.Errorf("direct API base URL is required")
+			}
+			if err := ValidateDirectAPIBaseURL(value); err != nil {
+				return nil, err
+			}
+			item.Endpoint = strings.TrimRight(value, "/")
+			if item.Name == "" {
+				item.Name = item.Endpoint
+			}
+			baseURLCount++
+			if baseURLCount > 1 {
+				return nil, fmt.Errorf("only one direct API base URL record is allowed")
+			}
+		case DirectAPIRecordKindEndpoint:
+			if item.Name == "" {
+				return nil, fmt.Errorf("direct API endpoint name is required")
+			}
+			endpoint, err := NormalizeDirectAPIEndpoint(item.Endpoint)
+			if err != nil {
+				return nil, fmt.Errorf("invalid direct API endpoint %q: %w", item.Endpoint, err)
+			}
+			item.Endpoint = endpoint
+			if _, exists := seenValues["endpoint:"+strings.ToLower(endpoint)]; exists {
+				return nil, fmt.Errorf("duplicate direct API endpoint URL: %s", endpoint)
+			}
+			seenValues["endpoint:"+strings.ToLower(endpoint)] = struct{}{}
+		default:
+			return nil, fmt.Errorf("unsupported direct API record kind: %s", kind)
 		}
 		if len(item.Name) > 100 || len(item.Description) > 500 {
-			return nil, fmt.Errorf("direct API endpoint name or description is too long")
+			return nil, fmt.Errorf("direct API record name or description is too long")
 		}
-		endpoint, err := NormalizeDirectAPIEndpoint(item.Endpoint)
-		if err != nil {
-			return nil, fmt.Errorf("invalid direct API endpoint %q: %w", item.Endpoint, err)
+		if item.SortOrder < 0 {
+			return nil, fmt.Errorf("direct API record sort_order must be non-negative")
 		}
-		item.Endpoint = endpoint
 		if item.ID <= 0 {
 			for {
 				if _, exists := seenIDs[nextID]; !exists {
@@ -105,15 +201,11 @@ func ValidateDirectAPIEndpoints(input []DirectAPIEndpoint) ([]DirectAPIEndpoint,
 			}
 		}
 		if _, exists := seenIDs[item.ID]; exists {
-			return nil, fmt.Errorf("duplicate direct API endpoint id: %d", item.ID)
-		}
-		if _, exists := seenEndpoints[strings.ToLower(item.Endpoint)]; exists {
-			return nil, fmt.Errorf("duplicate direct API endpoint URL: %s", item.Endpoint)
+			return nil, fmt.Errorf("duplicate direct API record id: %d", item.ID)
 		}
 		seenIDs[item.ID] = struct{}{}
-		seenEndpoints[strings.ToLower(item.Endpoint)] = struct{}{}
-		if item.SortOrder < 0 {
-			return nil, fmt.Errorf("direct API endpoint sort_order must be non-negative")
+		if item.UpdatedAt <= 0 {
+			item.UpdatedAt = now
 		}
 		result = append(result, item)
 	}
@@ -121,9 +213,35 @@ func ValidateDirectAPIEndpoints(input []DirectAPIEndpoint) ([]DirectAPIEndpoint,
 }
 
 // DirectAPIHosts returns the host names that are served by the DNS-only direct
-// API entry point. DIRECT_API_HOST accepts a comma-separated list and may also
-// contain a URL for convenience.
+// API entry point. Once the unified record list is authoritative, only enabled
+// host records contribute; before migration, DIRECT_API_HOST is read as a
+// comma-separated list that may also contain a URL for convenience.
 func DirectAPIHosts() []string {
+	if !directAPIRecordsMigrated() {
+		return legacyDirectAPIHosts()
+	}
+	hosts := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, record := range DirectAPIEndpoints() {
+		if DirectAPIRecordKind(record) != DirectAPIRecordKindHost || !record.Enabled {
+			continue
+		}
+		host := normalizeDirectAPIHost(record.Endpoint)
+		if host == "" {
+			continue
+		}
+		if _, ok := seen[host]; ok {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	return hosts
+}
+
+// legacyDirectAPIHosts reads the pre-migration DirectAPIHosts setting and the
+// DIRECT_API_HOST environment variable.
+func legacyDirectAPIHosts() []string {
 	raw := directAPIConfigValue("DirectAPIHosts", "DIRECT_API_HOST")
 	if raw == "" {
 		return nil
@@ -181,9 +299,28 @@ func IsDirectAPIRequest(requestHost string) bool {
 }
 
 // DirectAPIBaseURL is exposed to the account settings UI as a copyable base
-// URL. DIRECT_API_BASE_URL takes precedence over the host-derived HTTPS URL.
+// URL. Once the unified record list is authoritative, the enabled base URL
+// record wins; an explicitly disabled base URL record suppresses any fallback.
 func DirectAPIBaseURL() string {
-	if configured := strings.TrimRight(directAPIConfigValue("DirectAPIBaseURL", "DIRECT_API_BASE_URL"), "/"); configured != "" {
+	if directAPIRecordsMigrated() {
+		for _, record := range DirectAPIEndpoints() {
+			if DirectAPIRecordKind(record) != DirectAPIRecordKindBaseURL {
+				continue
+			}
+			if record.Enabled {
+				return strings.TrimRight(strings.TrimSpace(record.Endpoint), "/")
+			}
+			return ""
+		}
+		return ""
+	}
+	return legacyDirectAPIBaseURL()
+}
+
+// legacyDirectAPIBaseURL derives the public base URL from the pre-migration
+// DIRECT_API_BASE_URL setting or a single configured host.
+func legacyDirectAPIBaseURL() string {
+	if configured := ConfiguredDirectAPIBaseURL(); configured != "" {
 		return configured
 	}
 	hosts := DirectAPIHosts()
@@ -191,6 +328,13 @@ func DirectAPIBaseURL() string {
 		return "https://" + hosts[0]
 	}
 	return ""
+}
+
+// ConfiguredDirectAPIBaseURL returns only the explicitly configured
+// DIRECT_API_BASE_URL value, without deriving it from configured hosts. It is
+// used when migrating legacy settings into the unified record list.
+func ConfiguredDirectAPIBaseURL() string {
+	return strings.TrimRight(strings.TrimSpace(directAPIConfigValue("DirectAPIBaseURL", "DIRECT_API_BASE_URL")), "/")
 }
 
 // NormalizeDirectAPIHostConfig validates and canonicalizes the administrator-

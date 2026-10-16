@@ -59,9 +59,51 @@ func TestUpdateDirectAPIConfigPreservesExistingEndpoints(t *testing.T) {
 	require.NoError(t, UpdateDirectAPIConfig("api.example.com", "https://api.example.com", endpoints))
 	require.NoError(t, UpdateDirectAPIConfig("api2.example.com", "https://api2.example.com"))
 
-	common.OptionMapRWMutex.RLock()
-	defer common.OptionMapRWMutex.RUnlock()
-	require.Equal(t, "api2.example.com", common.OptionMap["DirectAPIHosts"])
-	require.Equal(t, "https://api2.example.com", common.OptionMap["DirectAPIBaseURL"])
-	require.Contains(t, common.OptionMap["DirectAPIEndpoints"], "Primary")
+	records := common.DirectAPIEndpoints()
+	var hosts, baseURLs, endpointNames []string
+	for _, record := range records {
+		switch common.DirectAPIRecordKind(record) {
+		case common.DirectAPIRecordKindHost:
+			hosts = append(hosts, record.Endpoint)
+		case common.DirectAPIRecordKindBaseURL:
+			baseURLs = append(baseURLs, record.Endpoint)
+		default:
+			endpointNames = append(endpointNames, record.Name)
+		}
+	}
+	require.Equal(t, []string{"api2.example.com"}, hosts)
+	require.Equal(t, []string{"https://api2.example.com"}, baseURLs)
+	require.Equal(t, []string{"Primary"}, endpointNames)
+	require.Equal(t, []string{"api2.example.com"}, common.DirectAPIHosts())
+	require.Equal(t, "https://api2.example.com", common.DirectAPIBaseURL())
+}
+
+func TestMigrateDirectAPIConfigIsIdempotent(t *testing.T) {
+	setupDirectAPIOptionTest(t)
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap["DirectAPIHosts"] = "api.example.com"
+	common.OptionMap["DirectAPIBaseURL"] = "https://api.example.com"
+	common.OptionMap["DirectAPIHostsConfigured"] = "true"
+	common.OptionMap["DirectAPIBaseURLConfigured"] = "true"
+	common.OptionMapRWMutex.Unlock()
+
+	require.NoError(t, MigrateDirectAPIConfig())
+	require.NoError(t, MigrateDirectAPIConfig())
+
+	records := common.DirectAPIEndpoints()
+	hostCount, baseCount := 0, 0
+	for _, record := range records {
+		switch common.DirectAPIRecordKind(record) {
+		case common.DirectAPIRecordKindHost:
+			hostCount++
+			require.Equal(t, "api.example.com", record.Endpoint)
+		case common.DirectAPIRecordKindBaseURL:
+			baseCount++
+			require.Equal(t, "https://api.example.com", record.Endpoint)
+		}
+	}
+	require.Equal(t, 1, hostCount)
+	require.Equal(t, 1, baseCount)
+	require.Equal(t, []string{"api.example.com"}, common.DirectAPIHosts())
+	require.Equal(t, "https://api.example.com", common.DirectAPIBaseURL())
 }

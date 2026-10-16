@@ -4665,6 +4665,15 @@
     "宽带重新拨号后公网 IP 可能变化，请重新添加新的 IPv4。": "Your public IP may change after reconnecting; add the new IPv4 again.",
     "网关地址": "URL cổng",
     "OpenAI兼容地址": "URL tương thích OpenAI",
-    "复制地址": "Sao chép URL"
+    "复制地址": "Sao chép URL",
+    "刷新安全数据": "Làm mới dữ liệu bảo mật",
+    "刷新域名配置": "Làm mới cấu hình tên miền",
+    "加载域名配置失败": "Tải cấu hình tên miền thất bại",
+    "记录已保存": "Đã lưu bản ghi",
+    "新增记录": "Thêm bản ghi",
+    "编辑记录": "Sửa bản ghi",
+    "新增记录后即可在此管理启停与排序": "Thêm bản ghi để quản lý bật/tắt và thứ tự tại đây",
+    "直连域名白名单": "Danh sách cho phép tên miền trực tiếp",
+    "域名": "Tên miền"
   }
 }

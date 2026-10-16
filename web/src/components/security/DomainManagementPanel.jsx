@@ -27,11 +27,11 @@ import React, {
 import {
   Button,
   Card,
-  Divider,
   Empty,
   Form,
   Input,
   Modal,
+  Select,
   Switch,
   Table,
   Tag,
@@ -48,43 +48,34 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
-import { buildApiEndpoint, normalizeServerAddress } from '../../helpers/token';
 
 const PAGE_SIZE = 8;
-const emptyConfig = { hosts: '', base_url: '', resolved_base_url: '' };
 
-const runtimeOrigin = () =>
-  normalizeServerAddress(
-    typeof window !== 'undefined' ? window.location.origin : '',
-  );
+const RECORD_KINDS = ['host', 'base_url', 'endpoint'];
+const KIND_TAG_COLORS = {
+  host: 'blue',
+  base_url: 'cyan',
+  endpoint: 'green',
+};
 
-const AddressRow = ({ label, url, copyKey, copiedKey, onCopy, copyLabel }) => (
-  <div className='flex min-w-0 items-center gap-2 rounded-lg bg-semi-color-fill-0 px-3 py-2'>
-    <Tag color='blue' className='shrink-0'>
-      {label}
-    </Tag>
-    <span
-      className='min-w-0 flex-1 truncate font-mono text-sm'
-      title={url || ''}
-    >
-      {url || '-'}
-    </span>
-    <Button
-      theme='borderless'
-      size='small'
-      disabled={!url}
-      aria-label={copyLabel}
-      icon={
-        copiedKey === copyKey ? (
-          <Check size={14} className='text-green-500' />
-        ) : (
-          <Copy size={14} />
-        )
-      }
-      onClick={() => onCopy(copyKey, url)}
-    />
-  </div>
-);
+const normalizeKind = (value) =>
+  RECORD_KINDS.includes(String(value || '').trim())
+    ? String(value).trim()
+    : 'endpoint';
+
+const formatTime = (value) => {
+  if (!value) return '-';
+  const date = new Date(Number(value) * 1000);
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+};
+
+const sortRecords = (records) =>
+  [...records].sort((a, b) => {
+    const orderA = Number(a.sort_order ?? 0);
+    const orderB = Number(b.sort_order ?? 0);
+    if (orderA === orderB) return Number(a.id ?? 0) - Number(b.id ?? 0);
+    return orderA - orderB;
+  });
 
 const EditableDescription = ({ value, onSave, placeholder }) => {
   const [editing, setEditing] = useState(false);
@@ -128,18 +119,16 @@ const EditableDescription = ({ value, onSave, placeholder }) => {
 };
 
 const DomainManagementPanel = ({
-  showConfigForm = true,
-  showDerivedAddresses = true,
   searchable = false,
   paginated = false,
+  recordKinds,
   title = '',
   description = '',
   emptyTitle = '',
   emptyDescription = '',
 }) => {
   const { t } = useTranslation();
-  const [config, setConfig] = useState(emptyConfig);
-  const [endpoints, setEndpoints] = useState([]);
+  const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -150,6 +139,29 @@ const DomainManagementPanel = ({
   const copyTimer = useRef(null);
 
   useEffect(() => () => clearTimeout(copyTimer.current), []);
+
+  const kindLabel = useCallback(
+    (kind) => {
+      switch (normalizeKind(kind)) {
+        case 'host':
+          return t('域名');
+        case 'base_url':
+          return t('API 地址');
+        default:
+          return t('端点');
+      }
+    },
+    [t],
+  );
+
+  const kindOptions = useMemo(
+    () => [
+      { value: 'host', label: t('域名') },
+      { value: 'base_url', label: t('API 地址') },
+      { value: 'endpoint', label: t('端点') },
+    ],
+    [t],
+  );
 
   const copy = async (key, value) => {
     if (!value) return;
@@ -164,22 +176,23 @@ const DomainManagementPanel = ({
     copyTimer.current = setTimeout(() => setCopiedKey(''), 1500);
   };
 
-  const load = useCallback(async () => {
+  // Domain-page refresh only loads domain/API endpoint configuration. It is
+  // intentionally separate from the security-page refresh used by the access,
+  // allowlist, and blacklist sections.
+  const loadDomains = useCallback(async () => {
     setLoading(true);
     try {
       const response = await API.get('/api/admin/security/direct-api-config');
       if (!response.data?.success)
-        throw new Error(response.data?.message || t('加载失败'));
+        throw new Error(response.data?.message || t('加载域名配置失败'));
       const data = response.data.data || {};
-      setConfig({
-        hosts: data.hosts || '',
-        base_url: data.base_url || '',
-        resolved_base_url: data.resolved_base_url || '',
-      });
-      setEndpoints(Array.isArray(data.endpoints) ? data.endpoints : []);
+      const list = Array.isArray(data.records) ? data.records : [];
+      setRecords(sortRecords(list));
     } catch (error) {
       Toast.error(
-        error?.response?.data?.message || error.message || t('加载失败'),
+        error?.response?.data?.message ||
+          error.message ||
+          t('加载域名配置失败'),
       );
     } finally {
       setLoading(false);
@@ -187,36 +200,16 @@ const DomainManagementPanel = ({
   }, [t]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadDomains();
+  }, [loadDomains]);
 
-  const gatewayAddress = normalizeServerAddress(
-    config.resolved_base_url || runtimeOrigin(),
-  );
-  const openAIEndpoint = buildApiEndpoint(gatewayAddress, '/v1');
-  const hasRecords = endpoints.length > 0;
-
-  const saveConfig = async (values) => {
-    try {
-      const response = await API.patch(
-        '/api/admin/security/direct-api-config',
-        values,
-      );
-      if (!response.data?.success)
-        throw new Error(response.data?.message || t('保存失败'));
-      Toast.success(t('域名配置已保存'));
-      await load();
-    } catch (error) {
-      Toast.error(
-        error?.response?.data?.message || error.message || t('保存失败'),
-      );
-    }
-  };
-
-  const saveEndpoint = async (values) => {
+  const saveRecord = async (values) => {
     try {
       const payload = {
-        ...values,
+        kind: normalizeKind(values.kind),
+        name: (values.name || '').trim(),
+        endpoint: (values.endpoint || '').trim(),
+        description: (values.description || '').trim(),
         enabled: values.enabled !== false,
         sort_order: Number(values.sort_order || 0),
       };
@@ -230,8 +223,8 @@ const DomainManagementPanel = ({
         throw new Error(response.data?.message || t('保存失败'));
       setModalVisible(false);
       setEditing(null);
-      await load();
-      Toast.success(t('端点已保存'));
+      await loadDomains();
+      Toast.success(t('记录已保存'));
     } catch (error) {
       Toast.error(
         error?.response?.data?.message || error.message || t('保存失败'),
@@ -239,7 +232,7 @@ const DomainManagementPanel = ({
     }
   };
 
-  const patchEndpoint = async (record, payload) => {
+  const patchRecord = async (record, payload) => {
     try {
       const response = await API.patch(
         `/api/admin/security/direct-api-endpoints/${record.id}`,
@@ -247,7 +240,7 @@ const DomainManagementPanel = ({
       );
       if (!response.data?.success)
         throw new Error(response.data?.message || t('保存失败'));
-      await load();
+      await loadDomains();
     } catch (error) {
       Toast.error(
         error?.response?.data?.message || error.message || t('状态更新失败'),
@@ -255,16 +248,16 @@ const DomainManagementPanel = ({
     }
   };
 
-  const removeEndpoint = (record) =>
+  const removeRecord = (record) =>
     Modal.confirm({
       title: t('确认删除'),
-      content: `${t('确定删除')} ${record.name}？`,
+      content: `${t('确定删除')} ${record.name || record.endpoint}？`,
       onOk: async () => {
         try {
           await API.delete(
             `/api/admin/security/direct-api-endpoints/${record.id}`,
           );
-          await load();
+          await loadDomains();
         } catch (error) {
           Toast.error(error?.response?.data?.message || t('删除失败'));
         }
@@ -277,18 +270,24 @@ const DomainManagementPanel = ({
   };
 
   const filtered = useMemo(() => {
+    const allowedKinds = Array.isArray(recordKinds)
+      ? new Set(recordKinds.map(normalizeKind))
+      : null;
+    const visibleRecords = allowedKinds
+      ? records.filter((item) => allowedKinds.has(normalizeKind(item.kind)))
+      : records;
     const keyword = query.trim().toLowerCase();
-    if (!keyword) return endpoints;
-    return endpoints.filter((item) =>
+    if (!keyword) return visibleRecords;
+    return visibleRecords.filter((item) =>
       [item.name, item.endpoint, item.description]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(keyword)),
     );
-  }, [endpoints, query]);
+  }, [recordKinds, records, query]);
 
   useEffect(() => {
     setPage(1);
-  }, [query, endpoints.length]);
+  }, [query, records.length]);
 
   const displayRecords = paginated
     ? filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -296,119 +295,68 @@ const DomainManagementPanel = ({
 
   return (
     <div className='flex flex-col gap-5'>
-      {showConfigForm && (
-        <Card
-          className='!rounded-2xl border-0 shadow-sm'
-          title={t('直连域名配置')}
-        >
-          {showDerivedAddresses && !hasRecords && (
-            <div className='flex flex-col gap-2'>
-              <AddressRow
-                label={t('网关地址')}
-                url={gatewayAddress}
-                copyKey='gateway'
-                copiedKey={copiedKey}
-                onCopy={copy}
-                copyLabel={t('复制地址')}
-              />
-              <AddressRow
-                label={t('OpenAI兼容地址')}
-                url={openAIEndpoint}
-                copyKey='openai'
-                copiedKey={copiedKey}
-                onCopy={copy}
-                copyLabel={t('复制地址')}
-              />
+      <Card
+        className='!rounded-2xl border-0 shadow-sm'
+        bodyStyle={{ padding: 0 }}
+      >
+        <div className='border-b border-semi-color-border px-5 py-4'>
+          <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+            <div className='min-w-0'>
+              <div className='font-semibold'>
+                {title || t('直连域名记录')}{' '}
+                <span className='text-xs text-semi-color-text-2'>
+                  {t('共 {{total}} 条', { total: filtered.length })}
+                </span>
+              </div>
+              <div className='mt-1 text-xs text-semi-color-text-2'>
+                {description || t('直连域名记录可在此启停、排序与编辑说明')}
+              </div>
             </div>
-          )}
-          {showDerivedAddresses && !hasRecords && <Divider margin='16px' />}
-          <Form
-            initValues={{ hosts: config.hosts, base_url: config.base_url }}
-            key={`${config.hosts}|${config.base_url}`}
-            onSubmit={saveConfig}
-            layout='vertical'
-          >
-            <div className='grid gap-4 md:grid-cols-2'>
-              <Form.Input
-                field='hosts'
-                label={t('直连域名')}
-                placeholder={t('直连域名示例')}
-              />
-              <Form.Input
-                field='base_url'
-                label={t('API 地址')}
-                placeholder='https://api.example.com'
-              />
-            </div>
-            <div className='flex justify-end'>
-              <Button type='primary' htmlType='submit'>
-                {t('保存配置')}
+            <div className='flex shrink-0 gap-2'>
+              <Button
+                theme='light'
+                icon={<RefreshCw size={15} />}
+                loading={loading}
+                aria-label={t('刷新域名配置')}
+                onClick={loadDomains}
+              >
+                {t('刷新域名配置')}
+              </Button>
+              <Button
+                type='primary'
+                size='small'
+                icon={<Plus size={14} />}
+                onClick={openCreate}
+              >
+                {t('新增记录')}
               </Button>
             </div>
-          </Form>
-        </Card>
-      )}
-
-      <Card className='!rounded-2xl border-0 shadow-sm'>
-        <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-          <div className='min-w-0'>
-            <div className='font-semibold'>
-              {title || t('OpenAI 兼容端点')}{' '}
-              <span className='text-xs text-semi-color-text-2'>
-                {t('共 {{total}} 条', { total: endpoints.length })}
-              </span>
+          </div>
+          {searchable && (
+            <div className='mt-3 flex min-w-[220px] gap-2'>
+              <Input
+                prefix={<Search size={15} />}
+                value={searchInput}
+                onChange={setSearchInput}
+                onEnterPress={() => setQuery(searchInput)}
+                placeholder={t('搜索名称、地址或描述')}
+                showClear
+                className='flex-1'
+              />
+              <Button
+                theme='light'
+                icon={<Search size={15} />}
+                onClick={() => setQuery(searchInput)}
+              >
+                {t('搜索')}
+              </Button>
             </div>
-            {description ? (
-              <div className='mt-1 text-xs text-semi-color-text-2'>
-                {description}
-              </div>
-            ) : null}
-          </div>
-          <div className='flex shrink-0 gap-2'>
-            <Button
-              theme='light'
-              icon={<RefreshCw size={15} />}
-              loading={loading}
-              onClick={load}
-            >
-              {t('刷新')}
-            </Button>
-            <Button
-              type='primary'
-              size='small'
-              icon={<Plus size={14} />}
-              onClick={openCreate}
-            >
-              {t('新增端点')}
-            </Button>
-          </div>
+          )}
         </div>
-
-        {searchable && (
-          <div className='mt-4 flex min-w-[220px] gap-2'>
-            <Input
-              prefix={<Search size={15} />}
-              value={searchInput}
-              onChange={setSearchInput}
-              onEnterPress={() => setQuery(searchInput)}
-              placeholder={t('搜索名称、地址或描述')}
-              showClear
-              className='flex-1'
-            />
-            <Button
-              theme='light'
-              icon={<Search size={15} />}
-              onClick={() => setQuery(searchInput)}
-            >
-              {t('搜索')}
-            </Button>
-          </div>
-        )}
 
         <Table
           size='small'
           loading={loading}
-          className='mt-4'
           dataSource={displayRecords}
           rowKey='id'
           pagination={
@@ -423,9 +371,9 @@ const DomainManagementPanel = ({
           }
           empty={
             <Empty
-              title={emptyTitle || t('暂无自定义端点')}
+              title={emptyTitle || t('暂无直连域名记录')}
               description={
-                emptyDescription || t('新增端点后即可在此管理启停与排序')
+                emptyDescription || t('新增记录后即可在此管理启停与排序')
               }
               style={{ padding: '24px 0' }}
             >
@@ -434,12 +382,23 @@ const DomainManagementPanel = ({
                 icon={<Plus size={14} />}
                 onClick={openCreate}
               >
-                {t('新增端点')}
+                {t('新增记录')}
               </Button>
             </Empty>
           }
-          scroll={{ x: 760 }}
+          scroll={{ x: 960 }}
           columns={[
+            {
+              title: t('类型'),
+              dataIndex: 'kind',
+              width: 110,
+              render: (value) => {
+                const kind = normalizeKind(value);
+                return (
+                  <Tag color={KIND_TAG_COLORS[kind]}>{kindLabel(kind)}</Tag>
+                );
+              },
+            },
             {
               title: t('名称'),
               dataIndex: 'name',
@@ -480,9 +439,7 @@ const DomainManagementPanel = ({
                 <EditableDescription
                   value={value}
                   placeholder={t('展示给用户的说明，可编辑')}
-                  onSave={(description) =>
-                    patchEndpoint(record, { description })
-                  }
+                  onSave={(description) => patchRecord(record, { description })}
                 />
               ),
             },
@@ -494,7 +451,7 @@ const DomainManagementPanel = ({
                 <Switch
                   checked={value}
                   onChange={(checked) =>
-                    patchEndpoint(record, { enabled: checked })
+                    patchRecord(record, { enabled: checked })
                   }
                 />
               ),
@@ -504,6 +461,12 @@ const DomainManagementPanel = ({
               dataIndex: 'sort_order',
               width: 80,
               render: (value) => value ?? 0,
+            },
+            {
+              title: t('更新时间'),
+              dataIndex: 'updated_at',
+              width: 170,
+              render: formatTime,
             },
             {
               title: t('操作'),
@@ -524,7 +487,8 @@ const DomainManagementPanel = ({
                     type='danger'
                     theme='borderless'
                     icon={<Trash2 size={14} />}
-                    onClick={() => removeEndpoint(record)}
+                    aria-label={t('删除')}
+                    onClick={() => removeRecord(record)}
                   />
                 </div>
               ),
@@ -534,7 +498,7 @@ const DomainManagementPanel = ({
       </Card>
 
       <Modal
-        title={editing ? t('编辑端点') : t('新增端点')}
+        title={editing ? t('编辑记录') : t('新增记录')}
         visible={modalVisible}
         onCancel={() => {
           setModalVisible(false);
@@ -544,20 +508,29 @@ const DomainManagementPanel = ({
       >
         <Form
           key={editing?.id || 'new'}
-          initValues={editing || { enabled: true, sort_order: 0 }}
-          onSubmit={saveEndpoint}
+          initValues={
+            editing || { kind: 'endpoint', enabled: true, sort_order: 0 }
+          }
+          onSubmit={saveRecord}
           layout='vertical'
         >
+          <Form.Select
+            field='kind'
+            label={t('类型')}
+            optionList={kindOptions}
+            rules={[{ required: true, message: t('请选择类型') }]}
+          />
           <Form.Input
             field='name'
             label={t('名称')}
+            placeholder={t('请输入名称')}
             rules={[{ required: true, message: t('请输入名称') }]}
           />
           <Form.Input
             field='endpoint'
-            label={t('Endpoint URL')}
+            label={t('地址')}
             placeholder='https://api.example.com/v1'
-            rules={[{ required: true, message: t('请输入 Endpoint URL') }]}
+            rules={[{ required: true, message: t('请输入地址') }]}
           />
           <Form.Input
             field='description'

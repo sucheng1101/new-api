@@ -216,7 +216,10 @@ const SecurityAccess = () => {
     await navigator.clipboard?.writeText(value);
     Toast.success('已复制');
   };
-  const load = useCallback(async () => {
+  // Security-page refresh only loads security statistics, risks, events, the
+  // blacklist, and the direct IP allowlist. Domain/API configuration is owned
+  // by the separate DomainManagementPanel refresh.
+  const loadSecurity = useCallback(async () => {
     setLoading(true);
     try {
       const [summaryRes, riskRes, eventRes, blockRes, allowlistRes] =
@@ -284,8 +287,8 @@ const SecurityAccess = () => {
     risksPage,
   ]);
   useEffect(() => {
-    load();
-  }, [load]);
+    loadSecurity();
+  }, [loadSecurity]);
   const openDetail = async (event) => {
     try {
       const response = await API.get(
@@ -312,7 +315,7 @@ const SecurityAccess = () => {
         throw new Error(response.data?.message || '操作失败');
       Toast.success('IP 已加入黑名单');
       setModalVisible(false);
-      await load();
+      await loadSecurity();
     } catch (error) {
       Toast.error(
         error?.response?.data?.message || error.message || '操作失败',
@@ -324,7 +327,7 @@ const SecurityAccess = () => {
       await API.patch(`/api/admin/security/ip-blocks/${record.id}`, {
         enabled,
       });
-      await load();
+      await loadSecurity();
     } catch (error) {
       Toast.error(error?.response?.data?.message || '状态更新失败');
     }
@@ -334,7 +337,7 @@ const SecurityAccess = () => {
       await API.patch(`/api/admin/security/direct-ip-whitelist/${record.id}`, {
         enabled,
       });
-      await load();
+      await loadSecurity();
     } catch (error) {
       Toast.error(error?.response?.data?.message || '状态更新失败');
     }
@@ -346,7 +349,7 @@ const SecurityAccess = () => {
       onOk: async () => {
         try {
           await API.delete(url);
-          await load();
+          await loadSecurity();
         } catch (error) {
           Toast.error(error?.response?.data?.message || '删除失败');
         }
@@ -410,9 +413,10 @@ const SecurityAccess = () => {
               theme='light'
               icon={<RefreshCw size={15} />}
               loading={loading}
-              onClick={load}
+              aria-label={t('刷新安全数据')}
+              onClick={loadSecurity}
             >
-              刷新
+              {t('刷新安全数据')}
             </Button>
           )}
           <Button
@@ -785,14 +789,13 @@ const SecurityAccess = () => {
               />
             </Card>
             <DomainManagementPanel
-              showConfigForm={false}
-              showDerivedAddresses={false}
               searchable
               paginated
-              title={t('直连域名记录')}
+              recordKinds={['host']}
+              title={t('直连域名白名单')}
               description={t('直连域名记录可在此启停、排序与编辑说明')}
               emptyTitle={t('暂无直连域名记录')}
-              emptyDescription={t('新增端点后即可在此管理启停与排序')}
+              emptyDescription={t('新增记录后即可在此管理启停与排序')}
             />
           </div>
         </Tabs.TabPane>

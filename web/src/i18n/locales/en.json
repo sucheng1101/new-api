@@ -4299,6 +4299,17 @@
     "搜索名称、地址或描述": "Search name, address, or description",
     "直连域名记录": "Direct domain records",
     "直连域名记录可在此启停、排序与编辑说明": "Enable, reorder, and edit the description of direct domain records here.",
-    "暂无直连域名记录": "No direct domain records yet"
+    "暂无直连域名记录": "No direct domain records yet",
+    "刷新安全数据": "Refresh security data",
+    "刷新域名配置": "Refresh domain configuration",
+    "加载域名配置失败": "Failed to load domain configuration",
+    "记录已保存": "Record saved",
+    "新增记录": "Add record",
+    "编辑记录": "Edit record",
+    "请选择类型": "Please select a type",
+    "请输入地址": "Please enter an address",
+    "新增记录后即可在此管理启停与排序": "Add a record to manage enablement and ordering here",
+    "直连域名白名单": "Direct domain allowlist",
+    "域名": "Domain"
   }
 }

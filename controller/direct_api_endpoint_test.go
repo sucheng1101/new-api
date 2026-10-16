@@ -97,6 +97,57 @@ func TestDirectAPIEndpointCRUDHandlers(t *testing.T) {
 	require.Empty(t, common.DirectAPIEndpoints())
 }
 
+func TestDirectAPIRecordKindCRUDHandlers(t *testing.T) {
+	setupDirectAPIEndpointControllerTest(t)
+
+	hostContext, hostRecorder := endpointContext("POST", "/api/admin/security/direct-api-endpoints", []byte(`{"kind":"host","name":"Primary host","endpoint":"api.example.com","enabled":true,"sort_order":0}`))
+	CreateDirectAPIEndpoint(hostContext)
+	var hostResponse struct {
+		Success bool                     `json:"success"`
+		Data    common.DirectAPIEndpoint `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(hostRecorder.Body.Bytes(), &hostResponse))
+	require.True(t, hostResponse.Success)
+	require.Equal(t, common.DirectAPIRecordKindHost, hostResponse.Data.Kind)
+	require.Equal(t, "api.example.com", hostResponse.Data.Endpoint)
+	require.NotZero(t, hostResponse.Data.UpdatedAt)
+
+	baseContext, baseRecorder := endpointContext("POST", "/api/admin/security/direct-api-endpoints", []byte(`{"kind":"base_url","endpoint":"https://api.example.com/"}`))
+	CreateDirectAPIEndpoint(baseContext)
+	var baseResponse struct {
+		Success bool                     `json:"success"`
+		Data    common.DirectAPIEndpoint `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(baseRecorder.Body.Bytes(), &baseResponse))
+	require.True(t, baseResponse.Success)
+	require.Equal(t, common.DirectAPIRecordKindBaseURL, baseResponse.Data.Kind)
+	require.Equal(t, "https://api.example.com", baseResponse.Data.Endpoint)
+	require.Equal(t, "https://api.example.com", baseResponse.Data.Name)
+
+	require.Equal(t, []string{"api.example.com"}, common.DirectAPIHosts())
+	require.Equal(t, "https://api.example.com", common.DirectAPIBaseURL())
+
+	listContext, listRecorder := endpointContext("GET", "/api/admin/security/direct-api-endpoints", nil)
+	ListDirectAPIEndpoints(listContext)
+	var listResponse struct {
+		Success bool                       `json:"success"`
+		Data    []common.DirectAPIEndpoint `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(listRecorder.Body.Bytes(), &listResponse))
+	require.Len(t, listResponse.Data, 2)
+
+	patchContext, patchRecorder := endpointContext("PATCH", "/api/admin/security/direct-api-endpoints/1", []byte(`{"enabled":false}`))
+	patchContext.Params = gin.Params{{Key: "id", Value: "1"}}
+	PatchDirectAPIEndpoint(patchContext)
+	var patchResponse struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(patchRecorder.Body.Bytes(), &patchResponse))
+	require.True(t, patchResponse.Success)
+	require.Empty(t, common.DirectAPIHosts())
+	require.True(t, common.DirectAPIEndpoints()[0].UpdatedAt > 0)
+}
+
 func TestUpdateDirectAPIConfigPatchPreservesOmittedFields(t *testing.T) {
 	setupDirectAPIEndpointControllerTest(t)
 	common.OptionMapRWMutex.Lock()
@@ -111,8 +162,18 @@ func TestUpdateDirectAPIConfigPatchPreservesOmittedFields(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	require.True(t, response.Success)
-	common.OptionMapRWMutex.RLock()
-	defer common.OptionMapRWMutex.RUnlock()
-	require.Equal(t, "api.example.com", common.OptionMap["DirectAPIHosts"])
-	require.Equal(t, "https://api2.example.com", common.OptionMap["DirectAPIBaseURL"])
+	require.Equal(t, []string{"api.example.com"}, common.DirectAPIHosts())
+	require.Equal(t, "https://api2.example.com", common.DirectAPIBaseURL())
+
+	var hosts, baseURLs int
+	for _, record := range common.DirectAPIEndpoints() {
+		switch common.DirectAPIRecordKind(record) {
+		case common.DirectAPIRecordKindHost:
+			hosts++
+		case common.DirectAPIRecordKindBaseURL:
+			baseURLs++
+		}
+	}
+	require.Equal(t, 1, hosts)
+	require.Equal(t, 1, baseURLs)
 }

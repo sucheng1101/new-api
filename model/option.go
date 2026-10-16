@@ -313,6 +313,9 @@ func InitOptionMap() {
 	if err := loadOptionsFromDatabase(); err != nil {
 		common.SysLog("failed to load options from database: " + err.Error())
 	}
+	if err := MigrateDirectAPIConfig(); err != nil {
+		common.SysLog("failed to migrate direct API config: " + err.Error())
+	}
 }
 
 func loadOptionsFromDatabase() error {
@@ -372,75 +375,93 @@ func UpdateOption(key string, value string) error {
 	return updateOptionMap(key, validatedValue)
 }
 
-// UpdateDirectAPIConfig stores both public endpoint settings together so a
-// transient database error cannot leave the active host and displayed URL out
-// of sync.
+// UpdateDirectAPIConfig keeps the legacy configuration API working by folding
+// the supplied host list and base URL into the unified record list. OpenAI-
+// compatible endpoint records are preserved (or replaced when provided).
 func UpdateDirectAPIConfig(hosts, baseURL string, endpoints ...[]common.DirectAPIEndpoint) error {
-	endpointValue := common.DirectAPIEndpoints()
-	if len(endpoints) > 0 {
-		validatedEndpoints, err := common.ValidateDirectAPIEndpoints(endpoints[0])
-		if err != nil {
-			return err
-		}
-		endpointValue = validatedEndpoints
-	}
-	encodedEndpoints, err := common.Marshal(endpointValue)
+	normalizedHosts, err := common.NormalizeDirectAPIHostConfig(hosts)
 	if err != nil {
 		return err
 	}
-	values := map[string]string{
-		"DirectAPIHosts":     hosts,
-		"DirectAPIBaseURL":   baseURL,
-		"DirectAPIEndpoints": string(encodedEndpoints),
-	}
-	for key, value := range values {
-		validatedValue, err := validateOptionValue(key, value)
-		if err != nil {
-			return err
-		}
-		values[key] = validatedValue
-	}
-	if DB == nil {
-		return fmt.Errorf("database is not initialized")
-	}
-	if err := DB.Transaction(func(tx *gorm.DB) error {
-		for key, value := range values {
-			option := Option{Key: key}
-			if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
-				return err
-			}
-			option.Value = value
-			if err := tx.Save(&option).Error; err != nil {
-				return err
-			}
-			configured := Option{Key: key + "Configured"}
-			if err := tx.FirstOrCreate(&configured, Option{Key: configured.Key}).Error; err != nil {
-				return err
-			}
-			configured.Value = "true"
-			if err := tx.Save(&configured).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if err := common.ValidateDirectAPIBaseURL(baseURL); err != nil {
 		return err
 	}
 
-	common.OptionMapRWMutex.Lock()
-	if common.OptionMap == nil {
-		common.OptionMap = make(map[string]string)
+	current := common.DirectAPIEndpoints()
+	hostRecords := make(map[string]common.DirectAPIEndpoint)
+	var baseRecord common.DirectAPIEndpoint
+	hasBaseRecord := false
+	records := make([]common.DirectAPIEndpoint, 0, len(current))
+	for _, item := range current {
+		switch common.DirectAPIRecordKind(item) {
+		case common.DirectAPIRecordKindHost:
+			hostRecords[strings.ToLower(strings.TrimSpace(item.Endpoint))] = item
+		case common.DirectAPIRecordKindBaseURL:
+			baseRecord = item
+			hasBaseRecord = true
+		default:
+			records = append(records, item)
+		}
 	}
-	for key, value := range values {
-		common.OptionMap[key] = value
-		common.OptionMap[key+"Configured"] = "true"
+	if len(endpoints) > 0 {
+		records = records[:0]
+		for _, item := range endpoints[0] {
+			if common.DirectAPIRecordKind(item) != common.DirectAPIRecordKindEndpoint {
+				continue
+			}
+			records = append(records, item)
+		}
 	}
-	common.OptionMapRWMutex.Unlock()
-	return nil
+	sortOrder := 0
+	for _, item := range records {
+		if item.SortOrder+1 > sortOrder {
+			sortOrder = item.SortOrder + 1
+		}
+	}
+	if normalizedHosts != "" {
+		for _, host := range strings.Split(normalizedHosts, ",") {
+			host = strings.TrimSpace(host)
+			if host == "" {
+				continue
+			}
+			record := common.DirectAPIEndpoint{
+				Kind:      common.DirectAPIRecordKindHost,
+				Name:      host,
+				Endpoint:  host,
+				Enabled:   true,
+				SortOrder: sortOrder,
+			}
+			if existing, ok := hostRecords[host]; ok {
+				record.ID = existing.ID
+				record.Description = existing.Description
+				record.UpdatedAt = existing.UpdatedAt
+			}
+			records = append(records, record)
+			sortOrder++
+		}
+	}
+	if baseURL != "" {
+		record := common.DirectAPIEndpoint{
+			Kind:      common.DirectAPIRecordKindBaseURL,
+			Name:      baseURL,
+			Endpoint:  baseURL,
+			Enabled:   true,
+			SortOrder: sortOrder,
+		}
+		if hasBaseRecord {
+			record.ID = baseRecord.ID
+			record.Description = baseRecord.Description
+			record.UpdatedAt = baseRecord.UpdatedAt
+		}
+		records = append(records, record)
+	}
+	return UpdateDirectAPIEndpoints(records)
 }
 
-// UpdateDirectAPIEndpoints persists the complete endpoint collection in one
-// portable transaction and refreshes the in-memory option map immediately.
+// UpdateDirectAPIEndpoints persists the complete unified record collection in
+// one portable transaction, marks the unified store authoritative, and
+// refreshes the in-memory option map immediately.
 func UpdateDirectAPIEndpoints(endpoints []common.DirectAPIEndpoint) error {
 	validated, err := common.ValidateDirectAPIEndpoints(endpoints)
 	if err != nil {
@@ -457,21 +478,23 @@ func UpdateDirectAPIEndpoints(endpoints []common.DirectAPIEndpoint) error {
 	if DB == nil {
 		return fmt.Errorf("database is not initialized")
 	}
+	values := map[string]string{
+		"DirectAPIEndpoints":                  value,
+		"DirectAPIEndpointsConfigured":        "true",
+		common.DirectAPIRecordsMigratedOption: "true",
+	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {
-		option := Option{Key: "DirectAPIEndpoints"}
-		if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
-			return err
+		for key, oneValue := range values {
+			option := Option{Key: key}
+			if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+				return err
+			}
+			option.Value = oneValue
+			if err := tx.Save(&option).Error; err != nil {
+				return err
+			}
 		}
-		option.Value = value
-		if err := tx.Save(&option).Error; err != nil {
-			return err
-		}
-		configured := Option{Key: "DirectAPIEndpointsConfigured"}
-		if err := tx.FirstOrCreate(&configured, Option{Key: configured.Key}).Error; err != nil {
-			return err
-		}
-		configured.Value = "true"
-		return tx.Save(&configured).Error
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -479,10 +502,67 @@ func UpdateDirectAPIEndpoints(endpoints []common.DirectAPIEndpoint) error {
 	if common.OptionMap == nil {
 		common.OptionMap = make(map[string]string)
 	}
-	common.OptionMap["DirectAPIEndpoints"] = value
-	common.OptionMap["DirectAPIEndpointsConfigured"] = "true"
+	for key, oneValue := range values {
+		common.OptionMap[key] = oneValue
+	}
 	common.OptionMapRWMutex.Unlock()
 	return nil
+}
+
+// MigrateDirectAPIConfig folds the pre-unification DirectAPIHosts and
+// DirectAPIBaseURL settings into the unified record list exactly once. It is
+// idempotent: the DirectAPIRecordsMigrated marker makes later runs a no-op,
+// and portable because every write goes through the GORM option store.
+func MigrateDirectAPIConfig() error {
+	common.OptionMapRWMutex.RLock()
+	migrated := common.OptionMap[common.DirectAPIRecordsMigratedOption] == "true"
+	common.OptionMapRWMutex.RUnlock()
+	if migrated {
+		return nil
+	}
+	if DB == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+
+	records := common.DirectAPIEndpoints()
+	hasHostRecord := false
+	hasBaseRecord := false
+	sortOrder := 0
+	for _, item := range records {
+		switch common.DirectAPIRecordKind(item) {
+		case common.DirectAPIRecordKindHost:
+			hasHostRecord = true
+		case common.DirectAPIRecordKindBaseURL:
+			hasBaseRecord = true
+		}
+		if item.SortOrder+1 > sortOrder {
+			sortOrder = item.SortOrder + 1
+		}
+	}
+	if !hasHostRecord {
+		for _, host := range common.DirectAPIHosts() {
+			records = append(records, common.DirectAPIEndpoint{
+				Kind:      common.DirectAPIRecordKindHost,
+				Name:      host,
+				Endpoint:  host,
+				Enabled:   true,
+				SortOrder: sortOrder,
+			})
+			sortOrder++
+		}
+	}
+	if !hasBaseRecord {
+		if baseURL := common.ConfiguredDirectAPIBaseURL(); baseURL != "" {
+			records = append(records, common.DirectAPIEndpoint{
+				Kind:      common.DirectAPIRecordKindBaseURL,
+				Name:      baseURL,
+				Endpoint:  baseURL,
+				Enabled:   true,
+				SortOrder: sortOrder,
+			})
+		}
+	}
+	return UpdateDirectAPIEndpoints(records)
 }
 
 // ValidateLotterySettings validates a batch before any option is persisted.
