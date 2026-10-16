@@ -45,6 +45,50 @@ function Stop-NativeProcess($Process) {
   if (-not $Process.HasExited) { throw 'Native process is still running.' }
 }
 
+function Install-NativeExecutable($Source, $Destination, [ValidateRange(1, 120)][int]$Attempts = 30) {
+  # A failed overwrite must never truncate the previous executable. Stage on the
+  # destination volume, then retry the atomic rename for transient Windows locks.
+  $temporary = "$Destination.$([guid]::NewGuid().ToString('N')).partial"
+  try {
+    [IO.File]::Copy($Source, $temporary, $false)
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+      try {
+        if (Test-Path -LiteralPath $Destination) { [IO.File]::Replace($temporary, $Destination, [NullString]::Value) }
+        else { [IO.File]::Move($temporary, $Destination) }
+        return
+      } catch {
+        if ($attempt -eq $Attempts) { throw }
+        Start-Sleep -Milliseconds 250
+      }
+    }
+  } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force } }
+}
+
+function Resolve-BuildCommit($Version) {
+  if ($Version -match '-local\.([0-9a-f]{12,40})$') {
+    $resolved = & git -C $root rev-parse --verify --quiet "$($Matches[1])^{commit}" 2>$null
+    if ($LASTEXITCODE -eq 0) { return $resolved.Trim() }
+  }
+  return $null
+}
+
+function Assert-LiveDatabase($Process) {
+  $Process.Refresh()
+  if ($Process.HasExited) { throw 'Runtime exited before database ownership verification.' }
+  $python = Get-Command py -ErrorAction SilentlyContinue
+  $pythonArgs = @('-3')
+  if (-not $python) { $python = Get-Command python -ErrorAction Stop; $pythonArgs = @() }
+  $started = $Process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()
+  $result = & $python.Source @pythonArgs (Join-Path $PSScriptRoot 'native-database-owner.py') --database $SqlitePath --pid $Process.Id --started $started
+  if ($LASTEXITCODE -ne 0) { throw 'Actual runtime database ownership/engine verification failed.' }
+  $evidence = $result | ConvertFrom-Json
+  if ($evidence.engine -ne 'sqlite' -or $evidence.database -ne $SqlitePath -or
+      $evidence.process_id -ne $Process.Id -or $evidence.process_started_filetime -ne $started) {
+    throw 'Database owner evidence differs from the expected native process.'
+  }
+  return $evidence
+}
+
 function Assert-Ownership {
   $existing = $null
   if (Test-Path -LiteralPath $lockPath) { $existing = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json }
@@ -61,6 +105,15 @@ function Assert-Ownership {
   if ($native.Count -gt 1) { throw 'Multiple project executables exist; inspect ownership first.' }
   foreach ($process in $native) {
     if (-not $existing -or $process.ProcessId -ne $existing.runtime_pid) { throw 'Executable PID is not owned by the runtime lock.' }
+    $live = Get-Process -Id $process.ProcessId -ErrorAction Stop
+    if ($existing.runtime_process_started_filetime -and
+        $existing.runtime_process_started_filetime -ne $live.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()) {
+      throw 'Runtime PID creation time differs from the lock; possible PID reuse.'
+    }
+    if ($existing.runtime_exe_sha256 -and
+        $existing.runtime_exe_sha256 -ne (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash) {
+      throw 'Runtime executable hash differs from the lock.'
+    }
   }
   foreach ($listener in $listeners) {
     if (-not $existing -or $listener.OwningProcess -ne $existing.runtime_pid -or $native.Count -ne 1) {
@@ -133,6 +186,7 @@ $stopRequested = $false
 $rollbackExe = $null
 $oldVersion = $null
 $oldRuntimePresent = $false
+$oldBuildCommit = $null
 try {
   $existing = Assert-Ownership
   $commit = (& git -C $root rev-parse HEAD).Trim()
@@ -142,7 +196,9 @@ try {
   $go = Get-Command go -ErrorAction Stop
   Assert-BuildSource $commit
   if ($existing -and (Get-Process -Id $existing.runtime_pid -ErrorAction SilentlyContinue)) {
+    $null = Assert-LiveDatabase (Get-Process -Id $existing.runtime_pid -ErrorAction Stop)
     $oldVersion = (Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/status" -TimeoutSec 5).data.version
+    $oldBuildCommit = Resolve-BuildCommit $oldVersion
     $oldRuntimePresent = $true
   }
 
@@ -168,6 +224,7 @@ try {
   $assetHash = (Get-FileHash -LiteralPath (Join-Path $root "web\dist$asset") -Algorithm SHA256).Hash.ToLowerInvariant()
   # Recheck ownership and freshness immediately before switching, after a long build.
   $null = Assert-Ownership
+  if ($oldRuntimePresent) { $null = Assert-LiveDatabase (Get-Process -Id $existing.runtime_pid -ErrorAction Stop) }
   Assert-BuildSource $commit
   Assert-Backup $backup
   if (Test-Path -LiteralPath $exePath) {
@@ -183,9 +240,10 @@ try {
   }
   if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) { throw 'Port remains occupied; stopping the switch.' }
   $switchAttempted = $true
-  Copy-Item -LiteralPath $buildPath -Destination $exePath -Force
+  Install-NativeExecutable $buildPath $exePath
   $started = Start-Native $version
   Wait-Healthy $started.process $version
+  $databaseOwner = Assert-LiveDatabase $started.process
   $liveHtml = (Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/" -TimeoutSec 10).Content
   if (-not $liveHtml.Contains($asset)) { throw 'Running frontend differs from the freshly built frontend.' }
   $liveAsset = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port$asset" -Headers @{ 'Accept-Encoding' = 'identity' } -TimeoutSec 30
@@ -195,12 +253,14 @@ try {
   if ($liveAssetHash -ne $assetHash) { throw 'Served frontend SHA-256 differs from the built frontend.' }
   $lock = [ordered]@{
     runtime_mode = 'windows-native'; runtime_owner = $Owner; runtime_id = 'newapi-native'
-    runtime_commit = $commit; runtime_version = $version; runtime_ports = @($Port)
+    runtime_commit = $commit; runtime_build_commit = $commit; runtime_version = $version; runtime_ports = @($Port)
     runtime_pid = $started.process.Id; runtime_exe = $exePath
+    runtime_process_started_filetime = $databaseOwner.process_started_filetime
     runtime_exe_sha256 = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
     frontend_asset = $asset; frontend_sha256 = $assetHash; served_frontend_sha256 = $liveAssetHash
     database_mode = 'sqlite'; database_engine = 'sqlite'; database_source = $SqlitePath; database_instance = $SqlitePath
     database_backup = $backup
+    database_owner = $databaseOwner
     rollback = @{ method = 'Windows-native executable rollback; database restore is separate and requires stopping the app and preserving its current DB/WAL/SHM first'; executable = $rollbackExe; database = $backup.backup_path }
     logs = @{ stdout = $started.stdout; stderr = $started.stderr }
     acceptance_status = 'runtime-health-and-build-passed'; updated_at = [DateTime]::UtcNow.ToString('o')
@@ -218,27 +278,38 @@ try {
       if ($previousProcess -and $previousProcess.ExecutablePath -eq $exePath) {
         Write-Warning 'Previous process is still running; its executable and runtime lock are preserved.'
       } elseif ($rollbackExe) {
-        Copy-Item -LiteralPath $rollbackExe -Destination $exePath -Force
+        if (-not (Test-Path -LiteralPath $exePath) -or
+            (Get-FileHash -LiteralPath $rollbackExe -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash) {
+          Install-NativeExecutable $rollbackExe $exePath
+        }
         if ($oldRuntimePresent) {
           $restored = Start-Native $oldVersion
           $restoreHealthy = $false
+          $restoredDatabase = $null
           try {
             Wait-Healthy $restored.process $oldVersion
+            $restoredDatabase = Assert-LiveDatabase $restored.process
             $restoreHealthy = $true
           } finally {
             # Keep the new rollback PID/logs discoverable even if its health check fails.
             $existing | Add-Member -Force -NotePropertyMembers @{
               runtime_pid = $restored.process.Id
+              runtime_commit = $oldBuildCommit
+              runtime_build_commit = $oldBuildCommit
               runtime_version = $oldVersion
+              runtime_process_started_filetime = $restored.process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString()
               runtime_exe_sha256 = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
               logs = @{ stdout = $restored.stdout; stderr = $restored.stderr }
               database_backup = $backup
+              database_owner = $restoredDatabase
               rollback = @{ method = 'Windows-native executable rollback; preserve DB/WAL/SHM before a separate database restore'; executable = $rollbackExe; database = $backup.backup_path }
               acceptance_status = if ($restoreHealthy) { 'previous-native-runtime-restored' } else { 'previous-native-runtime-health-failed' }
               updated_at = [DateTime]::UtcNow.ToString('o')
             }
             $existing.PSObject.Properties.Remove('compose_file')
             $existing.PSObject.Properties.Remove('accepted_at')
+            $existing.PSObject.Properties.Remove('runtime_commit_note')
             Write-AtomicJson $lockPath $existing
           }
           Write-Warning 'New build failed acceptance; previous Windows-native executable is running again.'

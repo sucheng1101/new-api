@@ -155,20 +155,30 @@ const DomainManagementPanel = ({
   );
 
   const kindOptions = useMemo(
-    () => [
-      { value: 'host', label: t('域名') },
-      { value: 'base_url', label: t('API 地址') },
-      { value: 'endpoint', label: t('端点') },
-    ],
-    [t],
+    () =>
+      [
+        { value: 'host', label: t('域名') },
+        { value: 'base_url', label: t('API 地址') },
+        { value: 'endpoint', label: t('端点') },
+      ].filter(
+        (option) =>
+          !Array.isArray(recordKinds) || recordKinds.includes(option.value),
+      ),
+    [recordKinds, t],
   );
+  const defaultKind = kindOptions.some((option) => option.value === 'endpoint')
+    ? 'endpoint'
+    : kindOptions[0]?.value;
 
   const copy = async (key, value) => {
     if (!value) return;
     try {
-      await navigator.clipboard?.writeText(value);
+      if (!navigator.clipboard?.writeText)
+        throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(value);
     } catch {
-      // Clipboard access can be denied; still surface copy intent feedback.
+      Toast.error(t('复制失败，请手动复制'));
+      return;
     }
     setCopiedKey(key);
     Toast.success(t('已复制'));
@@ -254,12 +264,16 @@ const DomainManagementPanel = ({
       content: `${t('确定删除')} ${record.name || record.endpoint}？`,
       onOk: async () => {
         try {
-          await API.delete(
+          const response = await API.delete(
             `/api/admin/security/direct-api-endpoints/${record.id}`,
           );
+          if (!response.data?.success)
+            throw new Error(response.data?.message || t('删除失败'));
           await loadDomains();
         } catch (error) {
-          Toast.error(error?.response?.data?.message || t('删除失败'));
+          Toast.error(
+            error?.response?.data?.message || error.message || t('删除失败'),
+          );
         }
       },
     });
@@ -509,7 +523,7 @@ const DomainManagementPanel = ({
         <Form
           key={editing?.id || 'new'}
           initValues={
-            editing || { kind: 'endpoint', enabled: true, sort_order: 0 }
+            editing || { kind: defaultKind, enabled: true, sort_order: 0 }
           }
           onSubmit={saveRecord}
           layout='vertical'
