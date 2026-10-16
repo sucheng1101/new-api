@@ -76,23 +76,12 @@ export async function fetchTokenKeys() {
  * @returns {string} 服务器地址
  */
 export function getServerAddress() {
-  let status = localStorage.getItem('status');
-  let serverAddress = '';
-
-  if (status) {
-    try {
-      status = JSON.parse(status);
-      serverAddress = status.server_address || '';
-    } catch (error) {
-      console.error('Failed to parse status from localStorage:', error);
-    }
-  }
-
-  if (!serverAddress) {
-    serverAddress = window.location.origin;
-  }
-
-  return serverAddress;
+  // API/status.server_address is an administrator-configured public URL and
+  // may describe an older deployment entry point. User-facing connection
+  // strings must follow the entry point that served the current page so a
+  // cached status value can never leak an obsolete port or host.
+  if (typeof window === 'undefined' || !window.location?.origin) return '';
+  return normalizeServerAddress(window.location.origin);
 }
 
 /**

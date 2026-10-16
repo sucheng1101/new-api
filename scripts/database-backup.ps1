@@ -20,7 +20,7 @@ if ([string]::IsNullOrWhiteSpace($SqlitePath)) {
 if ([string]::IsNullOrWhiteSpace($BackupRoot)) {
   $BackupRoot = Join-Path $root 'data\runtime-backups\database'
 }
-if (-not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
+if ($DatabaseMode -ne 'sqlite' -and -not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
   throw "Compose file not found: $ComposeFile"
 }
 
@@ -74,28 +74,6 @@ function Get-ApplicationSqlDsn {
   }
   if ($env:NEW_API_SQL_DSN) { return [string]$env:NEW_API_SQL_DSN }
   return $null
-}
-
-function Test-SqliteBackup {
-  param([string]$Path)
-  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
-  $item = Get-Item -LiteralPath $Path
-  if ($item.Length -lt 4096) { return $false }
-  $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-  try {
-    $buffer = New-Object byte[] 16
-    $read = $stream.Read($buffer, 0, $buffer.Length)
-    $header = [System.Text.Encoding]::ASCII.GetString($buffer, 0, $read)
-    if ($header -ne ("SQLite format 3" + [char]0)) { return $false }
-  } finally {
-    $stream.Dispose()
-  }
-  $sqlite3 = Get-Command sqlite3 -ErrorAction SilentlyContinue
-  if ($sqlite3) {
-    $check = & $sqlite3.Source $Path 'PRAGMA integrity_check;' 2>$null
-    return (($check | Select-Object -First 1).ToString().Trim() -eq 'ok')
-  }
-  return $true
 }
 
 function Get-TableCount {
@@ -208,40 +186,35 @@ function Invoke-PostgresBackup {
 
 function Invoke-SqliteBackup {
   param([string]$SourcePath, [string]$OutputPath)
-  if (-not (Test-SqliteBackup -Path $SourcePath)) {
-    throw "SQLite database is missing or failed validation: $SourcePath"
+  $python = Get-Command py -ErrorAction SilentlyContinue
+  $pythonArgs = @('-3')
+  if (-not $python) {
+    $python = Get-Command python -ErrorAction Stop
+    $pythonArgs = @()
   }
-  $tempPath = "$OutputPath.partial"
-  Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
-  $sqlite3 = Get-Command sqlite3 -ErrorAction SilentlyContinue
-  if ($sqlite3) {
-    $escapedTemp = $tempPath.Replace("'", "''")
-    & $sqlite3.Source $SourcePath ".backup '$escapedTemp'" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-      Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
-      throw "sqlite3 online backup failed with exit code $LASTEXITCODE."
-    }
-  } else {
-    Copy-Item -LiteralPath $SourcePath -Destination $tempPath -Force
+  $result = & $python.Source @pythonArgs (Join-Path $PSScriptRoot 'sqlite-backup.py') backup --source $SourcePath --destination $OutputPath
+  if ($LASTEXITCODE -ne 0) { throw 'SQLite online backup or integrity validation failed.' }
+  $validation = $result | ConvertFrom-Json
+  if ($validation.status -ne 'passed' -or $validation.integrity_check -ne 'ok') {
+    throw 'SQLite backup did not return verified integrity evidence.'
   }
-  if (-not (Test-SqliteBackup -Path $tempPath)) {
-    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
-    throw 'SQLite backup failed post-copy validation.'
-  }
-  Move-Item -LiteralPath $tempPath -Destination $OutputPath -Force
   return [ordered]@{
     database_name = [System.IO.Path]::GetFileName($SourcePath)
-    table_count = $null
-    validation = [ordered]@{ status = 'passed'; method = if ($sqlite3) { 'sqlite3-integrity-check' } else { 'sqlite-header-check' }; integrity_check = if ($sqlite3) { 'ok' } else { 'not-run-sqlite3-unavailable' } }
+    table_count = $validation.table_count
+    validation = $validation
   }
 }
 
-docker info *> $null
-if ($LASTEXITCODE -ne 0) { throw 'Docker daemon is not available.' }
+$mysqlId = $null
+$postgresId = $null
+if ($DatabaseMode -ne 'sqlite') {
+  docker info *> $null
+  if ($LASTEXITCODE -ne 0) { throw 'Docker daemon is not available.' }
+  $mysqlId = Get-RunningContainerId -Service 'mysql'
+  $postgresId = Get-RunningContainerId -Service 'postgres'
+}
 New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
 
-$mysqlId = Get-RunningContainerId -Service 'mysql'
-$postgresId = Get-RunningContainerId -Service 'postgres'
 $mode = $DatabaseMode
 if ($mode -eq 'auto') {
   $dsn = Get-ApplicationSqlDsn
@@ -291,11 +264,12 @@ $metadata = [ordered]@{
   mode = $mode
   source = $source
   project_name = $ProjectName
-  compose_file = [System.IO.Path]::GetFullPath($ComposeFile)
+  compose_file = if ($mode -eq 'sqlite') { $null } else { [System.IO.Path]::GetFullPath($ComposeFile) }
   container_id = $containerId
   database_name = $details.database_name
   table_count = $details.table_count
   backup_path = $backupPath
+  metadata_path = $metadataPathFinal
   sha256 = $hash
   size_bytes = [int64]$item.Length
   created_at_utc = (Get-Date).ToUniversalTime().ToString('o')
@@ -304,7 +278,7 @@ $metadata = [ordered]@{
   restore_method = switch ($mode) {
     'mysql' { 'docker exec MYSQL_PWD=... mysql --database <database_name> < backup_path' }
     'postgresql' { 'docker exec PGPASSWORD=... psql/pg_restore using backup_path' }
-    'sqlite' { 'stop application, preserve current file, then replace SQLite database with backup_path' }
+    'sqlite' { 'stop the project application, preserve the current DB and any WAL/SHM files together, restore backup_path to source, then restart via the native backup-gated entrypoint' }
   }
 }
 $metadataPartial = "$metadataPathFinal.partial"

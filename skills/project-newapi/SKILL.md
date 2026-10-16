@@ -20,7 +20,7 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - Read `AGENTS.md` before edits; its project rules are authoritative.
 - Check `git status --short --branch` and preserve unrelated user changes.
 - Confirm the current branch and remotes before commits or releases.
-- Treat upstream remotes as read-only. GitHub is the only project publication source. Local development and online version sync never publish source changes; formal release uses the verified project-owned GitHub remote only.
+- Treat upstream remotes as read-only. Local development does not publish source changes. Every production release must be committed and pushed to project-owned GitHub and Gitee repositories, with both release branches verified at the same commit before deployment begins.
 - Search with `rg` and follow existing Router -> Controller -> Service -> Model boundaries.
 
 ## Project Map
@@ -38,37 +38,35 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 
 ## Development Commands
 
-- Local runtime/start/rebuild: `powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSION_ID` (uses `docker-compose.dev.yml`, project `newapi-dev`, port `5200`).
-- Local acceptance: `powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)`.
-- Backend tests: run inside a disposable Go container or the project Docker build; do not use a Windows-native Go process as release evidence.
-- Frontend install/build/lint/i18n: run inside the project Docker build or a disposable Bun container mounted to `web/`; do not use a Windows-native Bun process as release evidence.
-- Docker status: `docker compose -p newapi-dev -f docker-compose.dev.yml ps`.
-- Docker source refresh: `powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner SESSION_ID` (the wrapper performs the database-backup gate before Compose changes).
+- Local runtime/start/rebuild: `powershell -ExecutionPolicy Bypass -File .\scripts\local-native-start.ps1 -Owner CLI-NA-RUNTIME-01` (Windows-native, port `5200`). Go, Bun, and Python 3 must be available; `-BunPath` accepts the installed executable path.
+- Backend verification: Windows-native `go test` on affected packages; frontend verification: Bun tests, Prettier, ESLint, `bun run build`, and Playwright desktop/mobile checks.
+- Local acceptance: compare Git HEAD with the runtime lock, `/api/status` version, process/executable hash, served frontend entry asset and SHA-256, port ownership, actual database path and backup evidence. `local-check.ps1` is a historical Docker-only checker and is not native acceptance evidence.
+- Historical Docker diagnostics may use `docker compose -p newapi-dev -f docker-compose.dev.yml ps`; do not start or recreate Docker for local development.
 
 ## Local Runtime Safety Standard
 
-- Canonical local runtime is Docker Compose (`docker-compose.dev.yml`); Windows-native Go/Bun is a documented exception only.
-- One project has one active runtime group. Never run Docker and Windows-native newapi instances together, and never start a second Compose project for this checkout.
-- `scripts/local-start.ps1` owns the runtime lock at `.git/new-api-dev/runtime-lock.json`, checks Docker and port ownership, stops only the identified newapi native process group, and rebuilds/recreates the current workspace in Docker.
-- The start wrapper validates `runtime_owner`; a different owner can take over only after the Compose runtime is absent and the lock is older than 30 minutes. Ambiguous or active ownership is left untouched.
+- Canonical local runtime is Windows-native `new-api.exe` on `http://127.0.0.1:5200`, as explicitly requested by the user. Keep a single project runtime and leave port `3000` unused by this project.
+- `scripts/local-native-start.ps1` owns the runtime lock at `.git/new-api-dev/runtime-lock.json` and an exclusive operation file lock. It checks the locked runtime mode, owner, PID, executable, database engine/instance, and port ownership before any rebuild or process switch.
+- An owner/mode/database mismatch aborts for investigation; never silently take over a different runtime or guess its database. The current canonical local database is `data/one-api.db` with `SQL_DSN=local`, `LOG_SQL_DSN=local`, and an absolute `SQLITE_PATH` in the child process environment.
 - Native process matching requires the executable/command line to point into this checkout; a generic `go`, `node`, or `bun` process is never stopped by name alone.
-- After every source or build-input change, rerun `scripts/local-start.ps1`; it performs the required backup gate and then runs `docker compose ... up -d --build --force-recreate`. Plain `restart` is not sufficient for the baked-in application image.
-- Every start/restart must verify `/api/status`, `/api/status/latest-release`, the embedded frontend root, the current workspace commit, image revision label, ports, and absence of a native process.
+- After every source or build-input change, rerun `scripts/local-native-start.ps1`: online backup and full integrity verification precede the frontend/backend builds; the previous process stays running until both builds pass. Preserve the previous executable for automatic rollback when startup acceptance fails.
+- Every start/restart must verify `/api/status`, the embedded frontend root/asset hash, Git commit/version, process/executable hash, port ownership, database-instance match, and native rollback path. A source commit or successful build alone does not prove that the browser is running it.
 - If a port, container, or process cannot be attributed to this checkout, leave it running and report the owner instead of stopping it.
 - Only the task's runtime-owner session may start, stop, rebuild, or switch the runtime; other sessions perform read-only checks.
-- Treat stale processes and browser caches as runtime evidence issues: inspect ownership and loaded image revision before changing application code.
+- Treat stale processes and browser caches as runtime evidence issues: inspect ownership, executable version, and the loaded frontend asset before claiming a UI fix is deployed.
 
 ### Runtime Database Backup Gate (mandatory)
 
 - Incident root cause to preserve: the former `local-start.ps1` only selected SQLite snapshots while the active runtime used MySQL, and a direct Compose `up --build --force-recreate` bypassed the wrapper. A SQLite snapshot is not evidence for a MySQL/PostgreSQL runtime; all state changes must pass the unified gate.
 - Before every restart, rebuild, recreate, runtime-mode switch, release publication, deployment, or rollback, back up and verify the database actually used by the live app. Detect the engine and instance from runtime configuration; do not assume that a SQLite snapshot covers a MySQL or PostgreSQL runtime.
-- `scripts/local-start.ps1` is the only approved local entrypoint for state-changing Compose operations. Do not hand-run `docker compose up`, `restart`, `stop`, `down`, `rm`, or equivalent commands to bypass the gate; `ps`, `config`, `logs`, and `inspect` remain read-only diagnostics.
+- `scripts/local-native-start.ps1` is the local entrypoint. For SQLite, `scripts/database-backup.ps1 -DatabaseMode sqlite` calls Python's online backup API (including committed WAL data), performs full `PRAGMA integrity_check`, and records SHA-256, byte size, source path, timestamp, validation, and native restore instructions. A header check or plain copy of a live database is insufficient.
+- Historical Compose operations still use the backup-gated `scripts/local-start.ps1`; never bypass that gate with direct state-changing Compose commands.
 - `scripts/production-update-compose.sh` and `scripts/production-update.sh` are subject to the same gate: before `pull`/`up` or `systemctl stop/start`, they must invoke `DB_BACKUP_COMMAND` (or an equivalent unified database-backup workflow), verify instance-matched/checksum-verified evidence, and fail closed when proof is absent. Direct Compose or `systemctl` state changes outside those guarded scripts are non-compliant.
 - The gate must fail closed before any container stop/recreate or mode switch when the backup is missing, empty, corrupt, stale, tied to another instance, or not integrity/read verified. Never use `docker compose down -v` or delete named volumes.
 - Runtime lock and release evidence must contain the engine/instance, backup artifact path, UTC timestamp, SHA-256, integrity/restore-read result, and concrete rollback path. Keep dumps and metadata outside Git commits, and scrub credentials, tokens, cookies, and private configuration.
-- `local-check.ps1` and release acceptance must show the backup artifact, checksum, verification result, runtime-instance match, and rollback path in addition to health, commit, image, port, and process checks.
+- Native and release acceptance must show the backup artifact, checksum, verification result, runtime-instance match, and rollback path in addition to health, commit, artifact, port, and process checks. Runtime records must describe native executable/database rollback for native operation, rather than Docker recovery commands.
 
-### Docker runtime inventory
+### Historical Docker runtime inventory (inactive local mode)
 
 | Item | Value |
 |---|---|
@@ -85,7 +83,13 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 
 ### Mode switch contract
 
-To switch from native to Docker, stop only the project-owned native process group, verify ports are free, then run `local-start.ps1` (including its database-backup gate). To use a native exception, complete the same backup preflight and use the approved runtime-owner procedure to stop the `newapi-dev` Compose application group; record the reason and owner in the board, and restore Docker before review/release. Do not use `docker compose down -v`; named data volumes are preserved.
+Keep local operation Windows-native. A future runtime-mode change requires explicit user direction, an instance-matched verified backup, ownership checks, and a recorded rollback path before stopping the current project process. Preserve named volumes and application data. Do not switch back to Docker during review or merely because an older SOP defaults to it.
+
+### API address and domain management
+
+- User-facing API connection strings follow `window.location.origin` through `getServerAddress()` in `web/src/helpers/token.js`. Cached `/api/status.server_address` may contain an obsolete host or port and must not override the active browser entrypoint in the homepage, token connectors, or CCSwitch links.
+- Domain management and domain whitelist use the same backend `records` data and editor. Keep direct host authorization distinct from per-user IPv4 authorization; management placement does not replace runtime IP checks.
+- Verify security/domain refresh labels and independent loading, tab order (security, whitelist, blacklist, domain management), editable names/addresses/descriptions/status/order, and IP whitelist search/pagination. Do not invent two static gateway/OpenAI rows outside the shared records.
 
 ## Engineering Rules
 
@@ -161,7 +165,7 @@ To switch from native to Docker, stop only the project-owned native process grou
 
 - Do not place credentials, tokens, cookies, private configuration, or database dumps in the repository or this skill.
 - During one deployment, retain supplied credentials only in process memory and reuse them for retries.
-- For formal production release, push and verify the project-owned GitHub remote only. For server-only online version sync, do not publish or push solely because the server version changed; Gitee is not contacted.
+- For formal production release, push and verify both project-owned GitHub and Gitee release branches at the same commit before deployment. Upstream repositories remain read-only; local rebuilds do not require remote publication.
 - After verified deployment, remove local release archives, temporary binaries, caches, and remote staging directories; preserve rollback backups and application data.
 - Before packaging or sharing, scrub local secrets, logs, session files, dumps, and generated artifacts.
 

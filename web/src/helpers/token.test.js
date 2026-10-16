@@ -17,8 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { describe, expect, test } from 'bun:test';
-import { buildApiEndpoint, normalizeServerAddress } from './token';
+import { beforeAll, describe, expect, mock, test } from 'bun:test';
+
+// Endpoint helpers do not need an HTTP client or browser UI dependencies.
+mock.module('./api', () => ({ API: {} }));
+let buildApiEndpoint, getServerAddress, normalizeServerAddress;
+beforeAll(async () => {
+  ({ buildApiEndpoint, getServerAddress, normalizeServerAddress } =
+    await import('./token'));
+});
 
 describe('token endpoint helpers', () => {
   test('normalizes configured server addresses', () => {
@@ -41,5 +48,25 @@ describe('token endpoint helpers', () => {
       'https://api.example.com/base/v1beta',
     );
     expect(buildApiEndpoint('', '/v1')).toBe('/v1');
+  });
+
+  test('uses the current browser origin instead of a cached status address', () => {
+    const previousWindow = globalThis.window;
+    const previousStorage = globalThis.localStorage;
+    globalThis.localStorage = {
+      getItem: () =>
+        JSON.stringify({ server_address: 'http://127.0.0.1:1004' }),
+    };
+    globalThis.window = {
+      location: { origin: 'http://127.0.0.1:5200/' },
+    };
+    try {
+      expect(getServerAddress()).toBe('http://127.0.0.1:5200');
+      globalThis.window.location.origin = 'https://gateway.example.com';
+      expect(getServerAddress()).toBe('https://gateway.example.com');
+    } finally {
+      globalThis.window = previousWindow;
+      globalThis.localStorage = previousStorage;
+    }
   });
 });
