@@ -27,9 +27,22 @@ function Write-AtomicJson($Path, $Value) {
   $temporary = "$Path.$([guid]::NewGuid().ToString('N')).partial"
   try {
     [IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding($false)))
-    if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temporary, $Path, $null) }
+    # PowerShell 5.1 binds $null to an empty string for this .NET string argument.
+    if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temporary, $Path, [NullString]::Value) }
     else { [IO.File]::Move($temporary, $Path) }
   } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force } }
+}
+
+function Stop-NativeProcess($Process) {
+  # Hold the original process handle: Windows may retain its PID after exit while
+  # another caller still has a handle open. Get-Process alone is not a liveness check.
+  $Process.Refresh()
+  if (-not $Process.HasExited) {
+    Stop-Process -InputObject $Process -Force -ErrorAction Stop
+    if (-not $Process.WaitForExit(15000)) { throw 'Native process did not exit within 15 seconds.' }
+  }
+  $Process.Refresh()
+  if (-not $Process.HasExited) { throw 'Native process is still running.' }
 }
 
 function Assert-Ownership {
@@ -165,9 +178,7 @@ try {
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($existing.runtime_pid)"
     if ($process -and $process.ExecutablePath -eq $exePath) {
       $stopRequested = $true
-      Stop-Process -Id $existing.runtime_pid -Force -ErrorAction Stop
-      Wait-Process -Id $existing.runtime_pid -Timeout 15 -ErrorAction SilentlyContinue
-      if (Get-Process -Id $existing.runtime_pid -ErrorAction SilentlyContinue) { throw 'Previous process has not exited.' }
+      Stop-NativeProcess (Get-Process -Id $existing.runtime_pid -ErrorAction Stop)
     }
   }
   if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) { throw 'Port remains occupied; stopping the switch.' }
@@ -201,11 +212,7 @@ try {
   if ($switchAttempted -or $stopRequested) {
     try {
       if ($started) {
-        $started.process.Refresh()
-        if (-not $started.process.HasExited) {
-          Stop-Process -Id $started.process.Id -Force -ErrorAction Stop
-          if (-not $started.process.WaitForExit(15000)) { throw 'New process is still running; executable restoration deferred.' }
-        }
+        Stop-NativeProcess $started.process
       }
       $previousProcess = if ($existing) { Get-CimInstance Win32_Process -Filter "ProcessId=$($existing.runtime_pid)" }
       if ($previousProcess -and $previousProcess.ExecutablePath -eq $exePath) {
@@ -238,7 +245,7 @@ try {
         } else { Write-Warning 'Previous executable restored; the earlier idle runtime remains idle.' }
       } else { Write-Warning 'Startup failed without a previous executable; database backup and startup logs are preserved.' }
     } catch {
-      Write-Warning 'Automatic executable rollback failed. Preserve database files and use the recorded native executable/database backup.'
+      Write-Warning "Automatic executable rollback failed: $($_.Exception.Message). Preserve database files and use the recorded native executable/database backup."
     }
   }
   throw $failure

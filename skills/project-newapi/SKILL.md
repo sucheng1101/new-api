@@ -54,6 +54,7 @@ Bootstrap status: imported draft. Commands below are documented or discovered; m
 - If a port, container, or process cannot be attributed to this checkout, leave it running and report the owner instead of stopping it.
 - Only the task's runtime-owner session may start, stop, rebuild, or switch the runtime; other sessions perform read-only checks.
 - Treat stale processes and browser caches as runtime evidence issues: inspect ownership, executable version, and the loaded frontend asset before claiming a UI fix is deployed.
+- Windows process-exit and atomic runtime-record rules: see [native runtime troubleshooting](references/windows-native-runtime.md). Run `scripts/test-local-native-start.ps1` after changing these utilities.
 
 ### Runtime Database Backup Gate (mandatory)
 
