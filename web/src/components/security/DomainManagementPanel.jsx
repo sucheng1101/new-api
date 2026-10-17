@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
+import { getServerAddress } from '../../helpers/token';
 
 const PAGE_SIZE = 8;
 
@@ -123,11 +124,11 @@ const DomainManagementPanel = ({
   paginated = false,
   recordKinds,
   title = '',
-  description = '',
   emptyTitle = '',
   emptyDescription = '',
 }) => {
   const { t } = useTranslation();
+  const currentAddress = getServerAddress();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
@@ -316,14 +317,32 @@ const DomainManagementPanel = ({
         <div className='border-b border-semi-color-border px-5 py-4'>
           <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
             <div className='min-w-0'>
-              <div className='font-semibold'>
-                {title || t('直连域名记录')}{' '}
+              <div className='flex flex-wrap items-center gap-x-3 gap-y-1'>
+                <span className='font-semibold'>
+                  {title || t('直连域名记录')}
+                </span>
                 <span className='text-xs text-semi-color-text-2'>
                   {t('共 {{total}} 条', { total: filtered.length })}
                 </span>
-              </div>
-              <div className='mt-1 text-xs text-semi-color-text-2'>
-                {description || t('直连域名记录可在此启停、排序与编辑说明')}
+                <span className='flex min-w-0 items-center gap-1 text-xs text-semi-color-text-2'>
+                  {t('网关地址')}
+                  <Button
+                    theme='borderless'
+                    size='small'
+                    className='!px-0 font-mono text-xs'
+                    aria-label={`${t('复制地址')}: ${currentAddress}`}
+                    onClick={() => copy('runtime-origin', currentAddress)}
+                  >
+                    <span className='max-w-[260px] truncate'>
+                      {currentAddress}
+                    </span>
+                    {copiedKey === 'runtime-origin' ? (
+                      <Check size={12} className='shrink-0 text-green-500' />
+                    ) : (
+                      <Copy size={12} className='shrink-0' />
+                    )}
+                  </Button>
+                </span>
               </div>
             </div>
             <div className='flex shrink-0 gap-2'>

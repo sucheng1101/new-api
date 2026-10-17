@@ -793,7 +793,6 @@ const SecurityAccess = () => {
               paginated
               recordKinds={['host']}
               title={t('直连域名白名单')}
-              description={t('直连域名记录可在此启停、排序与编辑说明')}
               emptyTitle={t('暂无直连域名记录')}
               emptyDescription={t('新增记录后即可在此管理启停与排序')}
             />
