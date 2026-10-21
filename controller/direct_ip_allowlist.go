@@ -34,6 +34,7 @@ func GetDirectIPAllowlist(c *gin.Context) {
 		"base_url":     common.DirectAPIBaseURL(),
 		"direct_hosts": common.DirectAPIHosts(),
 		"endpoints":    common.EnabledDirectAPIEndpoints(),
+		"records":      common.EnabledDirectAPIRecords(),
 	})
 }
 
@@ -327,10 +328,6 @@ func DeleteDirectAPIEndpoint(c *gin.Context) {
 	found := false
 	for _, item := range endpoints {
 		if item.ID == id {
-			if common.DirectAPIRecordKind(item) != common.DirectAPIRecordKindEndpoint {
-				common.ApiErrorMsg(c, "系统入口记录不可删除")
-				return
-			}
 			found = true
 			continue
 		}

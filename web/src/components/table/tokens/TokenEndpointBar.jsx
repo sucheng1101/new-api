@@ -17,99 +17,100 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState } from 'react';
-import { Button, Tag, Typography } from '@douyinfe/semi-ui';
-import { IconCopy } from '@douyinfe/semi-icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Empty, Spin } from '@douyinfe/semi-ui';
 import PropTypes from 'prop-types';
-import {
-  buildApiEndpoint,
-  normalizeServerAddress,
-} from '../../../helpers/token';
 import { API } from '../../../helpers';
+import { getServerAddress } from '../../../helpers/token';
+import { handleSpeedTest } from '../../../helpers/dashboard';
+import EndpointPill from '../../security/EndpointPill';
 
-const EndpointItem = ({ label, url, onCopy, copyLabel }) => (
-  <div className='flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center'>
-    <Tag color='blue' className='w-fit shrink-0'>
-      {label}
-    </Tag>
-    <Typography.Text
-      className='min-w-0 flex-1 font-mono text-sm'
-      ellipsis={{ showTooltip: true }}
-      selectable
-    >
-      {url}
-    </Typography.Text>
-    <Button
-      type='tertiary'
-      size='small'
-      icon={<IconCopy />}
-      aria-label={`${copyLabel}: ${label}`}
-      onClick={() => onCopy(url)}
-    >
-      {copyLabel}
-    </Button>
-  </div>
-);
-
-EndpointItem.propTypes = {
-  label: PropTypes.string.isRequired,
-  url: PropTypes.string.isRequired,
-  onCopy: PropTypes.func.isRequired,
-  copyLabel: PropTypes.string.isRequired,
+const normalizeRecordUrl = (record) => {
+  const value = String(record?.endpoint || '').trim();
+  if (!value) return '';
+  if (record?.kind === 'host' && !/^[a-z][a-z\d+.-]*:\/\//i.test(value)) {
+    return `https://${value}`;
+  }
+  return value;
 };
 
 const TokenEndpointBar = ({ copyText, t }) => {
-  const [customEndpoints, setCustomEndpoints] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const serverAddress = useMemo(() => getServerAddress(), []);
+
   useEffect(() => {
     let mounted = true;
     API.get('/api/user/direct-ip-whitelist')
       .then((response) => {
         if (mounted && response.data?.success) {
           const data = response.data.data || {};
-          setCustomEndpoints(data.endpoints || []);
+          setRecords(Array.isArray(data.records) ? data.records : []);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
     return () => {
       mounted = false;
     };
   }, []);
-  // Always derive the displayed gateway and /v1 endpoint from the origin the
-  // operator is actually using. Do not read the cached status server_address
-  // or a configured direct address, which can stay stale (for example an old
-  // 127.0.0.1:1004 value).
-  const serverAddress = normalizeServerAddress(
-    typeof window !== 'undefined' ? window.location.origin : '',
+
+  const visibleRecords = records
+    .filter((record) => record?.enabled !== false && normalizeRecordUrl(record))
+    .map((record) => ({
+      ...record,
+      // The configured base URL can describe an older deployment entry point.
+      // User-facing API connection strings must follow the page currently
+      // served in this browser.
+      displayUrl:
+        record.kind === 'base_url' && serverAddress
+          ? serverAddress
+          : normalizeRecordUrl(record),
+    }));
+  const hasBaseURL = visibleRecords.some(
+    (record) => record.kind === 'base_url',
   );
-  const openAIEndpoint = buildApiEndpoint(serverAddress, '/v1');
+  const displayRecords =
+    serverAddress && !hasBaseURL
+      ? [
+          {
+            id: 'runtime-origin',
+            kind: 'base_url',
+            name: t('当前访问入口'),
+            description: t('当前浏览器访问地址'),
+            displayUrl: serverAddress,
+            enabled: true,
+          },
+          ...visibleRecords,
+        ]
+      : visibleRecords;
 
   return (
-    <div className='flex w-full flex-col gap-2 rounded-xl border border-solid p-3 sm:flex-row sm:items-center'>
-      <div className='shrink-0 text-sm font-medium'>{t('API地址')}</div>
-      <div className='flex min-w-0 flex-1 flex-col gap-2 lg:flex-row'>
-        <EndpointItem
-          label={t('网关地址')}
-          url={serverAddress}
-          onCopy={copyText}
-          copyLabel={t('复制地址')}
-        />
-        <EndpointItem
-          label={t('OpenAI兼容地址')}
-          url={openAIEndpoint}
-          onCopy={copyText}
-          copyLabel={t('复制地址')}
-        />
-        {customEndpoints
-          .filter((item) => item.enabled && item.endpoint)
-          .map((item) => (
-            <EndpointItem
-              key={item.id || item.endpoint}
-              label={item.name || t('自定义端点')}
-              url={item.endpoint}
-              onCopy={copyText}
-              copyLabel={t('复制地址')}
-            />
-          ))}
+    <div className='flex w-full flex-col gap-2 rounded-xl border border-solid p-3'>
+      <div className='flex items-center justify-between gap-2'>
+        <div className='shrink-0 text-sm font-medium'>{t('API地址')}</div>
+        {loading && <Spin size='small' />}
+      </div>
+      <div className='grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-2'>
+        {displayRecords.map((record) => (
+          <EndpointPill
+            key={record.id || record.displayUrl}
+            label={record.name || t('API端点')}
+            kind={record.kind}
+            url={record.displayUrl}
+            description={record.description || t('点击可复制此端点')}
+            enabled={record.enabled !== false}
+            onCopy={copyText}
+            onTest={handleSpeedTest}
+            copyLabel={t('复制地址')}
+            testLabel={t('快速测试')}
+          />
+        ))}
+        {!loading && !displayRecords.length && (
+          <Empty title={t('暂无可用 API 地址')} className='col-span-full' />
+        )}
       </div>
     </div>
   );

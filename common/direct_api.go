@@ -102,6 +102,26 @@ func EnabledDirectAPIEndpoints() []DirectAPIEndpoint {
 	return result
 }
 
+// EnabledDirectAPIRecords returns every administrator-managed record that is
+// currently visible to users. Unlike EnabledDirectAPIEndpoints, this includes
+// host and base URL records so all published addresses share one data source.
+func EnabledDirectAPIRecords() []DirectAPIEndpoint {
+	endpoints := DirectAPIEndpoints()
+	result := make([]DirectAPIEndpoint, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		if endpoint.Enabled {
+			result = append(result, endpoint)
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].SortOrder == result[j].SortOrder {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].SortOrder < result[j].SortOrder
+	})
+	return result
+}
+
 // NormalizeDirectAPIEndpoint validates and canonicalizes an endpoint URL.
 // The URL must be absolute HTTP(S), must not contain credentials, query
 // parameters, or fragments, and is normalized without a trailing slash.

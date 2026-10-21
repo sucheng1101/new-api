@@ -31,24 +31,16 @@ import {
   Form,
   Input,
   Modal,
-  Select,
   Switch,
   Table,
   Tag,
   Toast,
 } from '@douyinfe/semi-ui';
-import {
-  Check,
-  Copy,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-} from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
-import { getServerAddress } from '../../helpers/token';
+import { handleSpeedTest } from '../../helpers/dashboard';
+import EndpointPill from './EndpointPill';
 
 const PAGE_SIZE = 8;
 
@@ -128,7 +120,6 @@ const DomainManagementPanel = ({
   emptyDescription = '',
 }) => {
   const { t } = useTranslation();
-  const currentAddress = getServerAddress();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
@@ -324,25 +315,6 @@ const DomainManagementPanel = ({
                 <span className='text-xs text-semi-color-text-2'>
                   {t('共 {{total}} 条', { total: filtered.length })}
                 </span>
-                <span className='flex min-w-0 items-center gap-1 text-xs text-semi-color-text-2'>
-                  {t('网关地址')}
-                  <Button
-                    theme='borderless'
-                    size='small'
-                    className='!px-0 font-mono text-xs'
-                    aria-label={`${t('复制地址')}: ${currentAddress}`}
-                    onClick={() => copy('runtime-origin', currentAddress)}
-                  >
-                    <span className='max-w-[260px] truncate'>
-                      {currentAddress}
-                    </span>
-                    {copiedKey === 'runtime-origin' ? (
-                      <Check size={12} className='shrink-0 text-green-500' />
-                    ) : (
-                      <Copy size={12} className='shrink-0' />
-                    )}
-                  </Button>
-                </span>
               </div>
             </div>
             <div className='flex shrink-0 gap-2'>
@@ -419,7 +391,7 @@ const DomainManagementPanel = ({
               </Button>
             </Empty>
           }
-          scroll={{ x: 960 }}
+          className='w-full'
           columns={[
             {
               title: t('类型'),
@@ -446,23 +418,17 @@ const DomainManagementPanel = ({
               title: t('地址'),
               dataIndex: 'endpoint',
               render: (value, record) => (
-                <Button
-                  theme='borderless'
-                  className='!px-0 font-mono text-xs'
-                  disabled={!value}
-                  onClick={() => copy(`endpoint-${record.id}`, value)}
-                >
-                  <span className='flex min-w-0 items-center gap-1'>
-                    <span className='max-w-[260px] truncate'>
-                      {value || '-'}
-                    </span>
-                    {copiedKey === `endpoint-${record.id}` ? (
-                      <Check size={13} className='shrink-0 text-green-500' />
-                    ) : (
-                      <Copy size={13} className='shrink-0' />
-                    )}
-                  </span>
-                </Button>
+                <EndpointPill
+                  compact
+                  label={record.name || kindLabel(record.kind)}
+                  kind={normalizeKind(record.kind)}
+                  url={value}
+                  description={record.description}
+                  enabled={record.enabled !== false}
+                  copied={copiedKey === `endpoint-${record.id}`}
+                  onCopy={() => copy(`endpoint-${record.id}`, value)}
+                  onTest={handleSpeedTest}
+                />
               ),
             },
             {

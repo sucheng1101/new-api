@@ -50,7 +50,6 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
-import DomainManagementPanel from '../../components/security/DomainManagementPanel';
 
 const PAGE_SIZE = 8;
 const RANGE_OPTIONS = [
@@ -408,17 +407,15 @@ const SecurityAccess = () => {
           </Typography.Title>
         </div>
         <div className='flex gap-2'>
-          {activeTab !== 'domain' && (
-            <Button
-              theme='light'
-              icon={<RefreshCw size={15} />}
-              loading={loading}
-              aria-label={t('刷新安全数据')}
-              onClick={loadSecurity}
-            >
-              {t('刷新安全数据')}
-            </Button>
-          )}
+          <Button
+            theme='light'
+            icon={<RefreshCw size={15} />}
+            loading={loading}
+            aria-label={t('刷新安全数据')}
+            onClick={loadSecurity}
+          >
+            {t('刷新安全数据')}
+          </Button>
           <Button
             type='primary'
             icon={<Plus size={15} />}
@@ -724,7 +721,6 @@ const SecurityAccess = () => {
                 dataSource={allowlists}
                 rowKey='id'
                 empty='暂无直连白名单'
-                scroll={{ x: 780 }}
                 columns={[
                   {
                     title: '用户',
@@ -788,14 +784,6 @@ const SecurityAccess = () => {
                 ]}
               />
             </Card>
-            <DomainManagementPanel
-              searchable
-              paginated
-              recordKinds={['host']}
-              title={t('直连域名白名单')}
-              emptyTitle={t('暂无直连域名记录')}
-              emptyDescription={t('新增记录后即可在此管理启停与排序')}
-            />
           </div>
         </Tabs.TabPane>
         <Tabs.TabPane itemKey='blacklist' tab='黑名单'>
@@ -898,9 +886,6 @@ const SecurityAccess = () => {
               ]}
             />
           </Card>
-        </Tabs.TabPane>
-        <Tabs.TabPane itemKey='domain' tab='域名管理'>
-          <DomainManagementPanel />
         </Tabs.TabPane>
       </Tabs>
       <Modal
