@@ -126,6 +126,7 @@ const TokenEndpointBar = ({ copyText, t }) => {
     if (baseURLIndex >= 0) {
       visibleRecords[baseURLIndex] = {
         ...visibleRecords[baseURLIndex],
+        name: t('默认'),
         displayUrl: currentOrigin,
       };
       return visibleRecords;
@@ -135,7 +136,7 @@ const TokenEndpointBar = ({ copyText, t }) => {
       {
         id: 'runtime-origin',
         kind: 'base_url',
-        name: t('当前访问入口'),
+        name: t('默认'),
         description: t('当前浏览器访问地址'),
         displayUrl: currentOrigin,
         enabled: true,
@@ -145,12 +146,17 @@ const TokenEndpointBar = ({ copyText, t }) => {
   }, [currentOrigin, records, t, tokenBaseURLVisible, useCurrentOrigin]);
 
   return (
-    <div className='flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
+    <div className='mt-1 flex min-w-0 max-w-full flex-wrap items-center gap-x-1 gap-y-1 rounded-md border border-semi-color-border bg-semi-color-bg-0 px-2 py-1 text-sm md:ml-2 md:mt-0'>
       {displayRecords.map((record) => (
         <span
           key={record.id || record.displayUrl}
-          className='inline-flex min-w-0 items-center gap-0.5'
+          className='inline-flex min-w-0 max-w-full items-center gap-0.5'
         >
+          <Tooltip content={record.name || record.displayUrl} position='top'>
+            <span className='max-w-[min(24vw,140px)] shrink-0 truncate text-xs font-medium text-semi-color-text-2'>
+              {record.name || record.displayUrl}
+            </span>
+          </Tooltip>
           <Tooltip
             content={record.description || t('点击测试此地址')}
             position='top'
@@ -159,7 +165,7 @@ const TokenEndpointBar = ({ copyText, t }) => {
               href={record.displayUrl}
               target='_blank'
               rel='noreferrer'
-              className='max-w-[min(42vw,280px)] truncate font-mono text-xs text-semi-color-primary hover:underline sm:text-sm'
+              className='max-w-[min(36vw,280px)] truncate font-mono text-xs text-semi-color-primary hover:underline sm:text-sm'
               aria-label={record.name || record.displayUrl}
               title={showAddresses ? record.displayUrl : t('令牌地址已隐藏')}
             >
