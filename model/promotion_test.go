@@ -145,7 +145,7 @@ func TestGetPromotionSummaryIncludesInviteCodeAndWalletBreakdown(t *testing.T) {
 	require.Equal(t, 300, summary.Level2Rate)
 }
 
-func TestListPromotionRewardDetailsIsBeneficiaryScopedAndMasksPayer(t *testing.T) {
+func TestListPromotionRewardDetailsIsBeneficiaryScopedAndIncludesAuditFields(t *testing.T) {
 	db := setupPromotionTestDB(t)
 	beneficiary := &User{Username: "referrer-account", AffCode: "referrer-code", Status: common.UserStatusEnabled}
 	payer := &User{Username: "customer-alice", AffCode: "alice-code", Status: common.UserStatusEnabled, InviterId: 0}
@@ -153,23 +153,40 @@ func TestListPromotionRewardDetailsIsBeneficiaryScopedAndMasksPayer(t *testing.T
 	require.NoError(t, db.Create(beneficiary).Error)
 	payer.InviterId = beneficiary.Id
 	require.NoError(t, db.Create(payer).Error)
+	downline := &User{Username: "customer-bob", AffCode: "bob-code", Status: common.UserStatusEnabled, InviterId: payer.Id}
+	require.NoError(t, db.Create(downline).Error)
 	require.NoError(t, db.Create(other).Error)
 	require.NoError(t, db.Create(&PromotionReward{SourceType: "topup", SourceId: 701, SourceRef: "private-source", PayerUserId: payer.Id, BeneficiaryUserId: beneficiary.Id, Level: 1, BaseQuota: 5000, RewardQuota: 250, Status: PromotionRewardCredited, CreatedAt: 100}).Error)
 	require.NoError(t, db.Create(&PromotionReward{SourceType: "redemption", SourceId: 702, SourceRef: "private-redemption", PayerUserId: payer.Id, BeneficiaryUserId: beneficiary.Id, Level: 1, BaseQuota: 3000, RewardQuota: 150, Status: PromotionRewardFrozen, CreatedAt: 200}).Error)
+	require.NoError(t, db.Create(&PromotionReward{SourceType: "topup", SourceId: 704, SourceRef: "private-second-level-source", PayerUserId: downline.Id, BeneficiaryUserId: beneficiary.Id, Level: 2, BaseQuota: 7000, RewardQuota: 210, Status: PromotionRewardCredited, CreatedAt: 250}).Error)
 	require.NoError(t, db.Create(&PromotionReward{SourceType: "topup", SourceId: 703, PayerUserId: other.Id, BeneficiaryUserId: other.Id, Level: 1, RewardQuota: 999, Status: PromotionRewardCredited, CreatedAt: 300}).Error)
 
 	details, total, err := ListPromotionRewardDetails(beneficiary.Id, 20, 0)
 	require.NoError(t, err)
-	require.EqualValues(t, 2, total)
-	require.Len(t, details, 2)
-	require.Equal(t, "c***e", details[0].PayerUsername)
-	require.Equal(t, "redemption", details[0].SourceType)
-	require.Equal(t, 150, details[0].RewardQuota)
-	require.Equal(t, PromotionRewardFrozen, details[0].Status)
+	require.EqualValues(t, 3, total)
+	require.Len(t, details, 3)
+	require.Equal(t, "customer-bob", details[0].PayerUsername)
+	require.Equal(t, "customer-alice", details[0].UplineUsername)
+	require.Equal(t, 2, details[0].Level)
+	require.Equal(t, 7000, details[0].BaseQuota)
+	require.Equal(t, 210, details[0].RewardQuota)
+	require.Equal(t, PromotionRewardCredited, details[0].Status)
+	require.Equal(t, "customer-alice", details[1].PayerUsername)
+	require.Equal(t, "referrer-account", details[1].UplineUsername)
+	require.Equal(t, "redemption", details[1].SourceType)
+	require.Equal(t, 3000, details[1].BaseQuota)
+	require.Equal(t, 150, details[1].RewardQuota)
+	require.Equal(t, PromotionRewardFrozen, details[1].Status)
 
-	encoded, err := common.Marshal(details[0])
+	invitees, inviteeTotal, err := ListPromotionInvitees(beneficiary.Id, 20, 0)
 	require.NoError(t, err)
-	require.NotContains(t, string(encoded), "base_quota")
+	require.EqualValues(t, 2, inviteeTotal)
+	require.Equal(t, "customer-alice", invitees[0].Username)
+	require.Equal(t, "customer-bob", invitees[1].Username)
+
+	encoded, err := common.Marshal(details[1])
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"base_quota":3000`)
 	require.NotContains(t, string(encoded), "source_ref")
 	require.NotContains(t, string(encoded), "payer_user_id")
 }

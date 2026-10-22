@@ -7,14 +7,15 @@ This board is the project-level coordination entry point for Codex and WorkBuddy
 - Class: product/application + service/api
 - Operational profile: hosted-service, data-sensitive
 - Primary write rule: one task, one primary write session, one task branch.
-- Docker rule: use the verified project Docker/Compose workflow for software run, test, build, and health checks.
+- Local runtime: Windows-native only on port 5200. Docker is excluded from local development; use `scripts/local-native-start.ps1` for runtime operations.
 - Release rule: GitHub publication and online version sync are separate operations; Gitee is not part of the release path.
 
 ## Active tasks
 
-| Task ID | Status | Mode | Branch | Base commit | Primary writer/session | Review session | Owned paths | Docker evidence | Next action |
+| Task ID | Status | Mode | Branch | Base commit | Primary writer/session | Review session | Owned paths | Runtime evidence | Next action |
 |---|---|---|---|---|---|---|---|---|---|
 | OPS-2026-10-13-newapi-sop-runtime | DONE | governance + local-runtime + release-scenario-separation | `codex/token-endpoint-bar` | `d3df271abf7f161d0ed4848e78bc0b158e016f55` | Codex `/root` | Codex `/root` | `Dockerfile`, `docker-compose.dev.yml`, `scripts/local-start.ps1`, `scripts/local-check.ps1`, `docs/runbooks/local-source-development.md`, `docs/runbooks/release-update.md`, `scripts/release.ps1`, `scripts/update-local.ps1`, `controller/release.go`, `controller/release_test.go`, `skills/project-newapi/SKILL.md`, `.github/workflows/sync-to-gitee.yml` removal | Docker healthy at `127.0.0.1:5200`; current commit label `364eda7bca61836d1215ced8b6fb22e82591b0f1`; native runtime absent; Compose/static/PowerShell checks passed; focused Go test passed in Docker | Local governance commit `74ccb4308`; no release/push/deploy; formal publication waits for legacy AGENTS Gitee conflict reconciliation |
+| NA-20261022-PROMOTION-CENTER | IN_PROGRESS | implementation + UI/API verification | `codex/promotion-center-audit-tabs` | `997042c2c` | Codex `/root` (direct execution) | Codex `/root` | `web/src/components/layout/SiderBar.jsx`, `web/src/pages/Promotion/index.jsx`, `model/promotion.go`, `model/promotion_test.go`, frontend locale files | Windows-native 5200; owner `CODEX-NA-RUNTIME-01`; backup-gated acceptance pending | Focused Go tests, i18n/format/build, then native 5200 verification |
 
 ## Current repository baseline (discovery only)
 
@@ -25,12 +26,11 @@ This board is the project-level coordination entry point for Codex and WorkBuddy
 
 ## Runtime handoff
 
-- Canonical mode: `docker`
-- Runtime owner: Codex `/root` while this task is in VERIFYING
+- Canonical mode: `windows-native`
+- Runtime owner: `CODEX-NA-RUNTIME-01`
 - Runtime lock: `.git/new-api-dev/runtime-lock.json`
-- Native Windows process: must be absent before Docker acceptance
-- Docker rebuild rule: source/build-input changes require `up -d --build --force-recreate`
-- Lock takeover: different sessions wait; stale takeover requires no active runtime and lock age > 30 minutes
+- Database: SQLite `data/one-api.db`; runtime changes go through `scripts/local-native-start.ps1` and its verified backup gate
+- Local Docker startup is excluded; historical Compose scripts remain guarded and are not used for local development
 
 ## Acceptance checklist
 

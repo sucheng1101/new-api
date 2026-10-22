@@ -240,12 +240,6 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/console/security',
         className: isAdmin() ? '' : 'tableHiddle',
       },
-      {
-        text: t('域名管理'),
-        itemKey: 'domainManagement',
-        to: '/console/domain-management',
-        className: isAdmin() ? '' : 'tableHiddle',
-      },
     ];
 
     const filteredItems = items.filter((item) =>

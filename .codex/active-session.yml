@@ -1,56 +1,51 @@
-﻿task_id: NA-20261014-SECURITY-UI-OPENCODE
-status: DONE
-mode: implementation + UI/API review
+﻿task_id: NA-20261022-PROMOTION-CENTER
+status: IN_PROGRESS
+mode: implementation + UI/API verification
 project_class: product/application + service/api
 operational_profile: hosted-service, data-sensitive
-branch: codex/security-direct-allowlist
-base_commit: c1658df57
-primary_writer: opencode_cli
-primary_session: CLI-NA-OP-01
-review_session: Codex thread 01a13900-1c44-77f1-8e09-139cd88c7d04
-cli_session: CLI-NA-OP-01
-executor_kind: opencode_cli
-executor_binary: opencode
-executor_version: 1.19.0
-model: DeepSeek-via-8788
-proxy_base_url: http://127.0.0.1:8788/v1
-worktree: current-checkout-handoff
-dependencies:
-  - CLI-PROXY-8788
+branch: codex/promotion-center-audit-tabs
+base_commit: 997042c2c467e051db1beb45888f27f7716aec62
+primary_writer: codex_direct
+primary_session: /root
+review_session: /root
+executor_kind: codex_direct
+executor_binary: Codex desktop executor
+executor_version: current configured runtime
+model: current configured model
+proxy_base_url: not_applicable
+worktree: current checkout
+dependencies: []
 owned_paths:
-  - web/src/pages/SecurityAccess/index.jsx
-  - web/src/pages/DirectIPWhitelist/index.jsx
-  - related security API/types
-  - backend security detail endpoints/tests only when required by confirmed task card
+  - web/src/components/layout/SiderBar.jsx
+  - web/src/pages/Promotion/index.jsx
+  - model/promotion.go
+  - model/promotion_test.go
+  - web/src/i18n/locales/{en,fr,ja,ru,vi,zh-CN,zh-TW}.json
 preserved_paths:
   - existing release/runtime governance changes
   - project identity and protected identifiers
 non_goals:
-  - production release, Gitee publication, online deployment, unrelated billing changes
+  - CLI delegation, Docker, schema migration, production release, remote publication, unrelated billing changes
 runtime:
-  mode: docker
-  owner: CLI-NA-RUNTIME-01
-  project: newapi-dev
-  ports: [5200, 13306, 16379, 19000, 19001]
-  start: powershell -ExecutionPolicy Bypass -File .\scripts\local-start.ps1 -Owner CLI-NA-RUNTIME-01
-  test: powershell -ExecutionPolicy Bypass -File .\scripts\local-check.ps1 -ExpectedCommit (git rev-parse HEAD)
-  build: docker compose -p newapi-dev -f docker-compose.dev.yml up -d --build --force-recreate
-  health: /api/status, /api/status/latest-release, /
+  mode: windows-native
+  owner: CODEX-NA-RUNTIME-01
+  ports: [5200]
+  database: data/one-api.db
+  start: powershell -ExecutionPolicy Bypass -File .\scripts\local-native-start.ps1 -Owner CODEX-NA-RUNTIME-01
+  health: /api/status, frontend bundle, port ownership, runtime lock
 acceptance:
-  - security/access, allowlist and blacklist top-level tabs match confirmed plan
-  - anomaly IP and recent operations support detail views and time ranges
-  - direct whitelist and API configuration remain separate in UI and API
-  - Docker rebuild and local-check pass with current workspace commit
-  - native project runtime is absent and only one newapi-dev Compose group is active
-  - Codex review and integration decision are recorded before commit
-progress_percent: 100
-started_at: '2026-10-14T07:08:29Z'
-elapsed_time: 25m
-last_checkpoint: all acceptance passed; scoped feature checkpoint commit a5afa5479 created, container label matches, local-check exit 0, focused Go tests pass
-current_step: review complete / awaiting Codex integration decision
-last_checkpoint_evidence: .codex/evidence/ (ui-bundle-verify.txt, served-ui-verify.txt, api-verify.txt, local-check.txt)
+  - sidebar has no standalone domain-management item; Security and Access retains its domain tab
+  - promotion tabs appear in order: reward ledger, invited users, user promotion details
+  - details show full payer/upline names, time, base amount, reward amount, level, source, and status
+  - model tests verify direct/second-level names, accounting fields, and user isolation
+  - frontend i18n lint, formatting, and production build pass
+  - Windows-native 5200 acceptance passes through the verified database backup gate
+progress_percent: 35
+last_checkpoint: implementation and focused tests added; verification pending
+current_step: focused backend tests and frontend checks
+last_checkpoint_evidence: pending
 blocked_reason: none
-next_action: report final evidence to Codex review session for integration decision
-last_updated: '2026-10-14T07:33:08Z'
+next_action: format, run tests, build, and verify native 5200
+last_updated: '2026-10-22T04:37:26Z'
 
 

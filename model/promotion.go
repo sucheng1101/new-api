@@ -132,7 +132,7 @@ func ListPromotionInvitees(userId, limit, offset int) ([]PromotionInvitee, int64
 		if err := DB.Model(&PromotionReward{}).Where("beneficiary_user_id = ? AND payer_user_id = ?", userId, user.Id).Select("COALESCE(SUM(reward_quota), 0)").Scan(&reward).Error; err != nil {
 			return err
 		}
-		items = append(items, PromotionInvitee{Id: user.Id, Username: maskPromotionUsername(user.Username), CreatedAt: user.CreatedAt, Level: level, RewardQuota: reward})
+		items = append(items, PromotionInvitee{Id: user.Id, Username: user.Username, CreatedAt: user.CreatedAt, Level: level, RewardQuota: reward})
 		return nil
 	}
 	for _, user := range direct {
@@ -156,17 +156,6 @@ func ListPromotionInvitees(userId, limit, offset int) ([]PromotionInvitee, int64
 	return items[offset:end], total, nil
 }
 
-func maskPromotionUsername(username string) string {
-	runes := []rune(username)
-	if len(runes) == 0 {
-		return ""
-	}
-	if len(runes) <= 2 {
-		return string(runes[:1]) + "*"
-	}
-	return string(runes[:1]) + "***" + string(runes[len(runes)-1:])
-}
-
 func ListPromotionRewards(userId int, limit, offset int) ([]PromotionReward, int64, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -187,17 +176,19 @@ func ListPromotionRewards(userId int, limit, offset int) ([]PromotionReward, int
 }
 
 type PromotionRewardDetail struct {
-	Id            int    `json:"id"`
-	PayerUsername string `json:"payer_username"`
-	SourceType    string `json:"source_type"`
-	Level         int    `json:"level"`
-	RewardQuota   int    `json:"reward_quota"`
-	Status        string `json:"status"`
-	CreatedAt     int64  `json:"created_at"`
+	Id             int    `json:"id"`
+	PayerUsername  string `json:"payer_username"`
+	UplineUsername string `json:"upline_username"`
+	SourceType     string `json:"source_type"`
+	Level          int    `json:"level"`
+	BaseQuota      int    `json:"base_quota"`
+	RewardQuota    int    `json:"reward_quota"`
+	Status         string `json:"status"`
+	CreatedAt      int64  `json:"created_at"`
 }
 
-// ListPromotionRewardDetails returns only the reward ledger fields intended
-// for the current beneficiary. It omits payment face values and source refs.
+// ListPromotionRewardDetails returns auditable reward details for the current
+// beneficiary without exposing source references or database user IDs.
 func ListPromotionRewardDetails(userId, limit, offset int) ([]PromotionRewardDetail, int64, error) {
 	rewards, total, err := ListPromotionRewards(userId, limit, offset)
 	if err != nil {
@@ -215,26 +206,47 @@ func ListPromotionRewardDetails(userId, limit, offset int) ([]PromotionRewardDet
 		seen[reward.PayerUserId] = struct{}{}
 		payerIDs = append(payerIDs, reward.PayerUserId)
 	}
-	payers := make(map[int]string, len(payerIDs))
+	payers := make(map[int]User, len(payerIDs))
+	uplineIDs := make([]int, 0, len(payerIDs))
+	uplineSeen := make(map[int]struct{}, len(payerIDs))
 	if len(payerIDs) > 0 {
 		var users []User
-		if err := DB.Select("id", "username").Where("id IN ?", payerIDs).Find(&users).Error; err != nil {
+		if err := DB.Select("id", "username", "inviter_id").Where("id IN ?", payerIDs).Find(&users).Error; err != nil {
 			return nil, 0, err
 		}
 		for _, user := range users {
-			payers[user.Id] = maskPromotionUsername(user.Username)
+			payers[user.Id] = user
+			if user.InviterId > 0 {
+				if _, exists := uplineSeen[user.InviterId]; !exists {
+					uplineSeen[user.InviterId] = struct{}{}
+					uplineIDs = append(uplineIDs, user.InviterId)
+				}
+			}
+		}
+	}
+	uplines := make(map[int]string, len(uplineIDs))
+	if len(uplineIDs) > 0 {
+		var users []User
+		if err := DB.Select("id", "username").Where("id IN ?", uplineIDs).Find(&users).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, user := range users {
+			uplines[user.Id] = user.Username
 		}
 	}
 	details := make([]PromotionRewardDetail, 0, len(rewards))
 	for _, reward := range rewards {
+		payer := payers[reward.PayerUserId]
 		details = append(details, PromotionRewardDetail{
-			Id:            reward.Id,
-			PayerUsername: payers[reward.PayerUserId],
-			SourceType:    reward.SourceType,
-			Level:         reward.Level,
-			RewardQuota:   reward.RewardQuota,
-			Status:        reward.Status,
-			CreatedAt:     reward.CreatedAt,
+			Id:             reward.Id,
+			PayerUsername:  payer.Username,
+			UplineUsername: uplines[payer.InviterId],
+			SourceType:     reward.SourceType,
+			Level:          reward.Level,
+			BaseQuota:      reward.BaseQuota,
+			RewardQuota:    reward.RewardQuota,
+			Status:         reward.Status,
+			CreatedAt:      reward.CreatedAt,
 		})
 	}
 	return details, total, nil
