@@ -17,9 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Button, Spin, Tooltip } from '@douyinfe/semi-ui';
-import { Copy, Eye, EyeOff, Zap } from 'lucide-react';
+import { Copy, Eye, EyeOff, RefreshCw, Zap } from 'lucide-react';
 import PropTypes from 'prop-types';
 import { API } from '../../../helpers';
 import { getServerAddress } from '../../../helpers/token';
@@ -37,27 +43,68 @@ const normalizeRecordUrl = (record) => {
 const TokenEndpointBar = ({ copyText, t }) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [showAddresses, setShowAddresses] = useState(true);
   const [useCurrentOrigin, setUseCurrentOrigin] = useState(false);
   const currentOrigin = useMemo(() => getServerAddress(), []);
+  const requestRef = useRef(null);
+  const hasLoadedRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  useEffect(() => {
-    let mounted = true;
-    API.get('/api/user/direct-ip-whitelist')
-      .then((response) => {
-        if (!mounted || !response.data?.success) return;
+  const loadRecords = useCallback(() => {
+    if (requestRef.current) return requestRef.current;
+
+    const initialLoad = !hasLoadedRef.current;
+    setLoadError('');
+    if (initialLoad) setLoading(true);
+    else setRefreshing(true);
+
+    const request = (async () => {
+      try {
+        const response = await API.get('/api/user/direct-ip-whitelist');
+        if (!response.data?.success) {
+          throw new Error(response.data?.message || t('加载域名配置失败'));
+        }
         const data = response.data.data || {};
+        if (!mountedRef.current) return;
         setRecords(Array.isArray(data.records) ? data.records : []);
         setUseCurrentOrigin(data.token_use_current_origin === true);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => {
-      mounted = false;
+      } catch (error) {
+        if (!mountedRef.current) return;
+        setLoadError(
+          error?.response?.data?.message ||
+            error?.message ||
+            t('加载域名配置失败'),
+        );
+      } finally {
+        hasLoadedRef.current = true;
+        requestRef.current = null;
+        if (mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    })();
+    requestRef.current = request;
+    return request;
+  }, [t]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') loadRecords();
     };
-  }, []);
+
+    loadRecords();
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [loadRecords]);
 
   const displayRecords = useMemo(() => {
     const visibleRecords = records
@@ -134,11 +181,27 @@ const TokenEndpointBar = ({ copyText, t }) => {
         </span>
       ))}
       {loading && <Spin size='small' />}
-      {!loading && displayRecords.length === 0 && (
+      {!loading && !loadError && displayRecords.length === 0 && (
         <span className='text-xs text-semi-color-text-2'>
           {t('暂无可用 API 地址')}
         </span>
       )}
+      {loadError && (
+        <span className='text-xs text-semi-color-danger' role='alert'>
+          {loadError}
+        </span>
+      )}
+      <Tooltip content={t('刷新域名配置')} position='top'>
+        <Button
+          theme='borderless'
+          size='small'
+          loading={refreshing || loading}
+          disabled={loading || refreshing}
+          icon={<RefreshCw size={14} />}
+          aria-label={t('刷新域名配置')}
+          onClick={loadRecords}
+        />
+      </Tooltip>
       {displayRecords.length > 0 && (
         <Tooltip
           content={t(showAddresses ? '隐藏令牌地址' : '显示令牌地址')}
