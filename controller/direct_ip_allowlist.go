@@ -35,6 +35,7 @@ func GetDirectIPAllowlist(c *gin.Context) {
 		"direct_hosts":             common.DirectAPIHosts(),
 		"endpoints":                common.EnabledDirectAPIEndpoints(),
 		"records":                  common.EnabledDirectAPIRecords(),
+		"token_base_url_visible":   common.DirectAPIBaseURLVisibleInTokenManagement(),
 		"token_use_current_origin": common.DirectAPITokenUseCurrentOrigin(),
 	})
 }
@@ -169,21 +170,25 @@ type directAPIConfigRequest struct {
 }
 
 type directAPIEndpointRequest struct {
-	Kind        string `json:"kind"`
-	Name        string `json:"name"`
-	Endpoint    string `json:"endpoint"`
-	Description string `json:"description"`
-	Enabled     *bool  `json:"enabled"`
-	SortOrder   *int   `json:"sort_order"`
+	Kind                  string `json:"kind"`
+	Name                  string `json:"name"`
+	Endpoint              string `json:"endpoint"`
+	Description           string `json:"description"`
+	Enabled               *bool  `json:"enabled"`
+	ShowInTokenManagement *bool  `json:"show_in_token_management"`
+	DirectAccessEnabled   *bool  `json:"direct_access_enabled"`
+	SortOrder             *int   `json:"sort_order"`
 }
 
 type directAPIEndpointPatchRequest struct {
-	Kind        *string `json:"kind"`
-	Name        *string `json:"name"`
-	Endpoint    *string `json:"endpoint"`
-	Description *string `json:"description"`
-	Enabled     *bool   `json:"enabled"`
-	SortOrder   *int    `json:"sort_order"`
+	Kind                  *string `json:"kind"`
+	Name                  *string `json:"name"`
+	Endpoint              *string `json:"endpoint"`
+	Description           *string `json:"description"`
+	Enabled               *bool   `json:"enabled"`
+	ShowInTokenManagement *bool   `json:"show_in_token_management"`
+	DirectAccessEnabled   *bool   `json:"direct_access_enabled"`
+	SortOrder             *int    `json:"sort_order"`
 }
 
 func parseDirectAPIEndpointID(c *gin.Context) (int, bool) {
@@ -203,7 +208,13 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 	}
 	endpoints := common.DirectAPIEndpoints()
 	if id == 0 {
-		item := common.DirectAPIEndpoint{Kind: req.Kind, Name: req.Name, Endpoint: req.Endpoint, Description: req.Description, Enabled: true, UpdatedAt: common.GetTimestamp()}
+		item := common.DirectAPIEndpoint{
+			Kind: req.Kind, Name: req.Name, Endpoint: req.Endpoint,
+			Description: req.Description, Enabled: true,
+			ShowInTokenManagement: req.ShowInTokenManagement,
+			DirectAccessEnabled:   req.DirectAccessEnabled,
+			UpdatedAt:             common.GetTimestamp(),
+		}
 		if req.Enabled != nil {
 			item.Enabled = *req.Enabled
 		}
@@ -224,6 +235,18 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 			endpoints[i].Name, endpoints[i].Endpoint, endpoints[i].Description = req.Name, req.Endpoint, req.Description
 			if req.Enabled != nil {
 				endpoints[i].Enabled = *req.Enabled
+				if req.ShowInTokenManagement == nil && req.DirectAccessEnabled == nil {
+					visible := *req.Enabled
+					directAccess := *req.Enabled && common.DirectAPIRecordKind(endpoints[i]) == common.DirectAPIRecordKindHost
+					endpoints[i].ShowInTokenManagement = &visible
+					endpoints[i].DirectAccessEnabled = &directAccess
+				}
+			}
+			if req.ShowInTokenManagement != nil {
+				endpoints[i].ShowInTokenManagement = req.ShowInTokenManagement
+			}
+			if req.DirectAccessEnabled != nil {
+				endpoints[i].DirectAccessEnabled = req.DirectAccessEnabled
 			}
 			if req.SortOrder != nil {
 				endpoints[i].SortOrder = *req.SortOrder
@@ -296,6 +319,18 @@ func PatchDirectAPIEndpoint(c *gin.Context) {
 		}
 		if req.Enabled != nil {
 			endpoints[i].Enabled = *req.Enabled
+			if req.ShowInTokenManagement == nil && req.DirectAccessEnabled == nil {
+				visible := *req.Enabled
+				directAccess := *req.Enabled && common.DirectAPIRecordKind(endpoints[i]) == common.DirectAPIRecordKindHost
+				endpoints[i].ShowInTokenManagement = &visible
+				endpoints[i].DirectAccessEnabled = &directAccess
+			}
+		}
+		if req.ShowInTokenManagement != nil {
+			endpoints[i].ShowInTokenManagement = req.ShowInTokenManagement
+		}
+		if req.DirectAccessEnabled != nil {
+			endpoints[i].DirectAccessEnabled = req.DirectAccessEnabled
 		}
 		if req.SortOrder != nil {
 			endpoints[i].SortOrder = *req.SortOrder

@@ -47,6 +47,7 @@ const TokenEndpointBar = ({ copyText, t }) => {
   const [loadError, setLoadError] = useState('');
   const [showAddresses, setShowAddresses] = useState(true);
   const [useCurrentOrigin, setUseCurrentOrigin] = useState(false);
+  const [tokenBaseURLVisible, setTokenBaseURLVisible] = useState(true);
   const currentOrigin = useMemo(() => getServerAddress(), []);
   const requestRef = useRef(null);
   const hasLoadedRef = useRef(false);
@@ -70,6 +71,7 @@ const TokenEndpointBar = ({ copyText, t }) => {
         if (!mountedRef.current) return;
         setRecords(Array.isArray(data.records) ? data.records : []);
         setUseCurrentOrigin(data.token_use_current_origin === true);
+        setTokenBaseURLVisible(data.token_base_url_visible !== false);
       } catch (error) {
         if (!mountedRef.current) return;
         setLoadError(
@@ -109,10 +111,14 @@ const TokenEndpointBar = ({ copyText, t }) => {
   const displayRecords = useMemo(() => {
     const visibleRecords = records
       .filter(
-        (record) => record?.enabled !== false && normalizeRecordUrl(record),
+        (record) =>
+          record?.enabled !== false &&
+          record?.show_in_token_management !== false &&
+          normalizeRecordUrl(record),
       )
       .map((record) => ({ ...record, displayUrl: normalizeRecordUrl(record) }));
-    if (!useCurrentOrigin || !currentOrigin) return visibleRecords;
+    if (!useCurrentOrigin || !currentOrigin || !tokenBaseURLVisible)
+      return visibleRecords;
 
     const baseURLIndex = visibleRecords.findIndex(
       (record) => record.kind === 'base_url',
@@ -136,7 +142,7 @@ const TokenEndpointBar = ({ copyText, t }) => {
       },
       ...visibleRecords,
     ];
-  }, [currentOrigin, records, t, useCurrentOrigin]);
+  }, [currentOrigin, records, t, tokenBaseURLVisible, useCurrentOrigin]);
 
   return (
     <div className='flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-sm'>

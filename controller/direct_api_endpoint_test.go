@@ -148,6 +148,45 @@ func TestDirectAPIRecordKindCRUDHandlers(t *testing.T) {
 	require.True(t, common.DirectAPIEndpoints()[0].UpdatedAt > 0)
 }
 
+func TestDirectAPIEndpointPurposeSwitchesAreIndependent(t *testing.T) {
+	setupDirectAPIEndpointControllerTest(t)
+
+	createContext, createRecorder := endpointContext("POST", "/api/admin/security/direct-api-endpoints", []byte(`{"kind":"host","name":"Gateway","endpoint":"gw.example.com","show_in_token_management":false,"direct_access_enabled":true}`))
+	CreateDirectAPIEndpoint(createContext)
+	var createResponse struct {
+		Success bool                     `json:"success"`
+		Data    common.DirectAPIEndpoint `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(createRecorder.Body.Bytes(), &createResponse))
+	require.True(t, createResponse.Success)
+	require.Equal(t, []string{"gw.example.com"}, common.DirectAPIHosts())
+	require.Empty(t, common.EnabledDirectAPIRecords())
+
+	directContext, directRecorder := endpointContext("PATCH", "/api/admin/security/direct-api-endpoints/1", []byte(`{"direct_access_enabled":false}`))
+	directContext.Params = gin.Params{{Key: "id", Value: "1"}}
+	PatchDirectAPIEndpoint(directContext)
+	var directResponse struct {
+		Success bool                     `json:"success"`
+		Data    common.DirectAPIEndpoint `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(directRecorder.Body.Bytes(), &directResponse))
+	require.True(t, directResponse.Success)
+	require.Empty(t, common.DirectAPIHosts())
+	require.Empty(t, common.EnabledDirectAPIRecords())
+
+	visibleContext, visibleRecorder := endpointContext("PATCH", "/api/admin/security/direct-api-endpoints/1", []byte(`{"show_in_token_management":true}`))
+	visibleContext.Params = gin.Params{{Key: "id", Value: "1"}}
+	PatchDirectAPIEndpoint(visibleContext)
+	var visibleResponse struct {
+		Success bool                     `json:"success"`
+		Data    common.DirectAPIEndpoint `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(visibleRecorder.Body.Bytes(), &visibleResponse))
+	require.True(t, visibleResponse.Success)
+	require.Empty(t, common.DirectAPIHosts())
+	require.Len(t, common.EnabledDirectAPIRecords(), 1)
+}
+
 func TestUpdateDirectAPIConfigPatchPreservesOmittedFields(t *testing.T) {
 	setupDirectAPIEndpointControllerTest(t)
 	common.OptionMapRWMutex.Lock()

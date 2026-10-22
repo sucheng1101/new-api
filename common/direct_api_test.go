@@ -120,6 +120,44 @@ func TestValidateDirectAPIRecordKinds(t *testing.T) {
 	require.Error(t, err)
 	_, err = ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{Kind: "bogus", Endpoint: "https://api.example.com"}})
 	require.Error(t, err)
+
+	directAccess := true
+	_, err = ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{
+		Kind: DirectAPIRecordKindEndpoint, Name: "mirror",
+		Endpoint: "https://api.example.com/v1", DirectAccessEnabled: &directAccess,
+	}})
+	require.Error(t, err)
+}
+
+func TestDirectAPIRecordPurposesAreIndependent(t *testing.T) {
+	OptionMapRWMutex.Lock()
+	previous := OptionMap
+	OptionMap = map[string]string{}
+	showHost := false
+	directHost := true
+	hideBaseURL := false
+	showEndpoint := true
+	noDirectEndpoint := false
+	encoded, err := Marshal([]DirectAPIEndpoint{
+		{ID: 1, Kind: DirectAPIRecordKindHost, Name: "gateway", Endpoint: "api.example.com", Enabled: true, ShowInTokenManagement: &showHost, DirectAccessEnabled: &directHost},
+		{ID: 2, Kind: DirectAPIRecordKindBaseURL, Name: "primary", Endpoint: "https://api.example.com/v1", Enabled: true, ShowInTokenManagement: &hideBaseURL},
+		{ID: 3, Kind: DirectAPIRecordKindEndpoint, Name: "mirror", Endpoint: "https://mirror.example.com/v1", Enabled: true, ShowInTokenManagement: &showEndpoint, DirectAccessEnabled: &noDirectEndpoint},
+	})
+	require.NoError(t, err)
+	OptionMap["DirectAPIEndpoints"] = string(encoded)
+	OptionMap[DirectAPIRecordsMigratedOption] = "true"
+	OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		OptionMapRWMutex.Lock()
+		OptionMap = previous
+		OptionMapRWMutex.Unlock()
+	})
+
+	require.Equal(t, []string{"api.example.com"}, DirectAPIHosts())
+	require.False(t, DirectAPIBaseURLVisibleInTokenManagement())
+	visibleRecords := EnabledDirectAPIRecords()
+	require.Len(t, visibleRecords, 1)
+	require.Equal(t, "mirror", visibleRecords[0].Name)
 }
 
 func TestDirectAPIRecordsDriveHostsAndBaseURL(t *testing.T) {

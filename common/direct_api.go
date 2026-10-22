@@ -29,14 +29,16 @@ const DirectAPIRecordsMigratedOption = "DirectAPIRecordsMigrated"
 // or an additional OpenAI-compatible endpoint (kind=endpoint). The zero value
 // kind is interpreted as an endpoint for backward compatibility.
 type DirectAPIEndpoint struct {
-	ID          int    `json:"id"`
-	Kind        string `json:"kind,omitempty"`
-	Name        string `json:"name"`
-	Endpoint    string `json:"endpoint"`
-	Description string `json:"description"`
-	Enabled     bool   `json:"enabled"`
-	SortOrder   int    `json:"sort_order"`
-	UpdatedAt   int64  `json:"updated_at,omitempty"`
+	ID                    int    `json:"id"`
+	Kind                  string `json:"kind,omitempty"`
+	Name                  string `json:"name"`
+	Endpoint              string `json:"endpoint"`
+	Description           string `json:"description"`
+	Enabled               bool   `json:"enabled"`
+	ShowInTokenManagement *bool  `json:"show_in_token_management,omitempty"`
+	DirectAccessEnabled   *bool  `json:"direct_access_enabled,omitempty"`
+	SortOrder             int    `json:"sort_order"`
+	UpdatedAt             int64  `json:"updated_at,omitempty"`
 }
 
 // DirectAPIRecordKind normalizes a record kind. Unknown kinds are returned
@@ -54,6 +56,32 @@ func DirectAPIRecordKind(item DirectAPIEndpoint) string {
 	}
 }
 
+func (item DirectAPIEndpoint) IsShownInTokenManagement() bool {
+	if item.ShowInTokenManagement != nil {
+		return *item.ShowInTokenManagement
+	}
+	return item.Enabled
+}
+
+func (item DirectAPIEndpoint) IsDirectAccessEnabled() bool {
+	if item.DirectAccessEnabled != nil {
+		return *item.DirectAccessEnabled
+	}
+	return DirectAPIRecordKind(item) == DirectAPIRecordKindHost && item.Enabled
+}
+
+func normalizeDirectAPIRecordPurposes(item *DirectAPIEndpoint) {
+	if item.ShowInTokenManagement == nil {
+		visible := item.Enabled
+		item.ShowInTokenManagement = &visible
+	}
+	if item.DirectAccessEnabled == nil {
+		directAccess := DirectAPIRecordKind(*item) == DirectAPIRecordKindHost && item.Enabled
+		item.DirectAccessEnabled = &directAccess
+	}
+	item.Enabled = item.IsShownInTokenManagement() || item.IsDirectAccessEnabled()
+}
+
 // DirectAPIEndpoints returns the administrator-managed unified record list.
 // Invalid persisted JSON is treated as an empty list so a malformed optional
 // setting cannot prevent the rest of the console from loading.
@@ -67,6 +95,9 @@ func DirectAPIEndpoints() []DirectAPIEndpoint {
 	var endpoints []DirectAPIEndpoint
 	if err := UnmarshalJsonStr(raw, &endpoints); err != nil || endpoints == nil {
 		return nil
+	}
+	for i := range endpoints {
+		normalizeDirectAPIRecordPurposes(&endpoints[i])
 	}
 	return endpoints
 }
@@ -95,12 +126,10 @@ func EnabledDirectAPIEndpoints() []DirectAPIEndpoint {
 	endpoints := DirectAPIEndpoints()
 	result := make([]DirectAPIEndpoint, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		if DirectAPIRecordKind(endpoint) != DirectAPIRecordKindEndpoint {
+		if DirectAPIRecordKind(endpoint) != DirectAPIRecordKindEndpoint || !endpoint.IsShownInTokenManagement() {
 			continue
 		}
-		if endpoint.Enabled {
-			result = append(result, endpoint)
-		}
+		result = append(result, endpoint)
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].SortOrder == result[j].SortOrder {
@@ -118,7 +147,7 @@ func EnabledDirectAPIRecords() []DirectAPIEndpoint {
 	endpoints := DirectAPIEndpoints()
 	result := make([]DirectAPIEndpoint, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		if endpoint.Enabled {
+		if endpoint.IsShownInTokenManagement() {
 			result = append(result, endpoint)
 		}
 	}
@@ -162,6 +191,10 @@ func ValidateDirectAPIEndpoints(input []DirectAPIEndpoint) ([]DirectAPIEndpoint,
 	for _, item := range input {
 		kind := DirectAPIRecordKind(item)
 		item.Kind = kind
+		normalizeDirectAPIRecordPurposes(&item)
+		if item.IsDirectAccessEnabled() && kind != DirectAPIRecordKindHost {
+			return nil, fmt.Errorf("direct access is only available for host records")
+		}
 		item.Name = strings.TrimSpace(item.Name)
 		item.Description = strings.TrimSpace(item.Description)
 		switch kind {
@@ -252,7 +285,7 @@ func DirectAPIHosts() []string {
 	hosts := make([]string, 0)
 	seen := make(map[string]struct{})
 	for _, record := range DirectAPIEndpoints() {
-		if DirectAPIRecordKind(record) != DirectAPIRecordKindHost || !record.Enabled {
+		if DirectAPIRecordKind(record) != DirectAPIRecordKindHost || !record.IsDirectAccessEnabled() {
 			continue
 		}
 		host := normalizeDirectAPIHost(record.Endpoint)
@@ -344,6 +377,15 @@ func DirectAPIBaseURL() string {
 		return ""
 	}
 	return legacyDirectAPIBaseURL()
+}
+
+func DirectAPIBaseURLVisibleInTokenManagement() bool {
+	for _, record := range DirectAPIEndpoints() {
+		if DirectAPIRecordKind(record) == DirectAPIRecordKindBaseURL {
+			return record.IsShownInTokenManagement()
+		}
+	}
+	return true
 }
 
 // legacyDirectAPIBaseURL derives the public base URL from the pre-migration

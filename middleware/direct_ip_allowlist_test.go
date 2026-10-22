@@ -61,3 +61,12 @@ func TestEnforceDirectIPAllowlistRejectsIPv6(t *testing.T) {
 	assert.False(t, enforceDirectIPAllowlist(context, 42))
 	assert.Equal(t, http.StatusForbidden, recorder.Code)
 }
+
+func TestEnforceDirectIPAllowlistDeniesEmptyListOnDirectHost(t *testing.T) {
+	setupDirectIPAllowlistMiddlewareTest(t)
+	t.Setenv("DIRECT_API_HOST", "gw.example.com")
+	context, recorder := directIPAllowlistTestContext("gw.example.com", "203.0.113.10:4321")
+
+	assert.False(t, enforceDirectIPAllowlist(context, 42))
+	assert.Equal(t, http.StatusForbidden, recorder.Code)
+}

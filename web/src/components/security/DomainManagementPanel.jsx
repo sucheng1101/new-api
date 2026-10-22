@@ -138,11 +138,11 @@ const DomainManagementPanel = ({
     (kind) => {
       switch (normalizeKind(kind)) {
         case 'host':
-          return t('域名');
+          return t('直连入口域名');
         case 'base_url':
-          return t('API 地址');
+          return t('默认 API 地址');
         default:
-          return t('端点');
+          return t('附加 API 地址');
       }
     },
     [t],
@@ -151,9 +151,9 @@ const DomainManagementPanel = ({
   const kindOptions = useMemo(
     () =>
       [
-        { value: 'host', label: t('域名') },
-        { value: 'base_url', label: t('API 地址') },
-        { value: 'endpoint', label: t('端点') },
+        { value: 'host', label: t('直连入口域名') },
+        { value: 'base_url', label: t('默认 API 地址') },
+        { value: 'endpoint', label: t('附加 API 地址') },
       ].filter(
         (option) =>
           !Array.isArray(recordKinds) || recordKinds.includes(option.value),
@@ -237,7 +237,10 @@ const DomainManagementPanel = ({
         name: (values.name || '').trim(),
         endpoint: (values.endpoint || '').trim(),
         description: (values.description || '').trim(),
-        enabled: values.enabled !== false,
+        show_in_token_management: values.show_in_token_management !== false,
+        direct_access_enabled:
+          normalizeKind(values.kind) === 'host' &&
+          editing?.direct_access_enabled === true,
         sort_order: Number(values.sort_order || 0),
       };
       const response = editing
@@ -345,13 +348,13 @@ const DomainManagementPanel = ({
             <div className='flex flex-wrap items-center justify-end gap-3'>
               <div className='flex items-center gap-2'>
                 <span className='text-xs text-semi-color-text-2'>
-                  {t('令牌地址使用当前访问入口')}
+                  {t('令牌默认地址使用当前访问入口')}
                 </span>
                 <Switch
                   checked={tokenUseCurrentOrigin}
                   loading={originSettingLoading}
                   disabled={loading}
-                  aria-label={t('令牌地址使用当前访问入口')}
+                  aria-label={t('令牌默认地址使用当前访问入口')}
                   onChange={updateTokenOriginPreference}
                 />
               </div>
@@ -480,17 +483,34 @@ const DomainManagementPanel = ({
               ),
             },
             {
-              title: t('状态'),
-              dataIndex: 'enabled',
+              title: t('令牌管理显示'),
+              dataIndex: 'show_in_token_management',
               width: 90,
-              render: (value, record) => (
+              render: (_, record) => (
                 <Switch
-                  checked={value}
+                  checked={record.show_in_token_management === true}
                   onChange={(checked) =>
-                    patchRecord(record, { enabled: checked })
+                    patchRecord(record, { show_in_token_management: checked })
                   }
                 />
               ),
+            },
+            {
+              title: t('直连白名单校验'),
+              dataIndex: 'direct_access_enabled',
+              width: 120,
+              render: (_, record) =>
+                normalizeKind(record.kind) === 'host' ? (
+                  <Switch
+                    checked={record.direct_access_enabled === true}
+                    aria-label={`${t('直连白名单校验')}: ${record.name || record.endpoint}`}
+                    onChange={(checked) =>
+                      patchRecord(record, { direct_access_enabled: checked })
+                    }
+                  />
+                ) : (
+                  <span className='text-semi-color-text-2'>-</span>
+                ),
             },
             {
               title: t('排序'),
@@ -545,7 +565,12 @@ const DomainManagementPanel = ({
         <Form
           key={editing?.id || 'new'}
           initValues={
-            editing || { kind: defaultKind, enabled: true, sort_order: 0 }
+            editing || {
+              kind: defaultKind,
+              show_in_token_management: true,
+              direct_access_enabled: false,
+              sort_order: 0,
+            }
           }
           onSubmit={saveRecord}
           layout='vertical'
@@ -573,8 +598,11 @@ const DomainManagementPanel = ({
             label={t('描述')}
             placeholder={t('展示给用户的说明，可编辑')}
           />
+          <Form.Switch
+            field='show_in_token_management'
+            label={t('在令牌管理中显示')}
+          />
           <Form.Input field='sort_order' label={t('排序')} />
-          <Form.Switch field='enabled' label={t('启用')} />
           <div className='flex justify-end gap-2'>
             <Button onClick={() => setModalVisible(false)}>{t('取消')}</Button>
             <Button htmlType='submit' type='primary'>

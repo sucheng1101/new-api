@@ -23,9 +23,9 @@ import { Check, Copy, Eye, EyeOff, Pencil, Trash2, Zap } from 'lucide-react';
 import PropTypes from 'prop-types';
 
 const KIND_LABELS = {
-  host: '域名',
-  base_url: 'API 地址',
-  endpoint: 'API 端点',
+  host: '直连入口域名',
+  base_url: '默认 API 地址',
+  endpoint: '附加 API 地址',
 };
 const KIND_COLORS = { host: 'blue', base_url: 'cyan', endpoint: 'green' };
 
