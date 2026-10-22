@@ -21,7 +21,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLucideIcon } from '../../helpers/render';
-import { ChevronLeft } from 'lucide-react';
+import { ArrowUpRight, ChevronLeft, Sparkles } from 'lucide-react';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
 import {
   getCustomExternalMenuItems,
@@ -583,6 +583,40 @@ const SiderBar = ({ onNavigate = () => {} }) => {
             )}
         </Nav>
       </SkeletonWrapper>
+
+      {!sidebarLoading && isModuleVisible('personal', 'promotion') && (
+        <Link
+          to='/console/promotion'
+          onClick={onNavigate}
+          className={`sidebar-promotion-hint${
+            location.pathname === '/console/promotion'
+              ? ' sidebar-promotion-hint-active'
+              : ''
+          }`}
+          aria-label={t('专属推广官')}
+          title={collapsed ? t('专属推广官') : undefined}
+        >
+          <span className='sidebar-promotion-hint-icon' aria-hidden='true'>
+            <Sparkles size={15} />
+          </span>
+          <span className='sidebar-promotion-hint-content'>
+            <span className='sidebar-promotion-hint-title'>
+              {t('专属推广官')}
+            </span>
+            <span className='sidebar-promotion-hint-text'>
+              {t(
+                '好友使用你的邀请链接注册，成功充值或兑换后，你可按推广规则获得奖励，奖励自动计入推广余额。',
+              )}
+            </span>
+            <span className='sidebar-promotion-hint-action'>
+              <span>{t('马上出发')}</span>
+              <span className='sidebar-promotion-hint-arrow' aria-hidden='true'>
+                <ArrowUpRight size={14} />
+              </span>
+            </span>
+          </span>
+        </Link>
+      )}
 
       {/* 底部折叠按钮 */}
       <div className='sidebar-collapse-button'>
