@@ -28,13 +28,14 @@ func GetDirectIPAllowlist(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"items":        entries,
-		"count":        len(entries),
-		"max":          model.DirectIPAllowlistMaxEntries,
-		"base_url":     common.DirectAPIBaseURL(),
-		"direct_hosts": common.DirectAPIHosts(),
-		"endpoints":    common.EnabledDirectAPIEndpoints(),
-		"records":      common.EnabledDirectAPIRecords(),
+		"items":                    entries,
+		"count":                    len(entries),
+		"max":                      model.DirectIPAllowlistMaxEntries,
+		"base_url":                 common.DirectAPIBaseURL(),
+		"direct_hosts":             common.DirectAPIHosts(),
+		"endpoints":                common.EnabledDirectAPIEndpoints(),
+		"records":                  common.EnabledDirectAPIRecords(),
+		"token_use_current_origin": common.DirectAPITokenUseCurrentOrigin(),
 	})
 }
 
@@ -150,19 +151,21 @@ func GetDirectAPIConfig(c *gin.Context) {
 	baseURL := common.OptionMap["DirectAPIBaseURL"]
 	common.OptionMapRWMutex.RUnlock()
 	common.ApiSuccess(c, gin.H{
-		"hosts":             hosts,
-		"base_url":          baseURL,
-		"records":           common.DirectAPIEndpoints(),
-		"endpoints":         common.DirectAPIEndpoints(),
-		"resolved_hosts":    common.DirectAPIHosts(),
-		"resolved_base_url": common.DirectAPIBaseURL(),
+		"hosts":                    hosts,
+		"base_url":                 baseURL,
+		"records":                  common.DirectAPIEndpoints(),
+		"endpoints":                common.DirectAPIEndpoints(),
+		"resolved_hosts":           common.DirectAPIHosts(),
+		"resolved_base_url":        common.DirectAPIBaseURL(),
+		"token_use_current_origin": common.DirectAPITokenUseCurrentOrigin(),
 	})
 }
 
 type directAPIConfigRequest struct {
-	Hosts     *string                     `json:"hosts"`
-	BaseURL   *string                     `json:"base_url"`
-	Endpoints *[]common.DirectAPIEndpoint `json:"endpoints"`
+	Hosts                 *string                     `json:"hosts"`
+	BaseURL               *string                     `json:"base_url"`
+	Endpoints             *[]common.DirectAPIEndpoint `json:"endpoints"`
+	TokenUseCurrentOrigin *bool                       `json:"token_use_current_origin"`
 }
 
 type directAPIEndpointRequest struct {
@@ -350,10 +353,28 @@ func UpdateDirectAPIConfig(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if req.TokenUseCurrentOrigin != nil {
+		if err := model.UpdateOption(common.DirectAPITokenUseCurrentOriginKey, strconv.FormatBool(*req.TokenUseCurrentOrigin)); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	common.OptionMapRWMutex.RLock()
 	hostsValue := common.OptionMap["DirectAPIHosts"]
 	baseURLValue := common.OptionMap["DirectAPIBaseURL"]
 	common.OptionMapRWMutex.RUnlock()
+	if req.Hosts == nil && req.BaseURL == nil && req.Endpoints == nil {
+		common.ApiSuccess(c, gin.H{
+			"hosts":                    hostsValue,
+			"base_url":                 baseURLValue,
+			"records":                  common.DirectAPIEndpoints(),
+			"endpoints":                common.DirectAPIEndpoints(),
+			"resolved_hosts":           common.DirectAPIHosts(),
+			"resolved_base_url":        common.DirectAPIBaseURL(),
+			"token_use_current_origin": common.DirectAPITokenUseCurrentOrigin(),
+		})
+		return
+	}
 	if req.Hosts != nil {
 		hostsValue = *req.Hosts
 	}
@@ -383,5 +404,5 @@ func UpdateDirectAPIConfig(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "endpoints": common.DirectAPIEndpoints(), "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL()})
+	common.ApiSuccess(c, gin.H{"hosts": hosts, "base_url": baseURL, "endpoints": common.DirectAPIEndpoints(), "resolved_hosts": common.DirectAPIHosts(), "resolved_base_url": common.DirectAPIBaseURL(), "token_use_current_origin": common.DirectAPITokenUseCurrentOrigin()})
 }

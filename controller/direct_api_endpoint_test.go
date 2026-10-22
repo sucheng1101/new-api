@@ -177,3 +177,32 @@ func TestUpdateDirectAPIConfigPatchPreservesOmittedFields(t *testing.T) {
 	require.Equal(t, 1, hosts)
 	require.Equal(t, 1, baseURLs)
 }
+
+func TestUpdateDirectAPIConfigCurrentOriginPatchPreservesRecords(t *testing.T) {
+	setupDirectAPIEndpointControllerTest(t)
+	require.NoError(t, model.UpdateDirectAPIEndpoints([]common.DirectAPIEndpoint{{
+		Kind:     common.DirectAPIRecordKindBaseURL,
+		Name:     "Primary",
+		Endpoint: "https://api.example.com",
+		Enabled:  true,
+	}}))
+
+	context, recorder := endpointContext("PATCH", "/api/admin/security/direct-api-config", []byte(`{"token_use_current_origin":true}`))
+	UpdateDirectAPIConfig(context)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			TokenUseCurrentOrigin bool `json:"token_use_current_origin"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.True(t, response.Data.TokenUseCurrentOrigin)
+	require.True(t, common.DirectAPITokenUseCurrentOrigin())
+	require.Len(t, common.DirectAPIEndpoints(), 1)
+	require.Equal(t, "https://api.example.com", common.DirectAPIEndpoints()[0].Endpoint)
+
+	var option model.Option
+	require.NoError(t, model.DB.Where("key = ?", common.DirectAPITokenUseCurrentOriginKey).First(&option).Error)
+	require.Equal(t, "true", option.Value)
+}

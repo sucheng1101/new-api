@@ -14,9 +14,10 @@ import (
 // records without a kind are treated as OpenAI-compatible endpoints, which
 // keeps previously persisted JSON fully backward compatible.
 const (
-	DirectAPIRecordKindHost     = "host"
-	DirectAPIRecordKindBaseURL  = "base_url"
-	DirectAPIRecordKindEndpoint = "endpoint"
+	DirectAPIRecordKindHost           = "host"
+	DirectAPIRecordKindBaseURL        = "base_url"
+	DirectAPIRecordKindEndpoint       = "endpoint"
+	DirectAPITokenUseCurrentOriginKey = "DirectAPITokenUseCurrentOrigin"
 )
 
 // DirectAPIRecordsMigratedOption marks that the legacy DirectAPIHosts and
@@ -68,6 +69,14 @@ func DirectAPIEndpoints() []DirectAPIEndpoint {
 		return nil
 	}
 	return endpoints
+}
+
+// DirectAPITokenUseCurrentOrigin reports whether token connection strings
+// should follow the browser entry point instead of the configured base URL.
+func DirectAPITokenUseCurrentOrigin() bool {
+	OptionMapRWMutex.RLock()
+	defer OptionMapRWMutex.RUnlock()
+	return strings.EqualFold(strings.TrimSpace(OptionMap[DirectAPITokenUseCurrentOriginKey]), "true")
 }
 
 // directAPIRecordsMigrated reports whether the unified record list became the

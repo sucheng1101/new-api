@@ -202,6 +202,17 @@ func GetPromotionRewards(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"items": rows, "total": total, "limit": limit, "offset": offset})
 }
 
+func GetPromotionRewardDetails(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	rows, total, err := model.ListPromotionRewardDetails(c.GetInt("id"), limit, offset)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": rows, "total": total, "limit": limit, "offset": offset})
+}
+
 func GetPromotionInvitees(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))

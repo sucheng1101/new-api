@@ -158,6 +158,9 @@ func ListPromotionInvitees(userId, limit, offset int) ([]PromotionInvitee, int64
 
 func maskPromotionUsername(username string) string {
 	runes := []rune(username)
+	if len(runes) == 0 {
+		return ""
+	}
 	if len(runes) <= 2 {
 		return string(runes[:1]) + "*"
 	}
@@ -181,6 +184,60 @@ func ListPromotionRewards(userId int, limit, offset int) ([]PromotionReward, int
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+type PromotionRewardDetail struct {
+	Id            int    `json:"id"`
+	PayerUsername string `json:"payer_username"`
+	SourceType    string `json:"source_type"`
+	Level         int    `json:"level"`
+	RewardQuota   int    `json:"reward_quota"`
+	Status        string `json:"status"`
+	CreatedAt     int64  `json:"created_at"`
+}
+
+// ListPromotionRewardDetails returns only the reward ledger fields intended
+// for the current beneficiary. It omits payment face values and source refs.
+func ListPromotionRewardDetails(userId, limit, offset int) ([]PromotionRewardDetail, int64, error) {
+	rewards, total, err := ListPromotionRewards(userId, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	payerIDs := make([]int, 0, len(rewards))
+	seen := make(map[int]struct{}, len(rewards))
+	for _, reward := range rewards {
+		if reward.PayerUserId <= 0 {
+			continue
+		}
+		if _, exists := seen[reward.PayerUserId]; exists {
+			continue
+		}
+		seen[reward.PayerUserId] = struct{}{}
+		payerIDs = append(payerIDs, reward.PayerUserId)
+	}
+	payers := make(map[int]string, len(payerIDs))
+	if len(payerIDs) > 0 {
+		var users []User
+		if err := DB.Select("id", "username").Where("id IN ?", payerIDs).Find(&users).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, user := range users {
+			payers[user.Id] = maskPromotionUsername(user.Username)
+		}
+	}
+	details := make([]PromotionRewardDetail, 0, len(rewards))
+	for _, reward := range rewards {
+		details = append(details, PromotionRewardDetail{
+			Id:            reward.Id,
+			PayerUsername: payers[reward.PayerUserId],
+			SourceType:    reward.SourceType,
+			Level:         reward.Level,
+			RewardQuota:   reward.RewardQuota,
+			Status:        reward.Status,
+			CreatedAt:     reward.CreatedAt,
+		})
+	}
+	return details, total, nil
 }
 
 func SetUserInviterWithAudit(userId, inviterId, operatorId int, reason string) error {

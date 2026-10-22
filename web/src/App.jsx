@@ -62,7 +62,6 @@ import ExternalPage from './pages/External';
 import Setup from './pages/Setup';
 import SetupCheck from './components/layout/SetupCheck';
 import DirectIPWhitelist from './pages/DirectIPWhitelist';
-import DomainManagement from './pages/DomainManagement';
 
 const Home = lazy(() => import('./pages/Home'));
 const Docs = lazy(() => import('./pages/Docs'));
@@ -258,7 +257,9 @@ function App() {
           path='/console/domain-management'
           element={
             <AdminRoute>
-              <DomainManagement />
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <SecurityAccess initialTab='domains' />
+              </Suspense>
             </AdminRoute>
           }
         />

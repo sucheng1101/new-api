@@ -391,11 +391,13 @@ function TokensPage() {
           <TokensDescription
             compactMode={compactMode}
             setCompactMode={setCompactMode}
+            endpointBar={
+              <TokenEndpointBar copyText={tokensData.copyText} t={t} />
+            }
             t={t}
           />
         }
         actionsArea={[
-          <TokenEndpointBar copyText={tokensData.copyText} t={t} />,
           <div className='flex flex-col md:flex-row justify-between items-center gap-2 w-full'>
             <TokensActions
               selectedKeys={selectedKeys}

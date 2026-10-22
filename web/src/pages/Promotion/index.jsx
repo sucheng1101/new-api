@@ -57,17 +57,21 @@ const REWARD_STATUS_META = {
   voided: { label: '已作废', color: 'red' },
   rounded_zero: { label: '舍入为零', color: 'grey' },
 };
+const REWARD_DETAIL_PAGE_SIZE = 20;
 
 const Promotion = () => {
   const { t } = useTranslation();
   const [summary, setSummary] = useState(null);
-  const [rewards, setRewards] = useState([]);
+  const [rewardDetails, setRewardDetails] = useState([]);
+  const [rewardDetailsTotal, setRewardDetailsTotal] = useState(0);
+  const [rewardDetailsPage, setRewardDetailsPage] = useState(1);
+  const [rewardDetailsLoading, setRewardDetailsLoading] = useState(false);
   const [invitees, setInvitees] = useState([]);
   const [affCode, setAffCode] = useState('');
   const [transferAmount, setTransferAmount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [transferLoading, setTransferLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('rewards');
+  const [activeTab, setActiveTab] = useState('invitees');
 
   const affLink = useMemo(
     () => (affCode ? `${window.location.origin}/register?aff=${affCode}` : ''),
@@ -95,9 +99,11 @@ const Promotion = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const [summaryRes, rewardsRes, inviteesRes, codeRes] = await Promise.all([
+      const [summaryRes, detailsRes, inviteesRes, codeRes] = await Promise.all([
         API.get('/api/user/promotion/summary'),
-        API.get('/api/user/promotion/rewards?limit=100'),
+        API.get('/api/user/promotion/details', {
+          params: { limit: REWARD_DETAIL_PAGE_SIZE, offset: 0 },
+        }),
         API.get('/api/user/promotion/invitees?limit=100'),
         API.get('/api/user/aff'),
       ]);
@@ -106,8 +112,11 @@ const Promotion = () => {
         setSummary(nextSummary);
         setTransferAmount(quotaToDisplayAmount(nextSummary?.aff_quota || 0));
       }
-      if (rewardsRes.data?.success)
-        setRewards(rewardsRes.data.data?.items || []);
+      if (detailsRes.data?.success) {
+        setRewardDetails(detailsRes.data.data?.items || []);
+        setRewardDetailsTotal(detailsRes.data.data?.total || 0);
+        setRewardDetailsPage(1);
+      }
       if (inviteesRes.data?.success)
         setInvitees(inviteesRes.data.data?.items || []);
       if (codeRes.data?.success) setAffCode(codeRes.data.data || '');
@@ -121,6 +130,25 @@ const Promotion = () => {
   useEffect(() => {
     load();
   }, []);
+
+  const loadRewardDetailsPage = async (page) => {
+    setRewardDetailsLoading(true);
+    try {
+      const offset = (page - 1) * REWARD_DETAIL_PAGE_SIZE;
+      const response = await API.get('/api/user/promotion/details', {
+        params: { limit: REWARD_DETAIL_PAGE_SIZE, offset },
+      });
+      if (!response.data?.success)
+        throw new Error(response.data?.message || t('加载推广明细失败'));
+      setRewardDetails(response.data.data?.items || []);
+      setRewardDetailsTotal(response.data.data?.total || 0);
+      setRewardDetailsPage(page);
+    } catch (error) {
+      showError(error?.message || t('加载推广明细失败'));
+    } finally {
+      setRewardDetailsLoading(false);
+    }
+  };
 
   const copyValue = async (value, message) => {
     if (!value) return;
@@ -163,11 +191,16 @@ const Promotion = () => {
     return <Tag color={meta.color}>{t(meta.label)}</Tag>;
   };
 
-  const rewardColumns = [
+  const rewardDetailColumns = [
     {
       title: t('时间'),
       dataIndex: 'created_at',
       render: (value) => new Date(value * 1000).toLocaleString(),
+    },
+    {
+      title: t('贡献用户'),
+      dataIndex: 'payer_username',
+      render: (value) => value || '-',
     },
     {
       title: t('级别'),
@@ -184,7 +217,9 @@ const Promotion = () => {
           ? t('兑换码')
           : value === 'history_migration'
             ? t('历史迁移')
-            : t('充值'),
+            : value === 'admin_wallet'
+              ? t('管理员充值')
+              : t('充值'),
     },
     {
       title: t('奖励'),
@@ -361,25 +396,6 @@ const Promotion = () => {
             <TabPane
               tab={
                 <span>
-                  {t('奖励流水')} · {rewards.length}
-                </span>
-              }
-              itemKey='rewards'
-            >
-              {rewards.length ? (
-                <Table
-                  columns={rewardColumns}
-                  dataSource={rewards}
-                  loading={loading}
-                  pagination={false}
-                />
-              ) : (
-                <Empty description={t('暂无返佣记录')} />
-              )}
-            </TabPane>
-            <TabPane
-              tab={
-                <span>
                   {t('我的邀请用户')} · {invitees.length}
                 </span>
               }
@@ -394,6 +410,31 @@ const Promotion = () => {
                 />
               ) : (
                 <Empty description={t('暂无下级用户')} />
+              )}
+            </TabPane>
+            <TabPane
+              tab={
+                <span>
+                  {t('用户推广明细')} · {rewardDetailsTotal}
+                </span>
+              }
+              itemKey='details'
+            >
+              {rewardDetailsTotal ? (
+                <Table
+                  columns={rewardDetailColumns}
+                  dataSource={rewardDetails}
+                  loading={loading || rewardDetailsLoading}
+                  rowKey='id'
+                  pagination={{
+                    currentPage: rewardDetailsPage,
+                    pageSize: REWARD_DETAIL_PAGE_SIZE,
+                    total: rewardDetailsTotal,
+                    onPageChange: loadRewardDetailsPage,
+                  }}
+                />
+              ) : (
+                <Empty description={t('暂无推广奖励明细')} />
               )}
             </TabPane>
           </Tabs>

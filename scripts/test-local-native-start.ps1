@@ -8,7 +8,7 @@ $tokens = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
 # Load only the utilities under test, never the actual backup/build/start workflow.
-foreach ($name in @('Write-AtomicJson', 'Stop-NativeProcess', 'Install-NativeExecutable', 'Resolve-BuildCommit')) {
+foreach ($name in @('Write-AtomicJson', 'Stop-NativeProcess', 'Install-NativeExecutable', 'Resolve-BuildCommit', 'Test-RuntimeOwner')) {
   $definition = $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false) |
     Where-Object { $_.Name -eq $name }
   if (-not $definition) { throw "Missing function: $name" }
@@ -59,6 +59,12 @@ try {
     if ($null -ne (Resolve-BuildCommit $version)) { throw 'Unresolvable build version was accepted.' }
   }
   Write-Host 'PASS: valid, missing and nonexistent build commits resolve without stderr exceptions'
+
+  if (-not (Test-RuntimeOwner 'CLI-NA-RUNTIME-01' 'CLI-NA-RUNTIME-01' '')) { throw 'The current runtime owner was rejected.' }
+  if (-not (Test-RuntimeOwner 'CLI-NA-RUNTIME-01' 'CODEX-NA-RUNTIME-01' 'CLI-NA-RUNTIME-01')) { throw 'An explicitly approved owner handoff was rejected.' }
+  if (Test-RuntimeOwner 'OTHER-OWNER' 'CODEX-NA-RUNTIME-01' 'CLI-NA-RUNTIME-01') { throw 'A handoff from a different owner was accepted.' }
+  if (Test-RuntimeOwner 'CLI-NA-RUNTIME-01' 'CODEX-NA-RUNTIME-01' '') { throw 'An owner change without handoff evidence was accepted.' }
+  Write-Host 'PASS: runtime ownership requires an explicit matching handoff source'
 
   $child = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -WindowStyle Hidden -PassThru
   $retainedHandle = Get-Process -Id $child.Id -ErrorAction Stop

@@ -100,6 +100,12 @@ func validateOptionValue(key string, value string) (string, error) {
 			return "", err
 		}
 		return string(encoded), nil
+	case common.DirectAPITokenUseCurrentOriginKey:
+		useCurrentOrigin, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return "", fmt.Errorf("%s must be boolean", key)
+		}
+		return strconv.FormatBool(useCurrentOrigin), nil
 	default:
 		return value, nil
 	}
@@ -285,6 +291,7 @@ func InitOptionMap() {
 	common.OptionMap["DirectAPIHostsConfigured"] = "false"
 	common.OptionMap["DirectAPIBaseURLConfigured"] = "false"
 	common.OptionMap["DirectAPIEndpointsConfigured"] = "false"
+	common.OptionMap[common.DirectAPITokenUseCurrentOriginKey] = "false"
 	common.OptionMap["MjNotifyEnabled"] = strconv.FormatBool(setting.MjNotifyEnabled)
 	common.OptionMap["MjAccountFilterEnabled"] = strconv.FormatBool(setting.MjAccountFilterEnabled)
 	common.OptionMap["MjModeClearEnabled"] = strconv.FormatBool(setting.MjModeClearEnabled)

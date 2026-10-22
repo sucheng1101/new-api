@@ -18,12 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Empty, Spin } from '@douyinfe/semi-ui';
+import { Button, Spin, Tooltip } from '@douyinfe/semi-ui';
+import { Copy, Eye, EyeOff, Zap } from 'lucide-react';
 import PropTypes from 'prop-types';
 import { API } from '../../../helpers';
 import { getServerAddress } from '../../../helpers/token';
 import { handleSpeedTest } from '../../../helpers/dashboard';
-import EndpointPill from '../../security/EndpointPill';
 
 const normalizeRecordUrl = (record) => {
   const value = String(record?.endpoint || '').trim();
@@ -37,16 +37,18 @@ const normalizeRecordUrl = (record) => {
 const TokenEndpointBar = ({ copyText, t }) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
-  const serverAddress = useMemo(() => getServerAddress(), []);
+  const [showAddresses, setShowAddresses] = useState(true);
+  const [useCurrentOrigin, setUseCurrentOrigin] = useState(false);
+  const currentOrigin = useMemo(() => getServerAddress(), []);
 
   useEffect(() => {
     let mounted = true;
     API.get('/api/user/direct-ip-whitelist')
       .then((response) => {
-        if (mounted && response.data?.success) {
-          const data = response.data.data || {};
-          setRecords(Array.isArray(data.records) ? data.records : []);
-        }
+        if (!mounted || !response.data?.success) return;
+        const data = response.data.data || {};
+        setRecords(Array.isArray(data.records) ? data.records : []);
+        setUseCurrentOrigin(data.token_use_current_origin === true);
       })
       .catch(() => {})
       .finally(() => {
@@ -57,61 +59,100 @@ const TokenEndpointBar = ({ copyText, t }) => {
     };
   }, []);
 
-  const visibleRecords = records
-    .filter((record) => record?.enabled !== false && normalizeRecordUrl(record))
-    .map((record) => ({
-      ...record,
-      // The configured base URL can describe an older deployment entry point.
-      // User-facing API connection strings must follow the page currently
-      // served in this browser.
-      displayUrl:
-        record.kind === 'base_url' && serverAddress
-          ? serverAddress
-          : normalizeRecordUrl(record),
-    }));
-  const hasBaseURL = visibleRecords.some(
-    (record) => record.kind === 'base_url',
-  );
-  const displayRecords =
-    serverAddress && !hasBaseURL
-      ? [
-          {
-            id: 'runtime-origin',
-            kind: 'base_url',
-            name: t('当前访问入口'),
-            description: t('当前浏览器访问地址'),
-            displayUrl: serverAddress,
-            enabled: true,
-          },
-          ...visibleRecords,
-        ]
-      : visibleRecords;
+  const displayRecords = useMemo(() => {
+    const visibleRecords = records
+      .filter(
+        (record) => record?.enabled !== false && normalizeRecordUrl(record),
+      )
+      .map((record) => ({ ...record, displayUrl: normalizeRecordUrl(record) }));
+    if (!useCurrentOrigin || !currentOrigin) return visibleRecords;
+
+    const baseURLIndex = visibleRecords.findIndex(
+      (record) => record.kind === 'base_url',
+    );
+    if (baseURLIndex >= 0) {
+      visibleRecords[baseURLIndex] = {
+        ...visibleRecords[baseURLIndex],
+        displayUrl: currentOrigin,
+      };
+      return visibleRecords;
+    }
+
+    return [
+      {
+        id: 'runtime-origin',
+        kind: 'base_url',
+        name: t('当前访问入口'),
+        description: t('当前浏览器访问地址'),
+        displayUrl: currentOrigin,
+        enabled: true,
+      },
+      ...visibleRecords,
+    ];
+  }, [currentOrigin, records, t, useCurrentOrigin]);
 
   return (
-    <div className='flex w-full flex-col gap-2 rounded-xl border border-solid p-3'>
-      <div className='flex items-center justify-between gap-2'>
-        <div className='shrink-0 text-sm font-medium'>{t('API地址')}</div>
-        {loading && <Spin size='small' />}
-      </div>
-      <div className='grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-2'>
-        {displayRecords.map((record) => (
-          <EndpointPill
-            key={record.id || record.displayUrl}
-            label={record.name || t('API端点')}
-            kind={record.kind}
-            url={record.displayUrl}
-            description={record.description || t('点击可复制此端点')}
-            enabled={record.enabled !== false}
-            onCopy={copyText}
-            onTest={handleSpeedTest}
-            copyLabel={t('复制地址')}
-            testLabel={t('快速测试')}
+    <div className='flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
+      {displayRecords.map((record) => (
+        <span
+          key={record.id || record.displayUrl}
+          className='inline-flex min-w-0 items-center gap-0.5'
+        >
+          <Tooltip
+            content={record.description || t('点击测试此地址')}
+            position='top'
+          >
+            <a
+              href={record.displayUrl}
+              target='_blank'
+              rel='noreferrer'
+              className='max-w-[min(42vw,280px)] truncate font-mono text-xs text-semi-color-primary hover:underline sm:text-sm'
+              aria-label={record.name || record.displayUrl}
+              title={showAddresses ? record.displayUrl : t('令牌地址已隐藏')}
+            >
+              {showAddresses ? record.displayUrl : '••••••••'}
+            </a>
+          </Tooltip>
+          <Tooltip content={t('复制地址')} position='top'>
+            <Button
+              theme='borderless'
+              size='small'
+              icon={<Copy size={13} />}
+              aria-label={`${t('复制地址')}: ${record.displayUrl}`}
+              onClick={() => copyText(record.displayUrl)}
+            />
+          </Tooltip>
+          <Tooltip content={t('快速测试')} position='top'>
+            <Button
+              theme='borderless'
+              size='small'
+              icon={<Zap size={13} />}
+              aria-label={`${t('快速测试')}: ${record.displayUrl}`}
+              onClick={() => handleSpeedTest(record.displayUrl)}
+            />
+          </Tooltip>
+        </span>
+      ))}
+      {loading && <Spin size='small' />}
+      {!loading && displayRecords.length === 0 && (
+        <span className='text-xs text-semi-color-text-2'>
+          {t('暂无可用 API 地址')}
+        </span>
+      )}
+      {displayRecords.length > 0 && (
+        <Tooltip
+          content={t(showAddresses ? '隐藏令牌地址' : '显示令牌地址')}
+          position='top'
+        >
+          <Button
+            theme='borderless'
+            size='small'
+            icon={showAddresses ? <Eye size={14} /> : <EyeOff size={14} />}
+            aria-label={t(showAddresses ? '隐藏令牌地址' : '显示令牌地址')}
+            onClick={() => setShowAddresses((visible) => !visible)}
           />
-        ))}
-        {!loading && !displayRecords.length && (
-          <Empty title={t('暂无可用 API 地址')} className='col-span-full' />
-        )}
-      </div>
+        </Tooltip>
+      )}
     </div>
   );
 };

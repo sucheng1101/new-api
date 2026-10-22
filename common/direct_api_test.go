@@ -41,6 +41,23 @@ func TestValidateDirectAPIBaseURL(t *testing.T) {
 	require.Error(t, ValidateDirectAPIBaseURL("https://api.example.com:70000"))
 }
 
+func TestDirectAPITokenUseCurrentOrigin(t *testing.T) {
+	previous := OptionMap
+	OptionMapRWMutex.Lock()
+	OptionMap = map[string]string{DirectAPITokenUseCurrentOriginKey: "true"}
+	OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		OptionMapRWMutex.Lock()
+		OptionMap = previous
+		OptionMapRWMutex.Unlock()
+	})
+	require.True(t, DirectAPITokenUseCurrentOrigin())
+	OptionMapRWMutex.Lock()
+	OptionMap[DirectAPITokenUseCurrentOriginKey] = "false"
+	OptionMapRWMutex.Unlock()
+	require.False(t, DirectAPITokenUseCurrentOrigin())
+}
+
 func TestValidateDirectAPIEndpoints(t *testing.T) {
 	items, err := ValidateDirectAPIEndpoints([]DirectAPIEndpoint{{
 		Name:      "OpenAI mirror",

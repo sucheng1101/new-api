@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
+import DomainManagementPanel from '../../components/security/DomainManagementPanel';
 
 const PAGE_SIZE = 8;
 const RANGE_OPTIONS = [
@@ -179,9 +180,9 @@ const DetailModalBody = ({ data }) => {
   );
 };
 
-const SecurityAccess = () => {
+const SecurityAccess = ({ initialTab = 'access' }) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('access');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [summary, setSummary] = useState(null),
     [risks, setRisks] = useState([]),
     [risksTotal, setRisksTotal] = useState(0),
@@ -886,6 +887,9 @@ const SecurityAccess = () => {
               ]}
             />
           </Card>
+        </Tabs.TabPane>
+        <Tabs.TabPane itemKey='domains' tab='域名管理'>
+          <DomainManagementPanel searchable paginated title={t('域名管理')} />
         </Tabs.TabPane>
       </Tabs>
       <Modal

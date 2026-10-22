@@ -145,6 +145,35 @@ func TestGetPromotionSummaryIncludesInviteCodeAndWalletBreakdown(t *testing.T) {
 	require.Equal(t, 300, summary.Level2Rate)
 }
 
+func TestListPromotionRewardDetailsIsBeneficiaryScopedAndMasksPayer(t *testing.T) {
+	db := setupPromotionTestDB(t)
+	beneficiary := &User{Username: "referrer-account", AffCode: "referrer-code", Status: common.UserStatusEnabled}
+	payer := &User{Username: "customer-alice", AffCode: "alice-code", Status: common.UserStatusEnabled, InviterId: 0}
+	other := &User{Username: "other-customer", AffCode: "other-code", Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(beneficiary).Error)
+	payer.InviterId = beneficiary.Id
+	require.NoError(t, db.Create(payer).Error)
+	require.NoError(t, db.Create(other).Error)
+	require.NoError(t, db.Create(&PromotionReward{SourceType: "topup", SourceId: 701, SourceRef: "private-source", PayerUserId: payer.Id, BeneficiaryUserId: beneficiary.Id, Level: 1, BaseQuota: 5000, RewardQuota: 250, Status: PromotionRewardCredited, CreatedAt: 100}).Error)
+	require.NoError(t, db.Create(&PromotionReward{SourceType: "redemption", SourceId: 702, SourceRef: "private-redemption", PayerUserId: payer.Id, BeneficiaryUserId: beneficiary.Id, Level: 1, BaseQuota: 3000, RewardQuota: 150, Status: PromotionRewardFrozen, CreatedAt: 200}).Error)
+	require.NoError(t, db.Create(&PromotionReward{SourceType: "topup", SourceId: 703, PayerUserId: other.Id, BeneficiaryUserId: other.Id, Level: 1, RewardQuota: 999, Status: PromotionRewardCredited, CreatedAt: 300}).Error)
+
+	details, total, err := ListPromotionRewardDetails(beneficiary.Id, 20, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.Len(t, details, 2)
+	require.Equal(t, "c***e", details[0].PayerUsername)
+	require.Equal(t, "redemption", details[0].SourceType)
+	require.Equal(t, 150, details[0].RewardQuota)
+	require.Equal(t, PromotionRewardFrozen, details[0].Status)
+
+	encoded, err := common.Marshal(details[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "base_quota")
+	require.NotContains(t, string(encoded), "source_ref")
+	require.NotContains(t, string(encoded), "payer_user_id")
+}
+
 func TestHydrateUserAffCountsUsesActualInviteRelations(t *testing.T) {
 	db := setupPromotionTestDB(t)
 	inviter := &User{Username: "promotion-hydrate-inviter", AffCode: "hydrate-inviter", Status: common.UserStatusEnabled, AffCount: 9}

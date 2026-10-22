@@ -1,6 +1,7 @@
 ﻿[CmdletBinding()]
 param(
   [string]$Owner = 'CLI-NA-RUNTIME-01',
+  [string]$HandoffFrom = '',
   [ValidateSet(5200)][int]$Port = 5200,
   [string]$SqlitePath = '',
   [string]$BackupRoot = '',
@@ -72,6 +73,11 @@ function Resolve-BuildCommit($Version) {
   return $null
 }
 
+function Test-RuntimeOwner($CurrentOwner, $RequestedOwner, $HandoffFrom) {
+  if ($CurrentOwner -eq $RequestedOwner) { return $true }
+  return -not [string]::IsNullOrWhiteSpace($HandoffFrom) -and $CurrentOwner -eq $HandoffFrom
+}
+
 function Assert-LiveDatabase($Process) {
   $Process.Refresh()
   if ($Process.HasExited) { throw 'Runtime exited before database ownership verification.' }
@@ -95,7 +101,8 @@ function Assert-Ownership {
   $native = @(Get-CimInstance Win32_Process -Filter "Name='new-api.exe'" | Where-Object { $_.ExecutablePath -eq $exePath })
   $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
   if ($existing) {
-    if ($existing.runtime_mode -ne 'windows-native' -or $existing.runtime_owner -ne $Owner) {
+    if ($existing.runtime_mode -ne 'windows-native' -or
+        -not (Test-RuntimeOwner $existing.runtime_owner $Owner $HandoffFrom)) {
       throw 'Runtime mode/owner differs from this operation. Inspect the existing lock before takeover.'
     }
     if ($existing.database_engine -ne 'sqlite' -or $existing.database_instance -ne $SqlitePath -or $existing.runtime_exe -ne $exePath) {

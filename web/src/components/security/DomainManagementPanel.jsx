@@ -122,6 +122,8 @@ const DomainManagementPanel = ({
   const { t } = useTranslation();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tokenUseCurrentOrigin, setTokenUseCurrentOrigin] = useState(false);
+  const [originSettingLoading, setOriginSettingLoading] = useState(false);
   const [editing, setEditing] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [copiedKey, setCopiedKey] = useState('');
@@ -190,6 +192,7 @@ const DomainManagementPanel = ({
       const data = response.data.data || {};
       const list = Array.isArray(data.records) ? data.records : [];
       setRecords(sortRecords(list));
+      setTokenUseCurrentOrigin(data.token_use_current_origin === true);
     } catch (error) {
       Toast.error(
         error?.response?.data?.message ||
@@ -200,6 +203,28 @@ const DomainManagementPanel = ({
       setLoading(false);
     }
   }, [t]);
+
+  const updateTokenOriginPreference = async (checked) => {
+    setOriginSettingLoading(true);
+    try {
+      const response = await API.patch(
+        '/api/admin/security/direct-api-config',
+        {
+          token_use_current_origin: checked,
+        },
+      );
+      if (!response.data?.success)
+        throw new Error(response.data?.message || t('保存失败'));
+      setTokenUseCurrentOrigin(checked);
+      Toast.success(t('设置已保存'));
+    } catch (error) {
+      Toast.error(
+        error?.response?.data?.message || error.message || t('保存失败'),
+      );
+    } finally {
+      setOriginSettingLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadDomains();
@@ -317,7 +342,19 @@ const DomainManagementPanel = ({
                 </span>
               </div>
             </div>
-            <div className='flex shrink-0 gap-2'>
+            <div className='flex flex-wrap items-center justify-end gap-3'>
+              <div className='flex items-center gap-2'>
+                <span className='text-xs text-semi-color-text-2'>
+                  {t('令牌地址使用当前访问入口')}
+                </span>
+                <Switch
+                  checked={tokenUseCurrentOrigin}
+                  loading={originSettingLoading}
+                  disabled={loading}
+                  aria-label={t('令牌地址使用当前访问入口')}
+                  onChange={updateTokenOriginPreference}
+                />
+              </div>
               <Button
                 theme='light'
                 icon={<RefreshCw size={15} />}

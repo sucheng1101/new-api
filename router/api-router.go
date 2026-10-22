@@ -113,6 +113,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/promotion/transfers", controller.TransferAffQuota)
 				selfRoute.GET("/promotion/summary", controller.GetPromotionSummary)
 				selfRoute.GET("/promotion/rewards", controller.GetPromotionRewards)
+				selfRoute.GET("/promotion/details", controller.GetPromotionRewardDetails)
 				selfRoute.GET("/promotion/invitees", controller.GetPromotionInvitees)
 				selfRoute.GET("/lottery/status", controller.GetLotteryStatus)
 				selfRoute.POST("/lottery/draw", controller.DrawLottery)
