@@ -40,6 +40,7 @@ import { Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
 import { handleSpeedTest } from '../../helpers/dashboard';
+import { getServerAddress } from '../../helpers/token';
 import EndpointPill from './EndpointPill';
 
 const PAGE_SIZE = 8;
@@ -120,6 +121,7 @@ const DomainManagementPanel = ({
   emptyDescription = '',
 }) => {
   const { t } = useTranslation();
+  const currentOrigin = useMemo(() => getServerAddress(), []);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tokenUseCurrentOrigin, setTokenUseCurrentOrigin] = useState(false);
@@ -209,12 +211,17 @@ const DomainManagementPanel = ({
     try {
       const response = await API.patch(
         '/api/admin/security/direct-api-config',
-        {
-          token_use_current_origin: checked,
-        },
+        checked
+          ? {
+              token_use_current_origin: true,
+              base_url: currentOrigin,
+            }
+          : { token_use_current_origin: false },
       );
       if (!response.data?.success)
         throw new Error(response.data?.message || t('保存失败'));
+      const data = response.data.data || {};
+      if (Array.isArray(data.records)) setRecords(sortRecords(data.records));
       setTokenUseCurrentOrigin(checked);
       Toast.success(t('设置已保存'));
     } catch (error) {

@@ -245,3 +245,113 @@ func TestUpdateDirectAPIConfigCurrentOriginPatchPreservesRecords(t *testing.T) {
 	require.NoError(t, model.DB.Where("key = ?", common.DirectAPITokenUseCurrentOriginKey).First(&option).Error)
 	require.Equal(t, "true", option.Value)
 }
+
+func TestUpdateDirectAPIConfigCurrentOriginSyncsDefaultAddressAtomically(t *testing.T) {
+	setupDirectAPIEndpointControllerTest(t)
+	require.NoError(t, model.UpdateDirectAPIEndpoints([]common.DirectAPIEndpoint{
+		{
+			Kind:        common.DirectAPIRecordKindHost,
+			Name:        "Gateway host",
+			Endpoint:    "gateway.example.com",
+			Description: "direct host",
+			Enabled:     true,
+		},
+		{
+			Kind:        common.DirectAPIRecordKindBaseURL,
+			Name:        "Primary",
+			Endpoint:    "https://api.example.com",
+			Description: "default address",
+			Enabled:     true,
+		},
+		{
+			Kind:        common.DirectAPIRecordKindEndpoint,
+			Name:        "OpenAI",
+			Endpoint:    "https://openai.example.com/v1",
+			Description: "additional endpoint",
+			Enabled:     true,
+		},
+	}))
+
+	context, recorder := endpointContext("PATCH", "/api/admin/security/direct-api-config", []byte(`{"token_use_current_origin":true,"base_url":"http://127.0.0.1:5200"}`))
+	UpdateDirectAPIConfig(context)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			TokenUseCurrentOrigin bool                       `json:"token_use_current_origin"`
+			Records               []common.DirectAPIEndpoint `json:"records"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.True(t, response.Data.TokenUseCurrentOrigin)
+	require.Len(t, response.Data.Records, 3)
+	require.True(t, common.DirectAPITokenUseCurrentOrigin())
+	require.Equal(t, []string{"gateway.example.com"}, common.DirectAPIHosts())
+	require.Equal(t, "http://127.0.0.1:5200", common.DirectAPIBaseURL())
+
+	for _, record := range response.Data.Records {
+		switch common.DirectAPIRecordKind(record) {
+		case common.DirectAPIRecordKindBaseURL:
+			require.Equal(t, "Primary", record.Name)
+			require.Equal(t, "http://127.0.0.1:5200", record.Endpoint)
+			require.Equal(t, "default address", record.Description)
+			require.True(t, record.IsShownInTokenManagement())
+		case common.DirectAPIRecordKindEndpoint:
+			require.Equal(t, "OpenAI", record.Name)
+			require.Equal(t, "https://openai.example.com/v1", record.Endpoint)
+		}
+	}
+
+	var option model.Option
+	require.NoError(t, model.DB.Where("key = ?", common.DirectAPITokenUseCurrentOriginKey).First(&option).Error)
+	require.Equal(t, "true", option.Value)
+}
+
+func TestUpdateDirectAPIConfigRejectsInvalidCurrentOriginWithoutChangingSettings(t *testing.T) {
+	setupDirectAPIEndpointControllerTest(t)
+	require.NoError(t, model.UpdateDirectAPIEndpoints([]common.DirectAPIEndpoint{{
+		Kind:     common.DirectAPIRecordKindBaseURL,
+		Name:     "Primary",
+		Endpoint: "https://api.example.com",
+		Enabled:  true,
+	}}))
+
+	context, recorder := endpointContext("PATCH", "/api/admin/security/direct-api-config", []byte(`{"token_use_current_origin":true,"base_url":"javascript:alert(1)"}`))
+	UpdateDirectAPIConfig(context)
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.False(t, response.Success)
+	require.False(t, common.DirectAPITokenUseCurrentOrigin())
+	require.Equal(t, "https://api.example.com", common.DirectAPIEndpoints()[0].Endpoint)
+
+	var option model.Option
+	require.Error(t, model.DB.Where("key = ?", common.DirectAPITokenUseCurrentOriginKey).First(&option).Error)
+}
+
+func TestEditingDefaultAddressDisablesCurrentOriginPreference(t *testing.T) {
+	setupDirectAPIEndpointControllerTest(t)
+	require.NoError(t, model.UpdateDirectAPIEndpointsAndTokenOrigin([]common.DirectAPIEndpoint{{
+		Kind:     common.DirectAPIRecordKindBaseURL,
+		Name:     "Primary",
+		Endpoint: "https://entry.example.com",
+		Enabled:  true,
+	}}, true))
+
+	context, recorder := endpointContext("PATCH", "/api/admin/security/direct-api-endpoints/1", []byte(`{"endpoint":"https://manual.example.com"}`))
+	context.Params = gin.Params{{Key: "id", Value: "1"}}
+	PatchDirectAPIEndpoint(context)
+	var response struct {
+		Success bool                     `json:"success"`
+		Data    common.DirectAPIEndpoint `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Equal(t, "https://manual.example.com", response.Data.Endpoint)
+	require.False(t, common.DirectAPITokenUseCurrentOrigin())
+
+	var option model.Option
+	require.NoError(t, model.DB.Where("key = ?", common.DirectAPITokenUseCurrentOriginKey).First(&option).Error)
+	require.Equal(t, "false", option.Value)
+}

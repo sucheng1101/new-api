@@ -200,6 +200,14 @@ func parseDirectAPIEndpointID(c *gin.Context) (int, bool) {
 	return id, true
 }
 
+func directAPIBaseURLChangedWhileUsingCurrentOrigin(record common.DirectAPIEndpoint, endpoint string) bool {
+	if common.DirectAPIRecordKind(record) != common.DirectAPIRecordKindBaseURL || !common.DirectAPITokenUseCurrentOrigin() {
+		return false
+	}
+	normalized, err := common.NormalizeDirectAPIEndpoint(endpoint)
+	return err == nil && normalized != strings.TrimRight(strings.TrimSpace(record.Endpoint), "/")
+}
+
 func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 	var req directAPIEndpointRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
@@ -207,6 +215,7 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 		return
 	}
 	endpoints := common.DirectAPIEndpoints()
+	disableCurrentOrigin := false
 	if id == 0 {
 		item := common.DirectAPIEndpoint{
 			Kind: req.Kind, Name: req.Name, Endpoint: req.Endpoint,
@@ -229,6 +238,7 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 				continue
 			}
 			found = true
+			disableCurrentOrigin = directAPIBaseURLChangedWhileUsingCurrentOrigin(endpoints[i], req.Endpoint)
 			if req.Kind != "" {
 				endpoints[i].Kind = req.Kind
 			}
@@ -264,8 +274,14 @@ func upsertDirectAPIEndpoint(c *gin.Context, id int) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	if err := model.UpdateDirectAPIEndpoints(validated); err != nil {
-		common.ApiErrorMsg(c, err.Error())
+	var updateErr error
+	if disableCurrentOrigin {
+		updateErr = model.UpdateDirectAPIEndpointsAndTokenOrigin(validated, false)
+	} else {
+		updateErr = model.UpdateDirectAPIEndpoints(validated)
+	}
+	if updateErr != nil {
+		common.ApiErrorMsg(c, updateErr.Error())
 		return
 	}
 	if id == 0 && len(validated) > 0 {
@@ -301,6 +317,7 @@ func PatchDirectAPIEndpoint(c *gin.Context) {
 	}
 	endpoints := common.DirectAPIEndpoints()
 	var updated *common.DirectAPIEndpoint
+	disableCurrentOrigin := false
 	for i := range endpoints {
 		if endpoints[i].ID != id {
 			continue
@@ -312,6 +329,7 @@ func PatchDirectAPIEndpoint(c *gin.Context) {
 			endpoints[i].Name = *req.Name
 		}
 		if req.Endpoint != nil {
+			disableCurrentOrigin = directAPIBaseURLChangedWhileUsingCurrentOrigin(endpoints[i], *req.Endpoint)
 			endpoints[i].Endpoint = *req.Endpoint
 		}
 		if req.Description != nil {
@@ -344,8 +362,14 @@ func PatchDirectAPIEndpoint(c *gin.Context) {
 		common.ApiErrorMsg(c, "未找到 endpoint")
 		return
 	}
-	if err := model.UpdateDirectAPIEndpoints(endpoints); err != nil {
-		common.ApiErrorMsg(c, err.Error())
+	var updateErr error
+	if disableCurrentOrigin {
+		updateErr = model.UpdateDirectAPIEndpointsAndTokenOrigin(endpoints, false)
+	} else {
+		updateErr = model.UpdateDirectAPIEndpoints(endpoints)
+	}
+	if updateErr != nil {
+		common.ApiErrorMsg(c, updateErr.Error())
 		return
 	}
 	for _, item := range common.DirectAPIEndpoints() {
@@ -386,6 +410,62 @@ func UpdateDirectAPIConfig(c *gin.Context) {
 	var req directAPIConfigRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if req.TokenUseCurrentOrigin != nil && *req.TokenUseCurrentOrigin && req.BaseURL != nil {
+		baseURL, err := common.NormalizeDirectAPIEndpoint(*req.BaseURL)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		if err := model.MigrateDirectAPIConfig(); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		records := common.DirectAPIEndpoints()
+		maxSortOrder := 0
+		baseRecordFound := false
+		showInTokenManagement := true
+		directAccessEnabled := false
+		for i := range records {
+			if records[i].SortOrder >= maxSortOrder {
+				maxSortOrder = records[i].SortOrder + 1
+			}
+			if common.DirectAPIRecordKind(records[i]) != common.DirectAPIRecordKindBaseURL {
+				continue
+			}
+			records[i].Endpoint = baseURL
+			records[i].Enabled = true
+			records[i].ShowInTokenManagement = &showInTokenManagement
+			records[i].DirectAccessEnabled = &directAccessEnabled
+			records[i].UpdatedAt = common.GetTimestamp()
+			baseRecordFound = true
+		}
+		if !baseRecordFound {
+			records = append(records, common.DirectAPIEndpoint{
+				Kind:                  common.DirectAPIRecordKindBaseURL,
+				Name:                  baseURL,
+				Endpoint:              baseURL,
+				Enabled:               true,
+				ShowInTokenManagement: &showInTokenManagement,
+				DirectAccessEnabled:   &directAccessEnabled,
+				SortOrder:             maxSortOrder,
+				UpdatedAt:             common.GetTimestamp(),
+			})
+		}
+		if err := model.UpdateDirectAPIEndpointsAndTokenOrigin(records, true); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, gin.H{
+			"hosts":                    strings.Join(common.DirectAPIHosts(), ","),
+			"base_url":                 common.DirectAPIBaseURL(),
+			"records":                  common.DirectAPIEndpoints(),
+			"endpoints":                common.DirectAPIEndpoints(),
+			"resolved_hosts":           common.DirectAPIHosts(),
+			"resolved_base_url":        common.DirectAPIBaseURL(),
+			"token_use_current_origin": common.DirectAPITokenUseCurrentOrigin(),
+		})
 		return
 	}
 	if req.TokenUseCurrentOrigin != nil {

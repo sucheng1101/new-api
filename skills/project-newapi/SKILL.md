@@ -90,6 +90,7 @@ Keep local operation Windows-native. A future runtime-mode change requires expli
 
 - User-facing API connection strings follow `window.location.origin` through `getServerAddress()` in `web/src/helpers/token.js`. Cached `/api/status.server_address` may contain an obsolete host or port and must not override the active browser entrypoint in the homepage, token connectors, or CCSwitch links.
 - Domain management and domain whitelist use the same backend `records` data and editor. Keep direct host authorization distinct from per-user IPv4 authorization; management placement does not replace runtime IP checks.
+- When `token_use_current_origin` is enabled from domain management, persist the browser's `window.location.origin` into the single `base_url` record in the same database transaction as the preference. Disabling the preference preserves the saved address; manually changing that record's address turns the preference off in the same transaction so token and domain views stay aligned.
 - Verify security/domain refresh labels and independent loading, tab order (security, whitelist, blacklist, domain management), editable names/addresses/descriptions/status/order, and IP whitelist search/pagination. Do not invent two static gateway/OpenAI rows outside the shared records.
 
 ## Engineering Rules

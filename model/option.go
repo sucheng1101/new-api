@@ -470,6 +470,18 @@ func UpdateDirectAPIConfig(hosts, baseURL string, endpoints ...[]common.DirectAP
 // one portable transaction, marks the unified store authoritative, and
 // refreshes the in-memory option map immediately.
 func UpdateDirectAPIEndpoints(endpoints []common.DirectAPIEndpoint) error {
+	return updateDirectAPIEndpoints(endpoints, nil)
+}
+
+// UpdateDirectAPIEndpointsAndTokenOrigin atomically persists the published
+// address records and the token-address origin preference.
+func UpdateDirectAPIEndpointsAndTokenOrigin(endpoints []common.DirectAPIEndpoint, useCurrentOrigin bool) error {
+	return updateDirectAPIEndpoints(endpoints, map[string]string{
+		common.DirectAPITokenUseCurrentOriginKey: strconv.FormatBool(useCurrentOrigin),
+	})
+}
+
+func updateDirectAPIEndpoints(endpoints []common.DirectAPIEndpoint, additionalValues map[string]string) error {
 	validated, err := common.ValidateDirectAPIEndpoints(endpoints)
 	if err != nil {
 		return err
@@ -489,6 +501,13 @@ func UpdateDirectAPIEndpoints(endpoints []common.DirectAPIEndpoint) error {
 		"DirectAPIEndpoints":                  value,
 		"DirectAPIEndpointsConfigured":        "true",
 		common.DirectAPIRecordsMigratedOption: "true",
+	}
+	for key, value := range additionalValues {
+		validatedValue, err := validateOptionValue(key, value)
+		if err != nil {
+			return err
+		}
+		values[key] = validatedValue
 	}
 	if err := DB.Transaction(func(tx *gorm.DB) error {
 		for key, oneValue := range values {
