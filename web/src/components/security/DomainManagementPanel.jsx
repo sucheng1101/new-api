@@ -40,7 +40,6 @@ import { Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
 import { handleSpeedTest } from '../../helpers/dashboard';
-import { getServerAddress } from '../../helpers/token';
 import EndpointPill from './EndpointPill';
 
 const PAGE_SIZE = 8;
@@ -121,11 +120,8 @@ const DomainManagementPanel = ({
   emptyDescription = '',
 }) => {
   const { t } = useTranslation();
-  const currentOrigin = useMemo(() => getServerAddress(), []);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tokenUseCurrentOrigin, setTokenUseCurrentOrigin] = useState(false);
-  const [originSettingLoading, setOriginSettingLoading] = useState(false);
   const [editing, setEditing] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [copiedKey, setCopiedKey] = useState('');
@@ -194,7 +190,6 @@ const DomainManagementPanel = ({
       const data = response.data.data || {};
       const list = Array.isArray(data.records) ? data.records : [];
       setRecords(sortRecords(list));
-      setTokenUseCurrentOrigin(data.token_use_current_origin === true);
     } catch (error) {
       Toast.error(
         error?.response?.data?.message ||
@@ -205,33 +200,6 @@ const DomainManagementPanel = ({
       setLoading(false);
     }
   }, [t]);
-
-  const updateTokenOriginPreference = async (checked) => {
-    setOriginSettingLoading(true);
-    try {
-      const response = await API.patch(
-        '/api/admin/security/direct-api-config',
-        checked
-          ? {
-              token_use_current_origin: true,
-              base_url: currentOrigin,
-            }
-          : { token_use_current_origin: false },
-      );
-      if (!response.data?.success)
-        throw new Error(response.data?.message || t('保存失败'));
-      const data = response.data.data || {};
-      if (Array.isArray(data.records)) setRecords(sortRecords(data.records));
-      setTokenUseCurrentOrigin(checked);
-      Toast.success(t('设置已保存'));
-    } catch (error) {
-      Toast.error(
-        error?.response?.data?.message || error.message || t('保存失败'),
-      );
-    } finally {
-      setOriginSettingLoading(false);
-    }
-  };
 
   useEffect(() => {
     loadDomains();
@@ -353,18 +321,6 @@ const DomainManagementPanel = ({
               </div>
             </div>
             <div className='flex flex-wrap items-center justify-end gap-3'>
-              <div className='flex items-center gap-2'>
-                <span className='text-xs text-semi-color-text-2'>
-                  {t('令牌默认地址使用当前访问入口')}
-                </span>
-                <Switch
-                  checked={tokenUseCurrentOrigin}
-                  loading={originSettingLoading}
-                  disabled={loading}
-                  aria-label={t('令牌默认地址使用当前访问入口')}
-                  onChange={updateTokenOriginPreference}
-                />
-              </div>
               <Button
                 theme='light'
                 icon={<RefreshCw size={15} />}
