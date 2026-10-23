@@ -42,6 +42,7 @@ import {
   API,
   copy,
   getCurrencyConfig,
+  isAdmin,
   renderQuota,
   showError,
   showSuccess,
@@ -61,6 +62,7 @@ const REWARD_DETAIL_PAGE_SIZE = 20;
 
 const Promotion = () => {
   const { t } = useTranslation();
+  const isAdminUser = isAdmin();
   const [summary, setSummary] = useState(null);
   const [rewards, setRewards] = useState([]);
   const [rewardsTotal, setRewardsTotal] = useState(0);
@@ -109,9 +111,11 @@ const Promotion = () => {
           API.get('/api/user/promotion/rewards', {
             params: { limit: REWARD_DETAIL_PAGE_SIZE, offset: 0 },
           }),
-          API.get('/api/user/promotion/details', {
-            params: { limit: REWARD_DETAIL_PAGE_SIZE, offset: 0 },
-          }),
+          isAdminUser
+            ? API.get('/api/user/promotions/details', {
+                params: { limit: REWARD_DETAIL_PAGE_SIZE, offset: 0 },
+              })
+            : Promise.resolve(null),
           API.get('/api/user/promotion/invitees?limit=100'),
           API.get('/api/user/aff'),
         ]);
@@ -125,7 +129,7 @@ const Promotion = () => {
         setRewardsTotal(rewardsRes.data.data?.total || 0);
         setRewardsPage(1);
       }
-      if (detailsRes.data?.success) {
+      if (detailsRes?.data?.success) {
         setRewardDetails(detailsRes.data.data?.items || []);
         setRewardDetailsTotal(detailsRes.data.data?.total || 0);
         setRewardDetailsPage(1);
@@ -164,10 +168,11 @@ const Promotion = () => {
   };
 
   const loadRewardDetailsPage = async (page) => {
+    if (!isAdminUser) return;
     setRewardDetailsLoading(true);
     try {
       const offset = (page - 1) * REWARD_DETAIL_PAGE_SIZE;
-      const response = await API.get('/api/user/promotion/details', {
+      const response = await API.get('/api/user/promotions/details', {
         params: { limit: REWARD_DETAIL_PAGE_SIZE, offset },
       });
       if (!response.data?.success)
@@ -520,31 +525,33 @@ const Promotion = () => {
                 <Empty description={t('暂无下级用户')} />
               )}
             </TabPane>
-            <TabPane
-              tab={
-                <span>
-                  {t('用户推广明细')} · {rewardDetailsTotal}
-                </span>
-              }
-              itemKey='details'
-            >
-              {rewardDetailsTotal ? (
-                <Table
-                  columns={rewardDetailColumns}
-                  dataSource={rewardDetails}
-                  loading={loading || rewardDetailsLoading}
-                  rowKey='id'
-                  pagination={{
-                    currentPage: rewardDetailsPage,
-                    pageSize: REWARD_DETAIL_PAGE_SIZE,
-                    total: rewardDetailsTotal,
-                    onPageChange: loadRewardDetailsPage,
-                  }}
-                />
-              ) : (
-                <Empty description={t('暂无推广奖励明细')} />
-              )}
-            </TabPane>
+            {isAdminUser && (
+              <TabPane
+                tab={
+                  <span>
+                    {t('用户推广明细')} · {rewardDetailsTotal}
+                  </span>
+                }
+                itemKey='details'
+              >
+                {rewardDetailsTotal ? (
+                  <Table
+                    columns={rewardDetailColumns}
+                    dataSource={rewardDetails}
+                    loading={loading || rewardDetailsLoading}
+                    rowKey='id'
+                    pagination={{
+                      currentPage: rewardDetailsPage,
+                      pageSize: REWARD_DETAIL_PAGE_SIZE,
+                      total: rewardDetailsTotal,
+                      onPageChange: loadRewardDetailsPage,
+                    }}
+                  />
+                ) : (
+                  <Empty description={t('暂无推广奖励明细')} />
+                )}
+              </TabPane>
+            )}
           </Tabs>
         </div>
       </section>
