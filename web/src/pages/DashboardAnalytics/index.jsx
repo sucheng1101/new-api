@@ -40,6 +40,7 @@ import { useDashboardCharts } from '../../hooks/dashboard/useDashboardCharts';
 import { useDashboardAnalytics } from '../../hooks/dashboard/useDashboardAnalytics';
 import { useSidebar } from '../../hooks/common/useSidebar';
 import { CHART_CONFIG } from '../../constants/dashboard.constants';
+import { getLast24HoursRange } from '../../helpers/dashboardFlowTime';
 
 const SummaryCard = ({
   icon: Icon,
@@ -166,8 +167,21 @@ const DashboardAnalytics = () => {
     dashboardData.setModelColors,
     dashboardData.t,
   );
+  const [flowInputs, setFlowInputs] = useState(() => ({
+    ...dashboardData.inputs,
+    ...getLast24HoursRange(),
+  }));
+  const handleFlowInputChange = useCallback(
+    (value, name) => {
+      if (name === 'data_export_default_time') {
+        dashboardData.handleInputChange(value, name);
+      }
+      setFlowInputs((current) => ({ ...current, [name]: value }));
+    },
+    [dashboardData.handleInputChange],
+  );
   const analytics = useDashboardAnalytics({
-    inputs: dashboardData.inputs,
+    inputs: flowInputs,
     isAdminUser: dashboardData.isAdminUser,
   });
   const [userTopLimit, setUserTopLimit] = useState(10);
@@ -274,10 +288,14 @@ const DashboardAnalytics = () => {
         handleCloseModal={dashboardData.handleCloseModal}
         isMobile={dashboardData.isMobile}
         isAdminUser={dashboardData.isAdminUser && section !== 'users'}
-        inputs={dashboardData.inputs}
+        inputs={section === 'flow' ? flowInputs : dashboardData.inputs}
         dataExportDefaultTime={dashboardData.dataExportDefaultTime}
         timeOptions={dashboardData.timeOptions}
-        handleInputChange={dashboardData.handleInputChange}
+        handleInputChange={
+          section === 'flow'
+            ? handleFlowInputChange
+            : dashboardData.handleInputChange
+        }
         t={dashboardData.t}
       />
       <DashboardPreferences

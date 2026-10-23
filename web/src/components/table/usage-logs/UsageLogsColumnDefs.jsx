@@ -45,6 +45,7 @@ import {
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { CircleAlert, Route, Sparkles } from 'lucide-react';
 import LogIpTooltip from './LogIpTooltip';
+import { getCacheReadPercentage } from './usageLogCacheSummary';
 
 const colors = [
   'amber',
@@ -829,14 +830,10 @@ export const getLogsColumns = ({
         const cacheSummary = getPromptCacheSummary(other);
         const hasCacheRead = (cacheSummary?.cacheReadTokens || 0) > 0;
         const hasCacheWrite = (cacheSummary?.cacheWriteTokens || 0) > 0;
-        let cacheText = '';
-        if (hasCacheRead && hasCacheWrite) {
-          cacheText = `${t('缓存读')} ${formatTokenCount(cacheSummary.cacheReadTokens)} · ${t('写')} ${formatTokenCount(cacheSummary.cacheWriteTokens)}`;
-        } else if (hasCacheRead) {
-          cacheText = `${t('缓存读')} ${formatTokenCount(cacheSummary.cacheReadTokens)}`;
-        } else if (hasCacheWrite) {
-          cacheText = `${t('缓存写')} ${formatTokenCount(cacheSummary.cacheWriteTokens)}`;
-        }
+        const cacheReadPercentage = getCacheReadPercentage(
+          cacheSummary?.cacheReadTokens,
+          record.prompt_tokens,
+        );
 
         return (
           <div
@@ -851,7 +848,7 @@ export const getLogsColumns = ({
               {formatTokenCount(record.prompt_tokens)} /{' '}
               {formatTokenCount(record.completion_tokens)}
             </span>
-            {cacheText ? (
+            {hasCacheRead || hasCacheWrite ? (
               <span
                 style={{
                   marginTop: 2,
@@ -860,7 +857,25 @@ export const getLogsColumns = ({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {cacheText}
+                {hasCacheRead && (
+                  <>
+                    {t('缓存')} ↓{' '}
+                    {formatTokenCount(cacheSummary.cacheReadTokens)}
+                    {cacheReadPercentage !== null && (
+                      <span style={{ color: 'var(--semi-color-success)' }}>
+                        {' '}
+                        ({cacheReadPercentage.toFixed(1)}%)
+                      </span>
+                    )}
+                  </>
+                )}
+                {hasCacheRead && hasCacheWrite ? ' · ' : null}
+                {hasCacheWrite && (
+                  <>
+                    {hasCacheRead ? t('写') : t('缓存写')}{' '}
+                    {formatTokenCount(cacheSummary.cacheWriteTokens)}
+                  </>
+                )}
               </span>
             ) : (
               <span
