@@ -51,6 +51,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers';
 import DomainManagementPanel from '../../components/security/DomainManagementPanel';
+import { formatAuditAction } from './auditActionLabel';
 
 const PAGE_SIZE = 8;
 const RANGE_OPTIONS = [
@@ -77,25 +78,6 @@ const formatTime = (value) => {
   if (!value) return '-';
   const date = new Date(Number(value) * 1000);
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
-};
-const AUDIT_ACTION_LABELS = {
-  login: '登录',
-  'login.failed': '登录失败',
-  register: '注册',
-  logout: '退出登录',
-  'wallet.get': '查询钱包',
-  'wallet.post': '钱包操作',
-  'wallet.put': '更新钱包',
-  'wallet.patch': '更新钱包',
-  'wallet.delete': '删除钱包',
-};
-const formatAuditAction = (value) => {
-  if (!value) return '-';
-  if (AUDIT_ACTION_LABELS[value]) return AUDIT_ACTION_LABELS[value];
-  if (value.startsWith('wallet.')) return '钱包操作';
-  if (value.startsWith('post.api.user.')) return '用户操作';
-  if (value.startsWith('post.api.admin.')) return '管理员操作';
-  return value;
 };
 const formatGeoLocation = (record) => {
   const location = [record.country, record.region, record.city]
@@ -623,7 +605,7 @@ const SecurityAccess = ({ initialTab = 'access' }) => {
                           <div className='font-medium'>系统</div>
                           <div
                             className='max-w-[180px] truncate text-xs text-semi-color-text-2'
-                            title={`${record.action} · ${record.route}`}
+                            title={`${formatAuditAction(record.action)} · ${record.route || '-'}`}
                           >
                             {formatAuditAction(record.action)} ·{' '}
                             {record.route || '-'}
@@ -635,7 +617,9 @@ const SecurityAccess = ({ initialTab = 'access' }) => {
                     title: '动作',
                     dataIndex: 'action',
                     render: (value) => (
-                      <Tag title={value}>{formatAuditAction(value)}</Tag>
+                      <Tag title={formatAuditAction(value)}>
+                        {formatAuditAction(value)}
+                      </Tag>
                     ),
                   },
                   {
