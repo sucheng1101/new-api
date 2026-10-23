@@ -593,23 +593,21 @@ const SiderBar = ({ onNavigate = () => {} }) => {
               ? ' sidebar-promotion-hint-active'
               : ''
           }`}
-          aria-label={t('专属推广官')}
-          title={collapsed ? t('专属推广官') : undefined}
+          aria-label={t('邀请有奖')}
+          title={collapsed ? t('邀请有奖') : undefined}
         >
           <span className='sidebar-promotion-hint-icon' aria-hidden='true'>
             <Sparkles size={15} />
           </span>
           <span className='sidebar-promotion-hint-content'>
             <span className='sidebar-promotion-hint-title'>
-              {t('专属推广官')}
+              {t('邀请有奖')}
             </span>
             <span className='sidebar-promotion-hint-text'>
-              {t(
-                '好友使用你的邀请链接注册，成功充值或兑换后，你可按推广规则获得奖励，奖励自动计入推广余额。',
-              )}
+              {t('好友注册并充值或兑换，奖励自动计入推广余额。')}
             </span>
             <span className='sidebar-promotion-hint-action'>
-              <span>{t('马上出发')}</span>
+              <span>{t('去推广中心')}</span>
               <span className='sidebar-promotion-hint-arrow' aria-hidden='true'>
                 <ArrowUpRight size={14} />
               </span>
