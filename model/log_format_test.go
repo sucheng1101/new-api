@@ -154,6 +154,47 @@ func TestGetUserLogsAppliesRequestErrorIPPreference(t *testing.T) {
 	assert.Equal(t, "203.0.113.60", logs[0].Ip)
 }
 
+func TestUsageLogIPVisibilityQueries(t *testing.T) {
+	modelTestDBMutex.Lock()
+	defer modelTestDBMutex.Unlock()
+
+	previousLogDB := LOG_DB
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	LOG_DB = database
+	t.Cleanup(func() {
+		LOG_DB = previousLogDB
+		_ = sqlDB.Close()
+	})
+	require.NoError(t, database.AutoMigrate(&Log{}))
+	require.NoError(t, database.Create(&[]Log{
+		{UserId: 601, Type: LogTypeConsume, Ip: "203.0.113.61"},
+		{UserId: 602, Type: LogTypeError, Ip: "203.0.113.62"},
+		{UserId: 601, Type: LogTypeTopup, Ip: "203.0.113.63"},
+		{UserId: 601, Type: LogTypeManage, Ip: "203.0.113.64"},
+	}).Error)
+
+	visible, err := HasUserRequestErrorLogIP(601, "203.0.113.61")
+	require.NoError(t, err)
+	assert.True(t, visible)
+	visible, err = HasUserRequestErrorLogIP(601, "203.0.113.62")
+	require.NoError(t, err)
+	assert.False(t, visible)
+	visible, err = HasUserRequestErrorLogIP(601, "203.0.113.63")
+	require.NoError(t, err)
+	assert.False(t, visible)
+
+	visible, err = HasVisibleUsageLogIP("203.0.113.63")
+	require.NoError(t, err)
+	assert.True(t, visible)
+	visible, err = HasVisibleUsageLogIP("203.0.113.64")
+	require.NoError(t, err)
+	assert.False(t, visible)
+}
+
 func TestRelayLogsPersistAndFilterUpstreamRequestID(t *testing.T) {
 	modelTestDBMutex.Lock()
 	defer modelTestDBMutex.Unlock()

@@ -505,6 +505,27 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	return logs, total, err
 }
 
+// HasUserRequestErrorLogIP reports whether an IP belongs to a request or error
+// log owned by the user. The caller must also enforce the user's IP display
+// preference before returning geolocation data.
+func HasUserRequestErrorLogIP(userId int, ip string) (bool, error) {
+	var count int64
+	err := LOG_DB.Model(&Log{}).
+		Where("user_id = ? AND ip = ? AND type IN ?", userId, ip, []int{LogTypeConsume, LogTypeError}).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// HasVisibleUsageLogIP reports whether an IP appears in a log type whose IP is
+// displayed in the administrator usage-log table.
+func HasVisibleUsageLogIP(ip string) (bool, error) {
+	var count int64
+	err := LOG_DB.Model(&Log{}).
+		Where("ip = ? AND type IN ?", ip, []int{LogTypeTopup, LogTypeConsume, LogTypeError}).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // OpsRequestLogQuery selects raw relay records used by the operations detail
 // views. Only user relay success/error logs are included; system events such
 // as channel probes intentionally stay out of operational traffic metrics.

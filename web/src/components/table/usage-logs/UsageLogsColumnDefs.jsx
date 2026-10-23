@@ -44,6 +44,7 @@ import {
 } from './usageLogTiming';
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { CircleAlert, Route, Sparkles } from 'lucide-react';
+import LogIpTooltip from './LogIpTooltip';
 
 const colors = [
   'amber',
@@ -916,19 +917,12 @@ export const getLogsColumns = ({
             (isAdminUser && record.type === 1)) &&
           text;
         return showIp ? (
-          <Tooltip content={text}>
-            <span>
-              <Tag
-                color='orange'
-                shape='circle'
-                onClick={(event) => {
-                  copyText(event, text);
-                }}
-              >
-                {text}
-              </Tag>
-            </span>
-          </Tooltip>
+          <LogIpTooltip
+            key={`${record.id}-${text}`}
+            ip={text}
+            t={t}
+            onCopy={(event) => copyText(event, text)}
+          />
         ) : (
           <></>
         );

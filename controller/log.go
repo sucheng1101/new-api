@@ -1,11 +1,14 @@
 package controller
 
 import (
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -74,6 +77,41 @@ func SearchUserLogs(c *gin.Context) {
 		"success": false,
 		"message": "该接口已废弃",
 	})
+}
+
+func GetLogIPGeo(c *gin.Context) {
+	ip := strings.TrimSpace(c.Query("ip"))
+	if net.ParseIP(ip) == nil {
+		common.ApiErrorMsg(c, "invalid IP")
+		return
+	}
+
+	var visible bool
+	var err error
+	if c.GetInt("role") >= common.RoleAdminUser {
+		visible, err = model.HasVisibleUsageLogIP(ip)
+	} else {
+		userId := c.GetInt("id")
+		settings, settingsErr := model.GetUserSetting(userId, false)
+		if settingsErr != nil {
+			common.ApiError(c, settingsErr)
+			return
+		}
+		if !settings.RecordIpLog {
+			common.ApiErrorMsg(c, "IP geolocation is not available")
+			return
+		}
+		visible, err = model.HasUserRequestErrorLogIP(userId, ip)
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !visible {
+		common.ApiErrorMsg(c, "IP geolocation is not available")
+		return
+	}
+	common.ApiSuccess(c, service.LookupIPGeo(c.Request.Context(), ip))
 }
 
 func GetLogByKey(c *gin.Context) {
