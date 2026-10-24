@@ -216,8 +216,12 @@ func SmokeTestExpr(exprStr string) error {
 }
 
 func smokeTestExpr(exprStr string) error {
-	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
+	unknownVariables, err := billingexpr.UnknownVariables(exprStr)
+	if err != nil {
 		return err
+	}
+	if len(unknownVariables) > 0 {
+		return fmt.Errorf("unknown billing variable(s): %s", strings.Join(unknownVariables, ", "))
 	}
 	usageKeys := billingexpr.UsedUsageKeys(exprStr)
 	if len(usageKeys) > 0 {
@@ -257,8 +261,12 @@ func smokeTestExpr(exprStr string) error {
 // declared by its plugin. Literal u() keys must be declared; dynamic calls are
 // still exercised by the generated runtime vectors when possible.
 func SmokeTestTaskExpr(exprStr string, schema map[string]jsplugin.UsageFieldSchema) error {
-	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
+	unknownVariables, err := billingexpr.UnknownVariables(exprStr)
+	if err != nil {
 		return err
+	}
+	if len(unknownVariables) > 0 {
+		return fmt.Errorf("unknown billing variable(s): %s", strings.Join(unknownVariables, ", "))
 	}
 	if billingexpr.UsesFixedPricing(exprStr) {
 		return fmt.Errorf("fixed pricing is not supported for task usage expressions")

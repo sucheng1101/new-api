@@ -3,6 +3,7 @@ package billingexpr
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 
@@ -318,6 +319,29 @@ func UsedVarsByHash(exprStr, hash string) map[string]bool {
 		return entry.usedVars
 	}
 	return nil
+}
+
+// UnknownVariables returns identifiers referenced by an expression that are
+// not part of the versioned billing expression environment. Expressions are
+// compiled first so syntax and reserved-identifier errors retain their normal
+// diagnostics.
+func UnknownVariables(exprStr string) ([]string, error) {
+	if strings.TrimSpace(exprStr) == "" {
+		return nil, nil
+	}
+	entry, err := compileEntryFromCacheByHash(exprStr, ExprHashString(exprStr))
+	if err != nil {
+		return nil, err
+	}
+	env := getCompileEnv(entry.version)
+	unknown := make([]string, 0)
+	for name := range entry.usedVars {
+		if _, known := env[name]; !known {
+			unknown = append(unknown, name)
+		}
+	}
+	sort.Strings(unknown)
+	return unknown, nil
 }
 
 // UsedUsageKeys returns literal keys referenced by u("...") calls. Calls with

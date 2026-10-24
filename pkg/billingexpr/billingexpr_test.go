@@ -41,6 +41,16 @@ func TestFixedPriceBranches(t *testing.T) {
 	}
 }
 
+func TestUnknownVariables(t *testing.T) {
+	unknown, err := billingexpr.UnknownVariables(`tier("base", p * 3 + cc1h * 6)`)
+	require.NoError(t, err)
+	assert.Empty(t, unknown)
+
+	unknown, err = billingexpr.UnknownVariables(`tier("base", p * 3 + cc12h * 6)`)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cc12h"}, unknown)
+}
+
 func TestFixedPriceRejectsInvalidLeavesIncludingUnselectedBranches(t *testing.T) {
 	for _, expression := range []string{
 		`true ? tier("ok", p) : tier("bad", fixed(-0.01))`,
