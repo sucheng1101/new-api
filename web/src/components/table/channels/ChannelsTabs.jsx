@@ -33,15 +33,27 @@ const ChannelsTabs = ({
   activePage,
   pageSize,
   idSort,
+  statusFilter,
   setActivePage,
   t,
 }) => {
-  if (enableTagMode || enableGroupMode) return null;
+  // Vendor tabs remain available in group aggregation mode so the selected
+  // vendor can be combined with the group view. Tag aggregation keeps its
+  // existing layout because its rows are tag-driven rather than vendor-driven.
+  if (enableTagMode) return null;
 
   const handleTabChange = (key) => {
     setActiveTypeKey(key);
     setActivePage(1);
-    loadChannels(1, pageSize, idSort, enableTagMode, key, undefined, false);
+    loadChannels(
+      1,
+      pageSize,
+      idSort,
+      enableTagMode,
+      key,
+      statusFilter,
+      enableGroupMode,
+    );
   };
 
   return (
