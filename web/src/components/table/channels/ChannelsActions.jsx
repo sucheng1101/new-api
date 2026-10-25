@@ -51,6 +51,7 @@ const ChannelsActions = ({
   loadChannels,
   searchChannels,
   activeTypeKey,
+  setActiveTypeKey,
   activePage,
   pageSize,
   setActivePage,
@@ -258,13 +259,14 @@ const ChannelsActions = ({
                 localStorage.setItem('enable-group-mode', 'false');
                 setEnableTagMode(v);
                 setEnableGroupMode(false);
+                setActiveTypeKey('all');
                 setActivePage(1);
                 loadChannels(
                   1,
                   pageSize,
                   idSort,
                   v,
-                  activeTypeKey,
+                  'all',
                   statusFilter,
                   false,
                 );
@@ -284,13 +286,14 @@ const ChannelsActions = ({
                 localStorage.setItem('enable-tag-mode', 'false');
                 setEnableGroupMode(v);
                 setEnableTagMode(false);
+                setActiveTypeKey('all');
                 setActivePage(1);
                 loadChannels(
                   1,
                   pageSize,
                   idSort,
                   false,
-                  activeTypeKey,
+                  'all',
                   statusFilter,
                   v,
                 );
