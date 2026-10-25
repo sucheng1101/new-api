@@ -18,7 +18,14 @@ APP_ROOT="${APP_ROOT:-/opt/new-api}"
 SERVICE_NAME="${SERVICE_NAME:-new-api}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/api/status}"
 BACKUP_ROOT="${BACKUP_ROOT:-$APP_ROOT/backups}"
-ASSET_NAME="${ASSET_NAME:-new-api-$RELEASE_TAG}"
+detect_asset_name() {
+  case "$(uname -m)" in
+    x86_64|amd64) printf 'new-api-%s\n' "$RELEASE_TAG" ;;
+    aarch64|arm64) printf 'new-api-arm64-%s\n' "$RELEASE_TAG" ;;
+    *) echo "Unsupported Linux architecture: $(uname -m)" >&2; exit 4 ;;
+  esac
+}
+ASSET_NAME="${ASSET_NAME:-$(detect_asset_name)}"
 RELEASE_BASE="${RELEASE_BASE:-https://github.com/$PROJECT/releases/download/$RELEASE_TAG}"
 PRE_UPDATE_HOOK="${PRE_UPDATE_HOOK:-}"
 POST_UPDATE_HOOK="${POST_UPDATE_HOOK:-}"
@@ -112,7 +119,8 @@ systemctl stop "$SERVICE_NAME"
 install -m 0755 "$work_dir/new-api" "$current_binary"
 systemctl start "$SERVICE_NAME"
 for _ in {1..30}; do
-  if curl --fail --silent --show-error "$HEALTH_URL" >/dev/null; then
+  if response=$(curl --fail --silent --show-error "$HEALTH_URL") &&
+     jq -e --arg expected "$RELEASE_TAG" '.success == true and .data.version == $expected' <<<"$response" >/dev/null; then
     trap - ERR
     if [[ -n "$POST_UPDATE_HOOK" ]]; then bash -Eeuo pipefail -c "$POST_UPDATE_HOOK"; fi
     echo "Release $RELEASE_TAG is healthy. Backup: $backup_dir"

@@ -8,6 +8,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 SERVICE="${COMPOSE_SERVICE:-new-api}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/api/status}"
 DB_BACKUP_COMMAND="${DB_BACKUP_COMMAND:-}"
+EXPECTED_VERSION="${EXPECTED_VERSION:-$RELEASE_TAG}"
 command -v docker >/dev/null || { echo 'docker is required' >&2; exit 2; }
 command -v grep >/dev/null || { echo 'grep is required' >&2; exit 2; }
 if [[ -z "$DB_BACKUP_COMMAND" ]]; then
@@ -54,7 +55,12 @@ export IMAGE_TAG="$RELEASE_TAG"
 docker compose -f "$COMPOSE_FILE" pull "$SERVICE"
 docker compose -f "$COMPOSE_FILE" up -d --no-deps "$SERVICE"
 for _ in {1..30}; do
-  if curl --fail --silent "$HEALTH_URL" >/dev/null; then echo "Compose release $RELEASE_TAG is healthy. Backup: $backup_dir"; exit 0; fi
+  if response=$(curl --fail --silent "$HEALTH_URL") &&
+     echo "$response" | grep -q '"success"[[:space:]]*:[[:space:]]*true' &&
+     echo "$response" | grep -q "\"version\"[[:space:]]*:[[:space:]]*\"$EXPECTED_VERSION\""; then
+    echo "Compose release $RELEASE_TAG is healthy. Backup: $backup_dir"
+    exit 0
+  fi
   sleep 2
 done
 echo 'Compose health check failed.' >&2

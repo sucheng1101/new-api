@@ -45,6 +45,23 @@ pwsh ./scripts/release.ps1 -Version v1.2.3 -CreateTag -Push
 
 GitHub Actions `release.yml` 负责构建 Linux amd64、Linux arm64、macOS、Windows 制品，并生成 SHA-256 与 `release-manifest.json`。Windows 制品只用于本地 Windows 场景；Ubuntu 服务器必须选择对应 Linux 架构制品或已验证容器镜像。
 
+### 2.1 在线升级预检与执行器配置
+
+管理后台的“立即升级”会先调用 `/api/status/update` 做预检。预检会返回运行模式、实际执行脚本、工作目录和失败原因；未通过预检时按钮会禁用，不会再启动一个依赖当前工作目录的错误路径。
+
+升级进程不应从 `os.Getwd()` 推断脚本位置。请在服务启动环境中显式配置以下变量之一：
+
+| 变量 | 说明 |
+|---|---|
+| `NEW_API_UPDATE_MODE` | `windows`、`docker` 或 `systemd`；不填时按运行环境探测，生产建议显式设置 |
+| `NEW_API_UPDATE_SCRIPT` | 升级代理所在主机上的绝对脚本路径；适用于容器内应用调用宿主机升级代理的场景 |
+| `NEW_API_UPDATE_ROOT` | 应用目录根路径；未设置 `NEW_API_UPDATE_SCRIPT` 时，从这里查找 `scripts/` |
+| `DB_BACKUP_COMMAND` | 生产升级前执行并验证实际数据库备份的命令，缺失或验证失败时必须中止 |
+
+容器化生产环境应把“应用容器”和“宿主机升级代理”分开：应用只负责调用配置好的宿主机代理，代理再执行备份、拉取与切换。应用镜像内没有宿主机 Docker/systemd 控制权时，预检会明确提示配置 `NEW_API_UPDATE_SCRIPT`，而不是尝试 `/data/scripts/...` 这类不存在的路径。
+
+升级脚本还必须按 CPU 架构选择 Linux 制品，并在服务恢复后同时校验 `/api/status` 的 `success` 和目标 `data.version`。版本不匹配时即使端口可访问也判定升级失败并进入回滚流程。
+
 ## 3. 线上版本同步（独立于代码发布）
 
 适用条件：服务器只需要切换到已经存在的 Release、Commit、镜像 Tag 或制品，源代码和构建输入没有新增变更。
