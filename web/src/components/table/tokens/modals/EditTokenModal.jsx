@@ -72,13 +72,66 @@ const VENDOR_CATEGORY_ORDER = [
   'GLM',
   'Kimi',
   '国模',
-  '图片生成',
-  '视频',
-  '按次',
   '其他',
 ];
 
-const getVendorCategory = (groupName) => {
+const getVendorCategoryFromModel = (modelName) => {
+  const name = String(modelName || '')
+    .trim()
+    .toLowerCase();
+  if (!name) return null;
+  if (
+    (name.includes('claude') || name.includes('anthropic')) &&
+    name.includes('code')
+  ) {
+    return 'Claude Code';
+  }
+  if (
+    name.includes('gpt') ||
+    name.includes('codex') ||
+    name.includes('openai')
+  ) {
+    return 'GPT';
+  }
+  if (name.includes('claude') || name.includes('anthropic')) {
+    return 'Claude';
+  }
+  if (name.includes('deepseek')) return 'DeepSeek';
+  if (
+    name.includes('gemini') ||
+    name.includes('gemma') ||
+    name.includes('google')
+  ) {
+    return 'Gemini';
+  }
+  if (name.includes('grok') || name.includes('xai')) return 'Grok';
+  if (
+    name.includes('glm') ||
+    name.includes('chatglm') ||
+    name.includes('zhipu')
+  ) {
+    return 'GLM';
+  }
+  if (name.includes('kimi') || name.includes('moonshot')) return 'Kimi';
+  if (
+    name.includes('qwen') ||
+    name.includes('通义') ||
+    name.includes('千问') ||
+    name.includes('ernie') ||
+    name.includes('文心') ||
+    name.includes('doubao') ||
+    name.includes('豆包') ||
+    name.includes('baichuan') ||
+    name.includes('百川') ||
+    name.includes('yi-') ||
+    name.includes('internlm')
+  ) {
+    return '国模';
+  }
+  return '其他';
+};
+
+const getVendorCategoryFromGroupName = (groupName) => {
   const name = String(groupName || '').toLowerCase();
   if (name.includes('claude') && name.includes('code')) return 'Claude Code';
   if (name.includes('gpt') || name.includes('openai')) return 'GPT';
@@ -88,16 +141,6 @@ const getVendorCategory = (groupName) => {
   if (name.includes('grok') || name.includes('xai')) return 'Grok';
   if (name.includes('glm') || name.includes('zhipu')) return 'GLM';
   if (name.includes('kimi') || name.includes('moonshot')) return 'Kimi';
-  if (
-    name.includes('图片') ||
-    name.includes('image') ||
-    name.includes('midjourney') ||
-    name.includes('mj')
-  ) {
-    return '图片生成';
-  }
-  if (name.includes('视频') || name.includes('video')) return '视频';
-  if (name.includes('按次') || name.includes('per-use')) return '按次';
   if (
     name.includes('国模') ||
     name.includes('国产') ||
@@ -110,6 +153,20 @@ const getVendorCategory = (groupName) => {
     return '国模';
   }
   return '其他';
+};
+
+const getVendorCategories = (group) => {
+  const models = Array.isArray(group.models)
+    ? group.models.filter((model) => String(model || '').trim())
+    : [];
+  if (models.length === 0) {
+    return [getVendorCategoryFromGroupName(group.value)];
+  }
+  return [
+    ...new Set(
+      models.map((model) => getVendorCategoryFromModel(model)).filter(Boolean),
+    ),
+  ];
 };
 
 const formatGroupRatio = (ratio) => {
@@ -125,9 +182,10 @@ const VendorGroupPicker = ({ groups, value, onChange, placeholder }) => {
 
   const selectedGroup = groups.find((group) => group.value === value);
   const categories = groups.reduce((result, group) => {
-    const category = getVendorCategory(group.value);
-    if (!result[category]) result[category] = [];
-    result[category].push(group);
+    getVendorCategories(group).forEach((category) => {
+      if (!result[category]) result[category] = [];
+      result[category].push(group);
+    });
     return result;
   }, {});
 
@@ -143,18 +201,25 @@ const VendorGroupPicker = ({ groups, value, onChange, placeholder }) => {
             String(group.value).toLowerCase().includes(query) ||
             String(group.label || '')
               .toLowerCase()
-              .includes(query),
+              .includes(query) ||
+            (Array.isArray(group.models) ? group.models : []).some((model) =>
+              String(model).toLowerCase().includes(query),
+            ),
         );
     return { category, groups: filteredGroups };
   }).filter(({ groups: categoryGroups }) => categoryGroups.length > 0);
 
   useEffect(() => {
     if (!selectedGroup) return;
-    const category = getVendorCategory(selectedGroup.value);
-    setExpanded((current) =>
-      current[category] ? current : { ...current, [category]: true },
-    );
-  }, [selectedGroup?.value]);
+    const selectedCategories = getVendorCategories(selectedGroup);
+    setExpanded((current) => {
+      const next = { ...current };
+      selectedCategories.forEach((category) => {
+        next[category] = true;
+      });
+      return next;
+    });
+  }, [selectedGroup?.value, selectedGroup?.models]);
 
   return (
     <div
@@ -376,6 +441,7 @@ const EditTokenModal = (props) => {
         label: info.desc,
         value: group,
         ratio: info.ratio,
+        models: Array.isArray(info.models) ? info.models : [],
       }));
       if (statusState?.status?.default_use_auto_group) {
         if (localGroupOptions.some((group) => group.value === 'auto')) {

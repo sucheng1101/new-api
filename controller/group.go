@@ -33,15 +33,30 @@ func GetUserGroups(c *gin.Context) {
 		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {
 			usableGroups[groupName] = map[string]interface{}{
-				"ratio": service.GetUserGroupRatio(userGroup, groupName),
-				"desc":  desc,
+				"ratio":  service.GetUserGroupRatio(userGroup, groupName),
+				"desc":   desc,
+				"models": model.GetGroupEnabledModels(groupName),
 			}
 		}
 	}
 	if _, ok := userUsableGroups["auto"]; ok {
+		// Auto groups expose the union of enabled models from all groups that
+		// participate in the user's automatic routing configuration.
+		models := make([]string, 0)
+		seenModels := make(map[string]struct{})
+		for _, autoGroup := range service.GetUserAutoGroup(userGroup) {
+			for _, groupModel := range model.GetGroupEnabledModels(autoGroup) {
+				if _, seen := seenModels[groupModel]; seen {
+					continue
+				}
+				seenModels[groupModel] = struct{}{}
+				models = append(models, groupModel)
+			}
+		}
 		usableGroups["auto"] = map[string]interface{}{
-			"ratio": "自动",
-			"desc":  setting.GetUsableGroupDescription("auto"),
+			"ratio":  "自动",
+			"desc":   setting.GetUsableGroupDescription("auto"),
+			"models": models,
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
