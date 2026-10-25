@@ -24,6 +24,7 @@ import { getChannelIcon } from '../../../helpers';
 
 const ChannelsTabs = ({
   enableTagMode,
+  enableGroupMode,
   activeTypeKey,
   setActiveTypeKey,
   channelTypeCounts,
@@ -35,12 +36,12 @@ const ChannelsTabs = ({
   setActivePage,
   t,
 }) => {
-  if (enableTagMode) return null;
+  if (enableTagMode || enableGroupMode) return null;
 
   const handleTabChange = (key) => {
     setActiveTypeKey(key);
     setActivePage(1);
-    loadChannels(1, pageSize, idSort, enableTagMode, key);
+    loadChannels(1, pageSize, idSort, enableTagMode, key, undefined, false);
   };
 
   return (

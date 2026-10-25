@@ -4699,6 +4699,10 @@
     "编辑记录": "Sửa bản ghi",
     "新增记录后即可在此管理启停与排序": "Thêm bản ghi để quản lý bật/tắt và thứ tự tại đây",
     "直连域名白名单": "Danh sách cho phép tên miền trực tiếp",
-    "域名": "Tên miền"
+    "域名": "Tên miền",
+    "分组聚合": "Gộp theo nhóm",
+    "分组聚合模式": "Chế độ gộp theo nhóm",
+    "未分组": "Chưa phân nhóm",
+    "仅展示": "Chỉ hiển thị"
   }
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -87,11 +88,80 @@ func clearChannelInfo(channel *model.Channel) {
 	}
 }
 
+// pageChannelGroups expands comma-separated channel groups into group pages.
+// Empty groups are kept under a stable display name so aggregation never hides a channel.
+func pageChannelGroups(channels []*model.Channel, page, pageSize int) ([]*model.Channel, int64) {
+	grouped := make(map[string][]*model.Channel)
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		groups := channel.GetGroups()
+		// Disabled channels are intentionally isolated from normal groups so the
+		// aggregate view makes unavailable routes immediately visible.
+		if channel.Status != common.ChannelStatusEnabled {
+			groups = []string{"未启用"}
+		}
+		if len(groups) == 0 {
+			groups = []string{"未分组"}
+		}
+		seen := make(map[string]struct{}, len(groups))
+		for _, group := range groups {
+			group = strings.TrimSpace(group)
+			if group == "" {
+				group = "未分组"
+			}
+			if _, exists := seen[group]; exists {
+				continue
+			}
+			seen[group] = struct{}{}
+			grouped[group] = append(grouped[group], channel)
+		}
+	}
+	keys := make([]string, 0, len(grouped))
+	for group := range grouped {
+		keys = append(keys, group)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		// Keep the synthetic disabled bucket at the end so enabled groups remain
+		// easy to scan, regardless of locale-aware string ordering.
+		if keys[i] == "未启用" {
+			return false
+		}
+		if keys[j] == "未启用" {
+			return true
+		}
+		return keys[i] < keys[j]
+	})
+	total := int64(len(keys))
+	start := (page - 1) * pageSize
+	if start > len(keys) {
+		start = len(keys)
+	}
+	end := start + pageSize
+	if end > len(keys) {
+		end = len(keys)
+	}
+	rows := make([]*model.Channel, 0)
+	for _, group := range keys[start:end] {
+		for _, channel := range grouped[group] {
+			row := *channel
+			row.Group = group
+			rows = append(rows, &row)
+		}
+	}
+	return rows, total
+}
+
 func GetAllChannels(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)
 	idSort := parseChannelIdSort(c.Query("id_sort"))
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+	enableGroupMode, _ := strconv.ParseBool(c.Query("group_mode"))
+	if enableTagMode {
+		enableGroupMode = false
+	}
 	statusParam := c.Query("status")
 	// statusFilter: -1 all, 1 enabled, 0 disabled (include auto & manual)
 	statusFilter := parseStatusFilter(statusParam)
@@ -137,6 +207,22 @@ func GetAllChannels(c *gin.Context) {
 			channelData = append(channelData, filtered...)
 		}
 		total, _ = model.CountAllTags()
+	} else if enableGroupMode {
+		baseQuery := model.DB.Model(&model.Channel{})
+		if typeFilter >= 0 {
+			baseQuery = baseQuery.Where("type = ?", typeFilter)
+		}
+		if statusFilter == common.ChannelStatusEnabled {
+			baseQuery = baseQuery.Where("status = ?", common.ChannelStatusEnabled)
+		} else if statusFilter == 0 {
+			baseQuery = baseQuery.Where("status != ?", common.ChannelStatusEnabled)
+		}
+		if err := baseQuery.Order(model.ChannelDisplayOrder(idSort)).Omit("key").Find(&channelData).Error; err != nil {
+			common.SysError("failed to get grouped channels: " + err.Error())
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道列表失败，请稍后重试"})
+			return
+		}
+		channelData, total = pageChannelGroups(channelData, pageInfo.GetPage(), pageInfo.GetPageSize())
 	} else {
 		baseQuery := model.DB.Model(&model.Channel{})
 		if typeFilter >= 0 {
@@ -269,6 +355,10 @@ func SearchChannels(c *gin.Context) {
 	statusFilter := parseStatusFilter(statusParam)
 	idSort := parseChannelIdSort(c.Query("id_sort"))
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
+	enableGroupMode, _ := strconv.ParseBool(c.Query("group_mode"))
+	if enableTagMode {
+		enableGroupMode = false
+	}
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
 		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort)
@@ -356,7 +446,14 @@ func SearchChannels(c *gin.Context) {
 		endIdx = total
 	}
 
-	pagedData := channelData[startIdx:endIdx]
+	var pagedData []*model.Channel
+	if enableGroupMode {
+		var groupTotal int64
+		pagedData, groupTotal = pageChannelGroups(channelData, page, pageSize)
+		total = int(groupTotal)
+	} else {
+		pagedData = channelData[startIdx:endIdx]
+	}
 
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)

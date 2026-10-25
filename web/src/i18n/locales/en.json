@@ -4335,6 +4335,10 @@
     "请输入地址": "Please enter an address",
     "新增记录后即可在此管理启停与排序": "Add a record to manage enablement and ordering here",
     "直连域名白名单": "Direct domain allowlist",
-    "域名": "Domain"
+    "域名": "Domain",
+    "分组聚合": "Group aggregation",
+    "分组聚合模式": "Group aggregation mode",
+    "未分组": "Unassigned",
+    "仅展示": "Display only"
   }
 }

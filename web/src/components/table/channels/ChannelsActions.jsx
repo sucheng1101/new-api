@@ -45,6 +45,8 @@ const ChannelsActions = ({
   setEnableBatchDelete,
   enableTagMode,
   setEnableTagMode,
+  enableGroupMode,
+  setEnableGroupMode,
   getFormValues,
   loadChannels,
   searchChannels,
@@ -53,6 +55,7 @@ const ChannelsActions = ({
   pageSize,
   setActivePage,
   idSort,
+  statusFilter,
   t,
 }) => {
   return (
@@ -252,9 +255,45 @@ const ChannelsActions = ({
               checked={enableTagMode}
               onChange={(v) => {
                 localStorage.setItem('enable-tag-mode', v + '');
+                localStorage.setItem('enable-group-mode', 'false');
                 setEnableTagMode(v);
+                setEnableGroupMode(false);
                 setActivePage(1);
-                loadChannels(1, pageSize, idSort, v);
+                loadChannels(
+                  1,
+                  pageSize,
+                  idSort,
+                  v,
+                  activeTypeKey,
+                  statusFilter,
+                  false,
+                );
+              }}
+            />
+          </div>
+
+          <div className='flex items-center justify-between w-full md:w-auto'>
+            <Typography.Text strong className='mr-2'>
+              {t('分组聚合模式')}
+            </Typography.Text>
+            <Switch
+              size='small'
+              checked={enableGroupMode}
+              onChange={(v) => {
+                localStorage.setItem('enable-group-mode', v + '');
+                localStorage.setItem('enable-tag-mode', 'false');
+                setEnableGroupMode(v);
+                setEnableTagMode(false);
+                setActivePage(1);
+                loadChannels(
+                  1,
+                  pageSize,
+                  idSort,
+                  false,
+                  activeTypeKey,
+                  statusFilter,
+                  v,
+                );
               }}
             />
           </div>

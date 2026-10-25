@@ -67,6 +67,7 @@ const ChannelsTable = (channelsData) => {
     usageStatsLoading,
     usageStatsError,
     enableTagMode,
+    enableGroupMode,
     clientSort,
     handleSortToggle,
     idSort,
@@ -74,7 +75,7 @@ const ChannelsTable = (channelsData) => {
 
   // 客户端列排序（响应时间/今日消耗/限额/上游余额）：仅当前页、标签聚合模式下禁用
   const sortedChannels = useMemo(() => {
-    if (!clientSort || enableTagMode) return channels;
+    if (!clientSort || enableTagMode || enableGroupMode) return channels;
     const { key, dir } = clientSort;
     const valueOf = (channel) => {
       if (key === 'response_time') return Number(channel.response_time || 0);
@@ -94,7 +95,7 @@ const ChannelsTable = (channelsData) => {
     return [...channels].sort((a, b) =>
       dir === 'asc' ? valueOf(a) - valueOf(b) : valueOf(b) - valueOf(a),
     );
-  }, [channels, clientSort, usageStats, enableTagMode]);
+  }, [channels, clientSort, usageStats, enableTagMode, enableGroupMode]);
 
   // Get all columns
   const allColumns = useMemo(() => {
@@ -126,6 +127,7 @@ const ChannelsTable = (channelsData) => {
       usageStats,
       usageStatsLoading,
       usageStatsError,
+      enableGroupMode,
     });
   }, [
     t,
@@ -156,6 +158,7 @@ const ChannelsTable = (channelsData) => {
     usageStats,
     usageStatsLoading,
     usageStatsError,
+    enableGroupMode,
   ]);
 
   // Filter columns based on visibility settings

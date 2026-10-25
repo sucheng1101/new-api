@@ -154,6 +154,14 @@ const renderTagType = (t) => {
   );
 };
 
+const renderGroupType = (t) => {
+  return (
+    <Tag color='purple' shape='circle' type='light'>
+      {t('分组聚合')}
+    </Tag>
+  );
+};
+
 const renderStatus = (status, channelInfo = undefined, t) => {
   if (channelInfo) {
     if (channelInfo.is_multi_key) {
@@ -538,6 +546,8 @@ export const getChannelsColumns = ({
       render: (text, record, index) => {
         if (record.children === undefined) {
           return <>{renderType(text, record, t)}</>;
+        } else if (record.aggregationMode === 'group') {
+          return <>{renderGroupType(t)}</>;
         } else {
           return <>{renderTagType(t)}</>;
         }
@@ -637,6 +647,9 @@ export const getChannelsColumns = ({
       title: t('优先级'),
       dataIndex: 'priority',
       render: (text, record, index) => {
+        if (record.aggregationMode === 'group') {
+          return <Typography.Text type='tertiary'>-</Typography.Text>;
+        }
         if (record.children === undefined) {
           return (
             <div>
@@ -692,6 +705,9 @@ export const getChannelsColumns = ({
       title: t('权重'),
       dataIndex: 'weight',
       render: (text, record, index) => {
+        if (record.aggregationMode === 'group') {
+          return <Typography.Text type='tertiary'>-</Typography.Text>;
+        }
         if (record.children === undefined) {
           return (
             <div>
@@ -928,6 +944,10 @@ export const getChannelsColumns = ({
                 <Button icon={<IconMore />} type='tertiary' size='small' />
               </Dropdown>
             </Space>
+          );
+        } else if (record.aggregationMode === 'group') {
+          return (
+            <Typography.Text type='tertiary'>{t('仅展示')}</Typography.Text>
           );
         } else {
           // 标签操作按钮

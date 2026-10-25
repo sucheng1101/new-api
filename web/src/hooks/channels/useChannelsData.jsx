@@ -63,6 +63,7 @@ export const useChannelsData = () => {
   const [editingTag, setEditingTag] = useState('');
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [enableTagMode, setEnableTagMode] = useState(false);
+  const [enableGroupMode, setEnableGroupMode] = useState(false);
   const [showBatchSetTag, setShowBatchSetTag] = useState(false);
   const [batchSetTagValue, setBatchSetTagValue] = useState('');
   const [compactMode, setCompactMode] = useTableCompactMode('channels');
@@ -144,7 +145,15 @@ export const useChannelsData = () => {
       setActivePage(1);
       const { searchKeyword, searchGroup, searchModel } = getFormValues();
       if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
-        loadChannels(1, pageSize, next, enableTagMode);
+        loadChannels(
+          1,
+          pageSize,
+          next,
+          enableTagMode,
+          activeTypeKey,
+          statusFilter,
+          enableGroupMode,
+        );
       } else {
         searchChannels(
           enableTagMode,
@@ -153,6 +162,7 @@ export const useChannelsData = () => {
           1,
           pageSize,
           next,
+          enableGroupMode,
         );
       }
       return;
@@ -197,15 +207,27 @@ export const useChannelsData = () => {
       parseInt(localStorage.getItem('page-size')) || ITEMS_PER_PAGE;
     const localEnableTagMode =
       localStorage.getItem('enable-tag-mode') === 'true';
+    const localEnableGroupMode =
+      localStorage.getItem('enable-group-mode') === 'true' &&
+      !localEnableTagMode;
     const localEnableBatchDelete =
       localStorage.getItem('enable-batch-delete') === 'true';
 
     setIdSort(localIdSort);
     setPageSize(localPageSize);
     setEnableTagMode(localEnableTagMode);
+    setEnableGroupMode(localEnableGroupMode);
     setEnableBatchDelete(localEnableBatchDelete);
 
-    loadChannels(1, localPageSize, localIdSort, localEnableTagMode)
+    loadChannels(
+      1,
+      localPageSize,
+      localIdSort,
+      localEnableTagMode,
+      'all',
+      undefined,
+      localEnableGroupMode,
+    )
       .then()
       .catch((reason) => {
         showError(reason);
@@ -281,7 +303,7 @@ export const useChannelsData = () => {
   };
 
   // Data formatting
-  const setChannelFormat = (channels, enableTagMode) => {
+  const setChannelFormat = (channels, enableTagMode, enableGroupMode) => {
     let channelDates = [];
     let channelTags = {};
 
@@ -290,8 +312,42 @@ export const useChannelsData = () => {
         channels[i].settings,
       );
       channels[i].key = '' + channels[i].id;
-      if (!enableTagMode) {
+      if (!enableTagMode && !enableGroupMode) {
         channelDates.push(channels[i]);
+      } else if (enableGroupMode) {
+        const rawGroup = String(channels[i].group || '').trim();
+        const disabledGroup = rawGroup === '未启用';
+        const group =
+          rawGroup === '未启用'
+            ? t('未启用')
+            : rawGroup === '未分组' || rawGroup === ''
+              ? t('未分组')
+              : rawGroup;
+        let parent = channelDates.find(
+          (item) => item.aggregationMode === 'group' && item.group === group,
+        );
+        if (!parent) {
+          parent = {
+            key: 'group:' + group,
+            id: group,
+            group: group,
+            name: group,
+            aggregationMode: 'group',
+            children: [],
+            used_quota: 0,
+            response_time: 0,
+          };
+          channelDates.push(parent);
+        }
+        const child = {
+          ...channels[i],
+          key: 'channel:' + channels[i].id + ':' + group,
+        };
+        parent.children.push(child);
+        parent.used_quota += child.used_quota || 0;
+        if (parent.status === undefined) {
+          parent.status = disabledGroup ? 2 : child.status;
+        }
       } else {
         let tag = channels[i].tag ? channels[i].tag : '';
         let tagIndex = channelTags[tag];
@@ -373,6 +429,7 @@ export const useChannelsData = () => {
     enableTagMode,
     typeKey = activeTypeKey,
     statusF,
+    groupMode = enableGroupMode,
   ) => {
     if (statusF === undefined) statusF = statusFilter;
 
@@ -386,6 +443,7 @@ export const useChannelsData = () => {
         page,
         pageSize,
         idSort,
+        groupMode,
       );
       setLoading(false);
       return;
@@ -396,7 +454,7 @@ export const useChannelsData = () => {
     const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
     const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
     const res = await API.get(
-      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
+      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}&group_mode=${groupMode}${typeParam}${statusParam}`,
     );
 
     if (res === undefined || reqId !== requestCounter.current) {
@@ -413,7 +471,7 @@ export const useChannelsData = () => {
         );
         setTypeCounts({ ...type_counts, all: sumAll });
       }
-      setChannelFormat(items, enableTagMode);
+      setChannelFormat(items, enableTagMode, groupMode);
       setChannelCount(total);
     } else {
       showError(message);
@@ -429,6 +487,7 @@ export const useChannelsData = () => {
     page = 1,
     pageSz = pageSize,
     sortFlag = idSort,
+    groupMode = enableGroupMode,
   ) => {
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
     setSearching(true);
@@ -441,6 +500,7 @@ export const useChannelsData = () => {
           enableTagMode,
           typeKey,
           statusF,
+          groupMode,
         );
         return;
       }
@@ -448,7 +508,7 @@ export const useChannelsData = () => {
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
       const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
       const res = await API.get(
-        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
+        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&group_mode=${groupMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -458,7 +518,7 @@ export const useChannelsData = () => {
           0,
         );
         setTypeCounts({ ...type_counts, all: sumAll });
-        setChannelFormat(items, enableTagMode);
+        setChannelFormat(items, enableTagMode, groupMode);
         setChannelCount(total);
         setActivePage(page);
       } else {
@@ -473,7 +533,15 @@ export const useChannelsData = () => {
   const refresh = async (page = activePage) => {
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
     if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
-      await loadChannels(page, pageSize, idSort, enableTagMode);
+      await loadChannels(
+        page,
+        pageSize,
+        idSort,
+        enableTagMode,
+        activeTypeKey,
+        statusFilter,
+        enableGroupMode,
+      );
     } else {
       await searchChannels(
         enableTagMode,
@@ -482,6 +550,7 @@ export const useChannelsData = () => {
         page,
         pageSize,
         idSort,
+        enableGroupMode,
       );
     }
   };
@@ -575,7 +644,15 @@ export const useChannelsData = () => {
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
     setActivePage(page);
     if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
-      loadChannels(page, pageSize, idSort, enableTagMode).then(() => {});
+      loadChannels(
+        page,
+        pageSize,
+        idSort,
+        enableTagMode,
+        activeTypeKey,
+        statusFilter,
+        enableGroupMode,
+      ).then(() => {});
     } else {
       searchChannels(
         enableTagMode,
@@ -584,6 +661,7 @@ export const useChannelsData = () => {
         page,
         pageSize,
         idSort,
+        enableGroupMode,
       );
     }
   };
@@ -594,7 +672,15 @@ export const useChannelsData = () => {
     setActivePage(1);
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
     if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
-      loadChannels(1, size, idSort, enableTagMode)
+      loadChannels(
+        1,
+        size,
+        idSort,
+        enableTagMode,
+        activeTypeKey,
+        statusFilter,
+        enableGroupMode,
+      )
         .then()
         .catch((reason) => {
           showError(reason);
@@ -607,6 +693,7 @@ export const useChannelsData = () => {
         1,
         size,
         idSort,
+        enableGroupMode,
       );
     }
   };
@@ -1198,6 +1285,7 @@ export const useChannelsData = () => {
     groupOptions,
     idSort,
     enableTagMode,
+    enableGroupMode,
     enableBatchDelete,
     statusFilter,
     compactMode,
@@ -1309,6 +1397,7 @@ export const useChannelsData = () => {
     // Setters
     setIdSort,
     setEnableTagMode,
+    setEnableGroupMode,
     setEnableBatchDelete,
     setStatusFilter,
     setCompactMode,

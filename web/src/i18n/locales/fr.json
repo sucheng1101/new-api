@@ -4185,6 +4185,10 @@
     "请输入地址": "Veuillez saisir une adresse",
     "新增记录后即可在此管理启停与排序": "Ajoutez un enregistrement pour gérer ici son activation et son ordre",
     "直连域名白名单": "Liste blanche des domaines directs",
-    "域名": "Domaine"
+    "域名": "Domaine",
+    "分组聚合": "Agrégation par groupe",
+    "分组聚合模式": "Mode d’agrégation par groupe",
+    "未分组": "Non attribué",
+    "仅展示": "Affichage uniquement"
   }
 }
