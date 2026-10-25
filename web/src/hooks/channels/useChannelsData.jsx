@@ -207,9 +207,10 @@ export const useChannelsData = () => {
       parseInt(localStorage.getItem('page-size')) || ITEMS_PER_PAGE;
     const localEnableTagMode =
       localStorage.getItem('enable-tag-mode') === 'true';
+    const storedGroupMode = localStorage.getItem('enable-group-mode');
     const localEnableGroupMode =
-      localStorage.getItem('enable-group-mode') === 'true' &&
-      !localEnableTagMode;
+      !localEnableTagMode &&
+      (storedGroupMode === null || storedGroupMode === 'true');
     const localEnableBatchDelete =
       localStorage.getItem('enable-batch-delete') === 'true';
 

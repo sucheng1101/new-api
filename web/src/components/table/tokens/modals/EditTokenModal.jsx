@@ -23,7 +23,6 @@ import {
   showError,
   showSuccess,
   timestamp2string,
-  renderGroupOption,
   getCurrencyConfig,
   getModelCategories,
   selectFilter,
@@ -46,6 +45,7 @@ import {
   Col,
   Row,
   InputNumber,
+  Input,
 } from '@douyinfe/semi-ui';
 import {
   IconCreditCard,
@@ -53,11 +53,246 @@ import {
   IconSave,
   IconClose,
   IconKey,
+  IconChevronDown,
+  IconChevronUp,
+  IconSearch,
 } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
 import { StatusContext } from '../../../../context/Status';
 
 const { Text, Title } = Typography;
+
+const VENDOR_CATEGORY_ORDER = [
+  'GPT',
+  'Claude Code',
+  'Claude',
+  'DeepSeek',
+  'Gemini',
+  'Grok',
+  'GLM',
+  'Kimi',
+  '国模',
+  '图片生成',
+  '视频',
+  '按次',
+  '其他',
+];
+
+const getVendorCategory = (groupName) => {
+  const name = String(groupName || '').toLowerCase();
+  if (name.includes('claude') && name.includes('code')) return 'Claude Code';
+  if (name.includes('gpt') || name.includes('openai')) return 'GPT';
+  if (name.includes('claude') || name.includes('anthropic')) return 'Claude';
+  if (name.includes('deepseek')) return 'DeepSeek';
+  if (name.includes('gemini') || name.includes('google')) return 'Gemini';
+  if (name.includes('grok') || name.includes('xai')) return 'Grok';
+  if (name.includes('glm') || name.includes('zhipu')) return 'GLM';
+  if (name.includes('kimi') || name.includes('moonshot')) return 'Kimi';
+  if (
+    name.includes('图片') ||
+    name.includes('image') ||
+    name.includes('midjourney') ||
+    name.includes('mj')
+  ) {
+    return '图片生成';
+  }
+  if (name.includes('视频') || name.includes('video')) return '视频';
+  if (name.includes('按次') || name.includes('per-use')) return '按次';
+  if (
+    name.includes('国模') ||
+    name.includes('国产') ||
+    name.includes('通义') ||
+    name.includes('qwen') ||
+    name.includes('文心') ||
+    name.includes('豆包') ||
+    name.includes('百川')
+  ) {
+    return '国模';
+  }
+  return '其他';
+};
+
+const formatGroupRatio = (ratio) => {
+  if (typeof ratio === 'number') {
+    return `${Number.isInteger(ratio) ? ratio : ratio.toFixed(2)}x 倍率`;
+  }
+  return ratio ? String(ratio) : '';
+};
+
+const VendorGroupPicker = ({ groups, value, onChange, placeholder }) => {
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState({});
+
+  const selectedGroup = groups.find((group) => group.value === value);
+  const categories = groups.reduce((result, group) => {
+    const category = getVendorCategory(group.value);
+    if (!result[category]) result[category] = [];
+    result[category].push(group);
+    return result;
+  }, {});
+
+  const query = search.trim().toLowerCase();
+  const visibleCategories = VENDOR_CATEGORY_ORDER.map((category) => {
+    const categoryGroups = categories[category] || [];
+    if (!query) return { category, groups: categoryGroups };
+    const categoryMatches = category.toLowerCase().includes(query);
+    const filteredGroups = categoryMatches
+      ? categoryGroups
+      : categoryGroups.filter(
+          (group) =>
+            String(group.value).toLowerCase().includes(query) ||
+            String(group.label || '')
+              .toLowerCase()
+              .includes(query),
+        );
+    return { category, groups: filteredGroups };
+  }).filter(({ groups: categoryGroups }) => categoryGroups.length > 0);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const category = getVendorCategory(selectedGroup.value);
+    setExpanded((current) =>
+      current[category] ? current : { ...current, [category]: true },
+    );
+  }, [selectedGroup?.value]);
+
+  return (
+    <div
+      className='rounded-lg border overflow-hidden'
+      style={{ borderColor: 'var(--semi-color-border)' }}
+    >
+      <div
+        className='px-3 py-2'
+        style={{
+          background: 'var(--semi-color-fill-0)',
+          borderBottom: '1px solid var(--semi-color-border)',
+        }}
+      >
+        <div className='flex items-center justify-between gap-2'>
+          <span className='min-w-0 flex items-center gap-2'>
+            <Text type={selectedGroup ? 'primary' : 'tertiary'} strong ellipsis>
+              {selectedGroup?.value || placeholder}
+            </Text>
+            {selectedGroup?.ratio !== undefined && (
+              <Tag color='green' size='small'>
+                {formatGroupRatio(selectedGroup.ratio)}
+              </Tag>
+            )}
+          </span>
+          {selectedGroup && (
+            <Button
+              type='tertiary'
+              theme='borderless'
+              size='small'
+              icon={<IconClose size='small' />}
+              aria-label='清空分组'
+              onClick={() => onChange('')}
+            />
+          )}
+        </div>
+      </div>
+      <div className='p-2'>
+        <Input
+          value={search}
+          onChange={setSearch}
+          prefix={<IconSearch size='small' />}
+          placeholder='搜索厂商或分组'
+          showClear
+          style={{ width: '100%' }}
+        />
+      </div>
+      <div style={{ maxHeight: 290, overflowY: 'auto' }}>
+        {visibleCategories.map(({ category, groups: categoryGroups }) => {
+          const isExpanded = Boolean(expanded[category]);
+          return (
+            <div key={category}>
+              <button
+                type='button'
+                className='w-full flex items-center justify-between px-3 py-2 text-left'
+                style={{
+                  background: 'transparent',
+                  border: 0,
+                  borderTop: '1px solid var(--semi-color-border)',
+                  color: 'var(--semi-color-text-0)',
+                  cursor: 'pointer',
+                }}
+                onClick={() =>
+                  setExpanded((current) => ({
+                    ...current,
+                    [category]: !current[category],
+                  }))
+                }
+              >
+                <span className='font-medium'>{category}</span>
+                <span className='flex items-center gap-2'>
+                  <Tag size='small' color='grey'>
+                    {categoryGroups.length}
+                  </Tag>
+                  {isExpanded ? (
+                    <IconChevronUp size='small' />
+                  ) : (
+                    <IconChevronDown size='small' />
+                  )}
+                </span>
+              </button>
+              {isExpanded &&
+                categoryGroups.map((group) => {
+                  const isSelected = group.value === value;
+                  return (
+                    <button
+                      type='button'
+                      key={group.value}
+                      className='w-full flex items-center justify-between gap-3 px-4 py-2 text-left'
+                      style={{
+                        background: isSelected
+                          ? 'var(--semi-color-primary-light-default)'
+                          : 'transparent',
+                        border: 0,
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => onChange(group.value)}
+                    >
+                      <span className='min-w-0 flex flex-col gap-1'>
+                        <Text strong ellipsis={{ showTooltip: true }}>
+                          {group.value}
+                        </Text>
+                        {group.label && (
+                          <Text
+                            type='secondary'
+                            size='small'
+                            ellipsis={{ showTooltip: true }}
+                          >
+                            {group.label}
+                          </Text>
+                        )}
+                      </span>
+                      <span className='flex items-center gap-2 shrink-0'>
+                        {group.ratio !== undefined && (
+                          <Tag color='green' size='small'>
+                            {formatGroupRatio(group.ratio)}
+                          </Tag>
+                        )}
+                        {isSelected && (
+                          <Tag color='blue' size='small'>
+                            已选
+                          </Tag>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+            </div>
+          );
+        })}
+        {visibleCategories.length === 0 && (
+          <div className='px-3 py-4 text-center'>
+            <Text type='tertiary'>没有匹配的厂商或分组</Text>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const EditTokenModal = (props) => {
   const { t } = useTranslation();
@@ -384,23 +619,16 @@ const EditTokenModal = (props) => {
                   </Col>
                   <Col span={24}>
                     {groups.length > 0 ? (
-                      <Form.Select
-                        field='group'
-                        label={t('令牌分组')}
-                        placeholder={t('令牌分组，默认为用户的分组')}
-                        optionList={groups}
-                        renderOptionItem={renderGroupOption}
-                        filter={(input, option) => {
-                          const q = input.toLowerCase();
-                          return (
-                            option.value?.toLowerCase().includes(q) ||
-                            (typeof option.label === 'string' &&
-                              option.label.toLowerCase().includes(q))
-                          );
-                        }}
-                        showClear
-                        style={{ width: '100%' }}
-                      />
+                      <Form.Slot label={t('令牌分组')}>
+                        <VendorGroupPicker
+                          groups={groups}
+                          value={values.group}
+                          onChange={(group) =>
+                            formApiRef.current?.setValue('group', group)
+                          }
+                          placeholder={t('令牌分组，默认为用户的分组')}
+                        />
+                      </Form.Slot>
                     ) : (
                       <Form.Select
                         placeholder={t('管理员未设置用户可选分组')}
@@ -552,7 +780,10 @@ const EditTokenModal = (props) => {
                         ? `▾ ${t('收起原生额度输入')}`
                         : `▸ ${t('使用原生额度输入')}`}
                     </div>
-                    <div style={{ display: showQuotaInput ? 'block' : 'none' }} className='mt-2'>
+                    <div
+                      style={{ display: showQuotaInput ? 'block' : 'none' }}
+                      className='mt-2'
+                    >
                       <Form.InputNumber
                         field='remain_quota'
                         label={t('额度')}
